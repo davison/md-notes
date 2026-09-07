@@ -1,6 +1,7 @@
 # M1 — Daemon and rendered viewer over multiple roots
 
-Tracking issue: [#1](https://github.com/davison/md-notes/issues/1). Merged at
+Tracking issue: [#1](https://github.com/davison/md-notes/issues/1). Its five
+implementation tasks are merged on `main` at
 [`70b9f4e`](https://github.com/davison/md-notes/commit/70b9f4e).
 
 ## Goal and outcome
@@ -8,9 +9,9 @@ Tracking issue: [#1](https://github.com/davison/md-notes/issues/1). Merged at
 The milestone's goal, as stated on [#1](https://github.com/davison/md-notes/issues/1),
 was a local daemon serving a rendered, navigable, searchable view of the markdown
 files in one or more folders on disk, updating live as files change — the reading
-half of the notes app, and the whole of the MarkdownReader replacement it exists to
-displace. Editing, clipping, and the browser extension were explicitly deferred to
-later milestones.
+half of the notes app, and the whole of the MarkdownReader replacement. Editing,
+clipping, and the browser extension were deferred to later milestones by the goal
+itself.
 
 What shipped is a single static Go binary, `mdn`, with a Preact UI embedded in it.
 `mdn serve` runs a loopback-only daemon over a configured notes root; `mdn open DIR`
