@@ -6,15 +6,19 @@ import { fetchNote, type Note } from "./api";
  * and the sanitised HTML body from the daemon. In-app links are handled by
  * the router; fragment links scroll within the note.
  */
-export function NoteView({ slug, path }: { slug: string; path: string }) {
+export function NoteView({ slug, path, version = 0 }: { slug: string; path: string; version?: number }) {
   const [note, setNote] = useState<Note | null>(null);
   const [error, setError] = useState<string | null>(null);
   const body = useRef<HTMLDivElement>(null);
 
+  // A version bump refetches in place, keeping the old body on screen
+  // until the new one arrives so a live update does not flash.
   useEffect(() => {
     let cancelled = false;
-    setNote(null);
-    setError(null);
+    if (version === 0) {
+      setNote(null);
+      setError(null);
+    }
     fetchNote(slug, path).then(
       (n) => {
         if (!cancelled) setNote(n);
@@ -26,16 +30,21 @@ export function NoteView({ slug, path }: { slug: string; path: string }) {
     return () => {
       cancelled = true;
     };
-  }, [slug, path]);
+  }, [slug, path, version]);
 
-  // Scroll to the top of a newly loaded note, or to its fragment.
+  // Scroll to the top of a newly opened note, or to its fragment. A live
+  // refetch of the same note keeps the reader's place.
+  const opened = useRef("");
   useEffect(() => {
     if (!note) return;
+    const key = slug + "\0" + path;
+    if (opened.current === key) return;
+    opened.current = key;
     const pane = body.current?.closest("main");
     const target = fragmentTarget(body.current, window.location.hash);
     if (target) target.scrollIntoView();
     else if (pane) pane.scrollTop = 0;
-  }, [note]);
+  }, [note, slug, path]);
 
   const onClick = (e: MouseEvent) => {
     const a = (e.target as HTMLElement | null)?.closest("a");

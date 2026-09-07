@@ -1,5 +1,6 @@
-import { useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useState } from "preact/hooks";
 import { fetchTree, listRoots, type Root, type TreeNode } from "./api";
+import { affects, useEvents } from "./events";
 import { Navigator } from "./navigator";
 import { NoteView } from "./note-view";
 
@@ -12,6 +13,8 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
   const [root, setRoot] = useState<Root | null | undefined>(undefined);
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
+  // Bumped when the open note changes on disk, so NoteView refetches.
+  const [noteVersion, setNoteVersion] = useState(0);
   const current = note ?? "";
 
   useEffect(() => {
@@ -22,12 +25,27 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
     );
   }, [slug]);
 
+  const loadTree = useCallback(() => {
+    fetchTree(slug).then(
+      (t) => {
+        setTree(t);
+        setTreeError(null);
+      },
+      (e: Error) => setTreeError(e.message),
+    );
+  }, [slug]);
+
   useEffect(() => {
     if (!root) return;
     setTree(null);
     setTreeError(null);
-    fetchTree(slug).then(setTree, (e: Error) => setTreeError(e.message));
-  }, [root, slug]);
+    loadTree();
+  }, [root, loadTree]);
+
+  useEvents(slug, (paths) => {
+    loadTree();
+    if (current && affects(paths, current)) setNoteVersion((v) => v + 1);
+  });
 
   if (root === undefined) return <main class="page muted">Loading…</main>;
   if (root === null) {
@@ -54,7 +72,11 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
         {tree && <Navigator slug={slug} tree={tree} current={current} />}
       </aside>
       <main class="note">
-        {current ? <NoteView slug={slug} path={current} /> : <p class="muted">Select a note.</p>}
+        {current ? (
+          <NoteView slug={slug} path={current} version={noteVersion} />
+        ) : (
+          <p class="muted">Select a note.</p>
+        )}
       </main>
       <aside class="side">
         <p class="muted">Search and tags</p>

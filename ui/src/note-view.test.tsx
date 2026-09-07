@@ -69,6 +69,17 @@ describe("NoteView", () => {
     fireEvent.click(screen.getByText("Metadata"));
   });
 
+  it("refetches in place when the version bumps, without clearing the body", async () => {
+    mockNote({ path: "x.md", title: "First", html: "<p>one</p>" });
+    const { rerender } = render(<NoteView slug="n" path="x.md" version={0} />);
+    await waitFor(() => expect(screen.getByText("First")).toBeTruthy());
+    mockNote({ path: "x.md", title: "Second", html: "<p>two</p>" });
+    rerender(<NoteView slug="n" path="x.md" version={1} />);
+    expect(screen.getByText("First")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Second")).toBeTruthy());
+    expect(screen.getByText("two")).toBeTruthy();
+  });
+
   it("surfaces the daemon's error", async () => {
     mockNote(null, 404);
     render(<NoteView slug="n" path="missing.md" />);
