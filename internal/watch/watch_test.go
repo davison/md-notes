@@ -154,14 +154,6 @@ func TestMissingDirIsSkipped(t *testing.T) {
 	}
 }
 
-func TestDirsOf(t *testing.T) {
-	got := DirsOf([]string{"a/b/c.md", "a/d.md", "top.md", "x/y/z/w.md"})
-	want := []string{"", "a", "a/b", "x", "x/y", "x/y/z"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("DirsOf = %v, want %v", got, want)
-	}
-}
-
 func TestHidden(t *testing.T) {
 	for p, want := range map[string]bool{"a/b.md": false, ".a/b.md": true, "a/.b": true, "a/..": false, ".": false} {
 		if got := hidden(p); got != want {

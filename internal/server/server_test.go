@@ -27,6 +27,7 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	base := t.TempDir()
 	notes := filepath.Join(base, "notes")
 	os.MkdirAll(filepath.Join(notes, "sub"), 0o755)
+	os.MkdirAll(filepath.Join(notes, "empty"), 0o755)
 	os.WriteFile(filepath.Join(notes, "hello.md"), []byte("# hi\n"), 0o644)
 	os.WriteFile(filepath.Join(notes, "sub", "linked.md"), []byte("---\ntitle: Linked\n---\n[back](../hello.md) ![p](pic.png)\n"), 0o644)
 	os.WriteFile(filepath.Join(notes, "sub", "pic.png"), []byte("PNG"), 0o644)
@@ -337,6 +338,12 @@ func TestEventsStream(t *testing.T) {
 	if len(b.Paths) != 1 || b.Paths[0] != "new.md" {
 		t.Fatalf("paths = %v", b.Paths)
 	}
+
+	// A directory that was empty at startup is watched too.
+	os.WriteFile(filepath.Join(base, "notes", "sub", "later.md"), []byte("x"), 0o644)
+	next(func(l string) bool { return strings.Contains(l, `"sub/later.md"`) })
+	os.WriteFile(filepath.Join(base, "notes", "empty", "first.md"), []byte("x"), 0o644)
+	next(func(l string) bool { return strings.Contains(l, `"empty/first.md"`) })
 
 	resp2 := do(t, ts, "GET", "/api/r/nope/events", "", nil)
 	if resp2.StatusCode != 404 {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -201,24 +200,6 @@ func hidden(rel string) bool {
 		}
 	}
 	return false
-}
-
-// DirsOf returns the directories that contain the given relative files,
-// including their ancestors, so a watcher covers exactly what a listing
-// showed. The root ("") is included.
-func DirsOf(files []string) []string {
-	set := map[string]struct{}{"": {}}
-	for _, f := range files {
-		for d := path.Dir(f); d != "." && d != "/" && d != ""; d = path.Dir(d) {
-			set[d] = struct{}{}
-		}
-	}
-	out := make([]string, 0, len(set))
-	for d := range set {
-		out = append(out, d)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // Walk returns every non-hidden directory under root, relative to it,

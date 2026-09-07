@@ -8,8 +8,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -52,6 +54,45 @@ func IsMarkdown(name string) bool {
 // it did list are returned and the problem goes to warnf (which may be
 // nil); only a total failure is an error.
 func List(ctx context.Context, root string, warnf func(string, ...any)) ([]string, error) {
+	return list(ctx, root, warnf, IsMarkdown)
+}
+
+// Dirs returns the directories a watcher should cover: every directory
+// holding a file ripgrep would list, their ancestors, and their direct
+// non-hidden subdirectories, so that a directory which is empty or holds
+// only ignored files at startup still reports the first note created in
+// it. The root ("") is included.
+func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]string, error) {
+	files, err := list(ctx, root, warnf, func(string) bool { return true })
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]struct{}{"": {}}
+	for _, f := range files {
+		for d := path.Dir(f); d != "." && d != "/" && d != ""; d = path.Dir(d) {
+			set[d] = struct{}{}
+		}
+	}
+	for d := range set {
+		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(d)))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+				set[path.Join(d, e.Name())] = struct{}{}
+			}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for d := range set {
+		out = append(out, d)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func list(ctx context.Context, root string, warnf func(string, ...any), keep func(string) bool) ([]string, error) {
 	if warnf == nil {
 		warnf = func(string, ...any) {}
 	}
@@ -76,7 +117,7 @@ func List(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 	sc.Split(splitNUL)
 	for sc.Scan() {
 		name := sc.Text()
-		if name == "" || !IsMarkdown(name) {
+		if name == "" || !keep(name) {
 			continue
 		}
 		files = append(files, path.Clean(strings.TrimPrefix(name, "./")))
