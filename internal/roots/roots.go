@@ -56,9 +56,14 @@ type persisted struct {
 }
 
 // New builds a registry with notesRoot as its permanent root and reloads
-// any recent roots persisted at statePath. Persisted folders that no longer
-// exist are dropped silently.
-func New(notesRoot, statePath string) (*Registry, error) {
+// any recent roots persisted at statePath. The state file is a cache: a
+// problem reading or rewriting it is reported through warnf (which may be
+// nil) and never stops the daemon serving the notes root. Persisted
+// folders that no longer exist are dropped.
+func New(notesRoot, statePath string, warnf func(format string, args ...any)) (*Registry, error) {
+	if warnf == nil {
+		warnf = func(string, ...any) {}
+	}
 	r := &Registry{statePath: statePath}
 	notes, err := newRoot(notesRoot, KindNotes)
 	if err != nil {
@@ -68,12 +73,14 @@ func New(notesRoot, statePath string) (*Registry, error) {
 
 	data, err := os.ReadFile(statePath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+		warnf("ignoring recent roots: %v", err)
+		return r, nil
 	}
 	if len(data) > 0 {
 		var st state
 		if err := json.Unmarshal(data, &st); err != nil {
-			return nil, fmt.Errorf("%s: %w", statePath, err)
+			warnf("ignoring recent roots: %s: %v", statePath, err)
+			return r, nil
 		}
 		dropped := false
 		for _, p := range st.Recent {
@@ -94,7 +101,7 @@ func New(notesRoot, statePath string) (*Registry, error) {
 		}
 		if dropped {
 			if err := r.save(); err != nil {
-				return nil, err
+				warnf("could not rewrite recent roots: %v", err)
 			}
 		}
 	}
@@ -221,11 +228,11 @@ func (r *Registry) save() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(r.statePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(r.statePath), 0o700); err != nil {
 		return err
 	}
 	tmp := r.statePath + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, r.statePath)

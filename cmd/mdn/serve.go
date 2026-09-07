@@ -41,13 +41,13 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "mdn serve:", err)
 		return 1
 	}
-	reg, err := roots.New(cfg.NotesRoot, *statePath)
+	logger := log.New(stderr, "", log.LstdFlags)
+	reg, err := roots.New(cfg.NotesRoot, *statePath, logger.Printf)
 	if err != nil {
 		fmt.Fprintln(stderr, "mdn serve:", err)
 		return 1
 	}
 
-	logger := log.New(stderr, "", log.LstdFlags)
 	srv := server.New(reg, cfg.Port, ui.FS(), logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
