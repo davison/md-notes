@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -12,6 +14,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/tree"
@@ -39,6 +42,8 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 		"assets/app.js": {Data: []byte("console.log(1)")},
 	}
 	s := New(reg, port, ui, log.New(io.Discard, "", 0))
+	s.keepalive = 100 * time.Millisecond
+	t.Cleanup(s.Close)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return ts, base
@@ -273,6 +278,91 @@ func TestNote(t *testing.T) {
 			t.Errorf("%s: status %d, want %d", path, resp.StatusCode, want)
 		}
 	}
+}
+
+// sseReader turns a stream into a function that waits for a line
+// satisfying want, sharing one scanner across calls.
+func sseReader(t *testing.T, body io.Reader) func(want func(string) bool) string {
+	t.Helper()
+	lines := make(chan string)
+	go func() {
+		sc := bufio.NewScanner(body)
+		for sc.Scan() {
+			lines <- sc.Text()
+		}
+		close(lines)
+	}()
+	return func(want func(string) bool) string {
+		t.Helper()
+		deadline := time.After(3 * time.Second)
+		for {
+			select {
+			case l, ok := <-lines:
+				if !ok {
+					t.Fatal("stream ended")
+				}
+				if want(l) {
+					return l
+				}
+			case <-deadline:
+				t.Fatal("wanted line did not arrive")
+			}
+		}
+	}
+}
+
+func TestEventsStream(t *testing.T) {
+	ts, base := newTestServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/r/notes/events", nil)
+	req.Host = "localhost:7337"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); resp.StatusCode != 200 || ct != "text/event-stream" {
+		t.Fatalf("status %d, content-type %q", resp.StatusCode, ct)
+	}
+	next := sseReader(t, resp.Body)
+	next(func(l string) bool { return l == ": connected" })
+	next(func(l string) bool { return l == ": keepalive" })
+
+	os.WriteFile(filepath.Join(base, "notes", "new.md"), []byte("# new"), 0o644)
+	next(func(l string) bool { return l == "event: change" })
+	data := next(func(l string) bool { return strings.HasPrefix(l, "data: ") })
+	var b struct{ Paths []string }
+	json.Unmarshal([]byte(strings.TrimPrefix(data, "data: ")), &b)
+	if len(b.Paths) != 1 || b.Paths[0] != "new.md" {
+		t.Fatalf("paths = %v", b.Paths)
+	}
+
+	resp2 := do(t, ts, "GET", "/api/r/nope/events", "", nil)
+	if resp2.StatusCode != 404 {
+		t.Errorf("unknown root: status %d", resp2.StatusCode)
+	}
+}
+
+func TestAddedRootIsWatched(t *testing.T) {
+	ts, base := newTestServer(t)
+	proj := filepath.Join(base, "proj")
+	os.Mkdir(proj, 0o755)
+	do(t, ts, "POST", "/api/roots", `{"path":"`+proj+`"}`, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/r/proj/events", nil)
+	req.Host = "localhost:7337"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	next := sseReader(t, resp.Body)
+	next(func(l string) bool { return l == ": connected" })
+	os.WriteFile(filepath.Join(proj, "readme.md"), []byte("x"), 0o644)
+	next(func(l string) bool { return strings.Contains(l, `"readme.md"`) })
 }
 
 func TestUIFallback(t *testing.T) {
