@@ -93,7 +93,7 @@ code {
     "nav note side";
 }
 
-.topbar {
+.shell > .topbar {
   grid-area: top;
   display: flex;
   gap: 1rem;
@@ -103,29 +103,29 @@ code {
   background: var(--pane);
 }
 
-.brand {
+.shell .brand {
   font-weight: 600;
 }
 
-.root-name {
+.shell .root-name {
   font-weight: 500;
 }
 
-.nav {
+.shell > .nav {
   grid-area: nav;
   border-right: 1px solid var(--line);
   overflow: auto;
   padding: 0.75rem;
 }
 
-.note {
+.shell > .note {
   grid-area: note;
   overflow: auto;
   padding: 1.5rem 2rem;
   background: var(--pane);
 }
 
-.side {
+.shell > .side {
   grid-area: side;
   border-left: 1px solid var(--line);
   overflow: auto;
@@ -142,8 +142,8 @@ code {
       "note"
       "side";
   }
-  .nav,
-  .side {
+  .shell > .nav,
+  .shell > .side {
     border: 0;
     border-bottom: 1px solid var(--line);
   }
