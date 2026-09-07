@@ -19,9 +19,10 @@ ui: ui-deps
 	pnpm --dir ui build
 	touch ui/dist/.gitkeep
 
-## test: run Go tests
-test:
+## test: run Go and UI tests
+test: ui-deps
 	go test ./...
+	pnpm --dir ui test
 
 ## vet: static checks for Go and the UI
 vet: ui-deps
