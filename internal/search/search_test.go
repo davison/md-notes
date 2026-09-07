@@ -98,6 +98,20 @@ func TestSearchBasics(t *testing.T) {
 	}
 }
 
+func TestMatchOffsetsAreUTF16(t *testing.T) {
+	requireRg(t)
+	root := t.TempDir()
+	write(t, filepath.Join(root, "u.md"), "café 😀 needle\n")
+	hits, err := Search(context.Background(), root, "needle", nil)
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("hits = %v, %v", hits, err)
+	}
+	// "café " is 5 units, the emoji is 2, then a space: needle starts at 8.
+	if hits[0].Matches[0] != [2]int{8, 14} {
+		t.Fatalf("matches = %v, want [8 14]", hits[0].Matches)
+	}
+}
+
 func TestSearchIsLiteral(t *testing.T) {
 	requireRg(t)
 	root := fixture(t)

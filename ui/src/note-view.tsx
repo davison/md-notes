@@ -6,7 +6,15 @@ import { fetchNote, type Note } from "./api";
  * and the sanitised HTML body from the daemon. In-app links are handled by
  * the router; fragment links scroll within the note.
  */
-export function NoteView({ slug, path, version = 0 }: { slug: string; path: string; version?: number }) {
+interface NoteProps {
+  slug: string;
+  path: string;
+  version?: number;
+  /** Source line to scroll to, from a search hit. */
+  line?: number | null;
+}
+
+export function NoteView({ slug, path, version = 0, line = null }: NoteProps) {
   const [note, setNote] = useState<Note | null>(null);
   const [error, setError] = useState<string | null>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -38,18 +46,29 @@ export function NoteView({ slug, path, version = 0 }: { slug: string; path: stri
   }, [slug, path, version]);
 
   // Scroll to the top of a newly opened note, or to its fragment. A live
-  // refetch of the same note keeps the reader's place.
+  // refetch of the same note keeps the reader's place. A requested line
+  // wins over both and is honoured whenever it changes.
   const opened = useRef("");
   useEffect(() => {
     if (!note) return;
     const key = slug + "\0" + path;
-    if (opened.current === key) return;
+    const fresh = opened.current !== key;
     opened.current = key;
+    if (line !== null) {
+      const target = lineTarget(body.current, line);
+      if (target) {
+        target.scrollIntoView({ block: "center" });
+        target.classList.add("flash");
+        const t = setTimeout(() => target.classList.remove("flash"), 1500);
+        return () => clearTimeout(t);
+      }
+    }
+    if (!fresh) return;
     const pane = body.current?.closest("main");
     const target = fragmentTarget(body.current, window.location.hash);
     if (target) target.scrollIntoView();
     else if (pane) pane.scrollTop = 0;
-  }, [note, slug, path]);
+  }, [note, slug, path, line]);
 
   const onClick = (e: MouseEvent) => {
     const a = (e.target as HTMLElement | null)?.closest("a");
@@ -100,6 +119,23 @@ export function fragmentTarget(scope: Element | null, hash: string): Element | n
     if (el.id === id) return el;
   }
   return null;
+}
+
+/**
+ * The block that starts at or nearest before a source line, using the
+ * data-line markers the daemon puts on block elements.
+ */
+export function lineTarget(scope: Element | null, line: number): Element | null {
+  if (!scope) return null;
+  let best: Element | null = null;
+  let bestLine = -1;
+  for (const el of scope.querySelectorAll("[data-line]")) {
+    const n = Number(el.getAttribute("data-line"));
+    if (!Number.isFinite(n) || n > line || n < bestLine) continue;
+    best = el;
+    bestLine = n;
+  }
+  return best;
 }
 
 export function formatValue(v: unknown): string {
