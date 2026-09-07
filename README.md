@@ -37,8 +37,9 @@ do a few things well and nothing else:
 
 ## Building
 
-Requires Go and pnpm to build. Later milestones add ripgrep as a runtime
-dependency for search.
+Requires Go and pnpm to build, and ripgrep (`rg`) on PATH at runtime: the
+navigator is built from its file listing, which is also what keeps
+gitignored and hidden files out of the tree.
 
 ```
 make build      # builds the UI and the static ./mdn binary
@@ -86,8 +87,8 @@ already runs as the user who owns the notes.
 
 ## Status
 
-Milestone one in progress: the daemon skeleton, roots, and confinement are
-in place; rendering, live update, search, and tags follow. Progress is tracked in
+Milestone one in progress: the daemon skeleton, roots, confinement, and the
+navigator are in place; rendering, live update, search, and tags follow. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
 is run as a [CodeCrew](https://github.com/radiusred/gh-codecrew) project.
 
