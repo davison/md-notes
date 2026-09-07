@@ -220,3 +220,24 @@ func DirsOf(files []string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// Walk returns every non-hidden directory under root, relative to it,
+// for use when no ignore-aware listing is available.
+func Walk(root string) []string {
+	var dirs []string
+	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil
+		}
+		if p != root && strings.HasPrefix(d.Name(), ".") {
+			return filepath.SkipDir
+		}
+		r, _ := filepath.Rel(root, p)
+		if r == "." {
+			r = ""
+		}
+		dirs = append(dirs, filepath.ToSlash(r))
+		return nil
+	})
+	return dirs
+}

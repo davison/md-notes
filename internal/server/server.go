@@ -16,11 +16,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/tree"
+	"github.com/davison/md-notes/internal/watch"
 )
 
 // Server serves the API and UI for a registry of roots.
@@ -31,6 +33,13 @@ type Server struct {
 	mux  *http.ServeMux
 	log  *log.Logger
 	md   *render.Renderer
+
+	// keepalive is how often an idle event stream sends a comment.
+	keepalive time.Duration
+
+	wmu      sync.Mutex
+	hubs     map[string]*watch.Hub
+	watchers map[string]*watch.Watcher
 }
 
 // New builds a Server. ui is the built single-page app; every path that is
@@ -40,12 +49,21 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger) *Server {
 	if logger == nil {
 		logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
-	s := &Server{reg: reg, port: port, ui: ui, mux: http.NewServeMux(), log: logger, md: render.New()}
+	s := &Server{
+		reg: reg, port: port, ui: ui, mux: http.NewServeMux(), log: logger, md: render.New(),
+		keepalive: 30 * time.Second,
+		hubs:      map[string]*watch.Hub{},
+		watchers:  map[string]*watch.Watcher{},
+	}
+	for _, root := range reg.List() {
+		s.watchRoot(root)
+	}
 	s.mux.HandleFunc("GET /api/roots", s.listRoots)
 	s.mux.HandleFunc("POST /api/roots", s.addRoot)
 	s.mux.HandleFunc("GET /api/r/{slug}/raw/{path...}", s.rawFile)
 	s.mux.HandleFunc("GET /api/r/{slug}/tree", s.treeHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/note/{path...}", s.noteHandler)
+	s.mux.HandleFunc("GET /api/r/{slug}/events", s.eventsHandler)
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})
@@ -81,9 +99,110 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	case err := <-errc:
 		return err
 	case <-ctx.Done():
+		s.Close()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// Close stops every root's watcher.
+func (s *Server) Close() {
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	for slug, w := range s.watchers {
+		w.Close()
+		delete(s.watchers, slug)
+	}
+}
+
+// watchRoot starts watching root, if it is not already watched, and pumps
+// its batches into the root's hub. The directory set comes from the same
+// listing the navigator uses; without ripgrep it falls back to a walk.
+func (s *Server) watchRoot(root roots.Root) {
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	if _, ok := s.watchers[root.Slug]; ok {
+		return
+	}
+	hub, ok := s.hubs[root.Slug]
+	if !ok {
+		hub = watch.NewHub()
+		s.hubs[root.Slug] = hub
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var dirs []string
+	if files, err := tree.List(ctx, root.Path); err == nil {
+		dirs = watch.DirsOf(files)
+	} else {
+		s.log.Printf("watch %s: %v; watching every non-hidden directory", root.Slug, err)
+		dirs = watch.Walk(root.Path)
+	}
+	w, err := watch.New(root.Path, dirs, s.log.Printf)
+	if err != nil {
+		s.log.Printf("watch %s: %v; live update disabled for this root", root.Slug, err)
+		return
+	}
+	s.watchers[root.Slug] = w
+	go hub.Pump(w)
+}
+
+func (s *Server) hub(slug string) (*watch.Hub, bool) {
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	h, ok := s.hubs[slug]
+	return h, ok
+}
+
+// eventsHandler streams a root's change batches as Server-Sent Events.
+func (s *Server) eventsHandler(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	if _, ok := s.reg.Get(slug); !ok {
+		writeError(w, http.StatusNotFound, "unknown root")
+		return
+	}
+	hub, ok := s.hub(slug)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "live update is not available for this root")
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+	ch, cancel := hub.Subscribe()
+	defer cancel()
+
+	h := w.Header()
+	h.Set("Content-Type", "text/event-stream")
+	h.Set("Cache-Control", "no-cache")
+	h.Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, ": connected\n\n")
+	flusher.Flush()
+
+	ticker := time.NewTicker(s.keepalive)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case b, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(b)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(w, "event: change\ndata: %s\n\n", data)
+			flusher.Flush()
+		case <-ticker.C:
+			fmt.Fprint(w, ": keepalive\n\n")
+			flusher.Flush()
+		}
 	}
 }
 
@@ -143,6 +262,7 @@ func (s *Server) addRoot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not register root")
 		return
 	}
+	s.watchRoot(root)
 	writeJSON(w, http.StatusOK, root)
 }
 
