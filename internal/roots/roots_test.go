@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -108,12 +109,88 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	if len(got) != 2 || got[0].Kind != KindNotes || got[1].Path != kept || got[1].Slug != "kept" {
 		t.Fatalf("after reload List() = %+v", got)
 	}
+	data, _ := os.ReadFile(statePath)
+	if strings.Contains(string(data), gone) {
+		t.Fatalf("dropped root still persisted: %s", data)
+	}
+}
+
+func TestPersistenceKeepsSlugs(t *testing.T) {
+	r, notes, statePath := newTestRegistry(t)
+	a := filepath.Join(t.TempDir(), "docs")
+	b := filepath.Join(t.TempDir(), "docs")
+	os.Mkdir(a, 0o755)
+	os.Mkdir(b, 0o755)
+	r.Add(a)
+	r.Add(b)
+	os.RemoveAll(a)
+
+	r2, err := New(notes, statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := r2.Get("docs-2")
+	if !ok || got.Path != b {
+		t.Fatalf("docs-2 after reload = %+v, %v; want %s", got, ok, b)
+	}
+	if _, ok := r2.Get("docs"); ok {
+		t.Fatal("removed root's slug must not point at another folder")
+	}
+}
+
+func TestAddDeduplicatesSymlinkAlias(t *testing.T) {
+	r, notes, _ := newTestRegistry(t)
+	alias := filepath.Join(t.TempDir(), "alias")
+	os.Symlink(notes, alias)
+	got, err := r.Add(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != KindNotes || len(r.List()) != 1 {
+		t.Fatalf("Add(alias) = %+v, roots = %+v", got, r.List())
+	}
+}
+
+func TestWithin(t *testing.T) {
+	cases := []struct {
+		root, path string
+		want       bool
+	}{
+		{"/", "/", true},
+		{"/", "/etc", true},
+		{"/a", "/a", true},
+		{"/a", "/a/b", true},
+		{"/a", "/ab", false},
+		{"/a", "/", false},
+	}
+	for _, c := range cases {
+		if got := within(c.root, c.path); got != c.want {
+			t.Errorf("within(%q, %q) = %v, want %v", c.root, c.path, got, c.want)
+		}
+	}
+}
+
+func TestFilesystemRoot(t *testing.T) {
+	r, err := New("/", filepath.Join(t.TempDir(), "s.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := r.List()[0]
+	if root.Slug != "root" {
+		t.Fatalf("slug = %q", root.Slug)
+	}
+	if got, err := root.Resolve("etc"); err != nil || got != "/etc" {
+		t.Fatalf("Resolve(etc) = %q, %v", got, err)
+	}
+	if _, err := root.Resolve("../etc"); !errors.Is(err, ErrOutside) {
+		t.Fatalf("Resolve(../etc) err = %v", err)
+	}
 }
 
 func TestNewSkipsPersistedNotesRoot(t *testing.T) {
 	notes := t.TempDir()
 	statePath := filepath.Join(t.TempDir(), "roots.json")
-	os.WriteFile(statePath, []byte(`{"recent":["`+notes+`"]}`), 0o644)
+	os.WriteFile(statePath, []byte(`{"recent":[{"slug":"x","path":"`+notes+`"}]}`), 0o644)
 	r, err := New(notes, statePath)
 	if err != nil {
 		t.Fatal(err)
