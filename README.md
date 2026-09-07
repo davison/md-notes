@@ -87,8 +87,8 @@ already runs as the user who owns the notes.
 
 ## Status
 
-Milestone one in progress: the daemon skeleton, roots, confinement, and the
-navigator are in place; rendering, live update, search, and tags follow. Progress is tracked in
+Milestone one in progress: the daemon skeleton, roots, confinement, the
+navigator, and rendering are in place; live update, search, and tags follow. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
 is run as a [CodeCrew](https://github.com/radiusred/gh-codecrew) project.
 
