@@ -44,7 +44,15 @@ type Registry struct {
 }
 
 type state struct {
-	Recent []string `json:"recent"`
+	Recent []persisted `json:"recent"`
+}
+
+// persisted is one recent root on disk. The slug is stored so that URLs
+// survive a restart; without it a later root could inherit an earlier one's
+// slug and silently point at a different folder.
+type persisted struct {
+	Slug string `json:"slug"`
+	Path string `json:"path"`
 }
 
 // New builds a registry with notesRoot as its permanent root and reloads
@@ -67,15 +75,27 @@ func New(notesRoot, statePath string) (*Registry, error) {
 		if err := json.Unmarshal(data, &st); err != nil {
 			return nil, fmt.Errorf("%s: %w", statePath, err)
 		}
+		dropped := false
 		for _, p := range st.Recent {
-			if _, ok := r.byPath(p); ok {
-				continue
-			}
-			root, err := newRoot(p, KindRecent)
+			root, err := newRoot(p.Path, KindRecent)
 			if err != nil {
+				dropped = true
 				continue
 			}
-			r.roots = append(r.roots, r.withSlug(root))
+			if _, ok := r.byPath(root); ok {
+				dropped = true
+				continue
+			}
+			root.Slug = p.Slug
+			if root.Slug == "" || r.hasSlug(root.Slug) {
+				root = r.withSlug(root)
+			}
+			r.roots = append(r.roots, root)
+		}
+		if dropped {
+			if err := r.save(); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return r, nil
@@ -134,13 +154,12 @@ func (r *Registry) hasSlug(slug string) bool {
 	return false
 }
 
-func (r *Registry) byPath(path string) (Root, bool) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return Root{}, false
-	}
+// byPath finds a registered root for the same folder as candidate, comparing
+// real paths so a symlink alias of a registered folder is not registered
+// twice.
+func (r *Registry) byPath(candidate Root) (Root, bool) {
 	for _, x := range r.roots {
-		if x.Path == abs {
+		if x.real == candidate.real {
 			return x, true
 		}
 	}
@@ -174,12 +193,12 @@ func (r *Registry) Get(slug string) (Root, bool) {
 func (r *Registry) Add(path string) (Root, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if existing, ok := r.byPath(path); ok {
-		return existing, nil
-	}
 	root, err := newRoot(path, KindRecent)
 	if err != nil {
 		return Root{}, err
+	}
+	if existing, ok := r.byPath(root); ok {
+		return existing, nil
 	}
 	root = r.withSlug(root)
 	r.roots = append(r.roots, root)
@@ -195,7 +214,7 @@ func (r *Registry) save() error {
 	var st state
 	for _, x := range r.roots {
 		if x.Kind == KindRecent {
-			st.Recent = append(st.Recent, x.Path)
+			st.Recent = append(st.Recent, persisted{Slug: x.Slug, Path: x.Path})
 		}
 	}
 	data, err := json.MarshalIndent(st, "", "  ")
@@ -248,6 +267,13 @@ func (root Root) Resolve(rel string) (string, error) {
 	return real, nil
 }
 
+// within reports whether path is root or lies beneath it. Both must be
+// clean absolute paths. The filesystem root is a special case because
+// appending a separator to it would give "//".
 func within(root, path string) bool {
-	return path == root || strings.HasPrefix(path, root+string(filepath.Separator))
+	sep := string(filepath.Separator)
+	if root == sep {
+		return strings.HasPrefix(path, sep)
+	}
+	return path == root || strings.HasPrefix(path, root+sep)
 }
