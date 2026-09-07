@@ -20,10 +20,13 @@ do a few things well and nothing else:
 
 ## Shape
 
+The design as a whole. Milestone one built the daemon and the reading half of
+the web UI; the editor, the extension and the inbox are still ahead.
+
 - **Daemon.** One static Go binary. Serves the web UI, watches one or more
   root folders, renders markdown server-side, shells out to ripgrep for
-  search and tags, and pushes changes over a WebSocket. Binds to localhost
-  only.
+  search and tags, and pushes changes over Server-Sent Events. Binds to
+  localhost only.
 - **Web UI.** TypeScript. Navigator, rendered note, search panel, and a
   CodeMirror 6 editor with vim keybindings behind a single toggle.
 - **Browser extension.** Chromium Manifest V3. Clips a readable page or a
@@ -38,8 +41,8 @@ do a few things well and nothing else:
 ## Building
 
 Requires Go and pnpm to build, and ripgrep (`rg`) on PATH at runtime: the
-navigator is built from its file listing, which is also what keeps
-gitignored and hidden files out of the tree.
+navigator, search and the tag panel all run through it, which is what keeps
+gitignored and hidden files out of the tree and out of results.
 
 ```
 make build      # builds the UI and the static ./mdn binary
@@ -87,12 +90,18 @@ opens the note scrolled to the match. Tags come from a frontmatter list
 lists them with counts and filters the navigator to the notes carrying one.
 
 Changes on disk show up in the browser without a refresh: the daemon watches
-every registered root and streams change events to the page. Only
-directories the navigator would show are watched, so ignored and hidden
-trees cost nothing. A very large root can still exceed the kernel's
-inotify watch limit; the daemon logs one line saying how many directories
-it could not watch and serves the root without live update for those. If
-that happens, raise the limit (this needs root):
+every registered root and streams change events to the page. The watched
+directories are the ones holding a file ripgrep lists, their ancestors, and
+any subtree below those that holds no files at all, so gitignored and hidden
+trees are not watched. The corollary is that a directory whose only files are
+hidden or ignored is not watched either, and a note created in one is seen
+when that directory next appears in a change batch or when the daemon
+restarts. In a folder with no ignore rules the watch set is much larger than
+the navigator's tree, so size the kernel's inotify limit against the number of
+directories in the root rather than the number the navigator shows. When the
+limit is reached the daemon logs one line saying how many directories it could
+not watch and serves the root without live update for those. To raise the
+limit (this needs root):
 
 ```
 sudo sysctl fs.inotify.max_user_watches=524288
@@ -107,9 +116,13 @@ already runs as the user who owns the notes.
 
 ## Status
 
-Milestone one, the daemon and rendered viewer, is feature complete: roots,
-confinement, navigator, rendering, live update, search, and tags. The
-editor, the browser clipper, and the inbox follow in later milestones. Progress is tracked in
+Milestone one, the daemon and rendered viewer, is done: roots, confinement,
+navigator, rendering, live update, search, and tags.
+[docs/introduction.md](docs/introduction.md) describes what the daemon does
+today, and
+[docs/milestones/1-daemon-and-rendered-viewer.md](docs/milestones/1-daemon-and-rendered-viewer.md)
+records the decisions behind it. The editor, the browser clipper, and the
+inbox follow in later milestones. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
 is run as a [CodeCrew](https://github.com/radiusred/gh-codecrew) project.
 
