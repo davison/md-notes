@@ -22,6 +22,8 @@ func TestExtract(t *testing.T) {
 		{"url fragment is not a tag", "https://x.example/page#section text\n", nil},
 		{"link target is not a tag", "see [anchor](#anchor-link) and [x](../a.md#frag) then #real\n", []string{"real"}},
 		{"capitalised key", "---\nTags: [Up]\n---\n", []string{"up"}},
+		{"exact key wins over other spellings", "---\nTAGS: [shouty]\ntags: [exact]\n---\n", []string{"exact"}},
+		{"reference definition is not a tag", "[ref]: #ref-anchor\n[r2]: https://x#f 'title'\n#real\n", []string{"real"}},
 		{"fenced code excluded", "```\n#notatag\n```\n#real\n", []string{"real"}},
 		{"tilde fence excluded", "~~~\n#notatag\n~~~\n", nil},
 		{"inline code excluded", "use `#notatag` but #yes\n", []string{"yes"}},

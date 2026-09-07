@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 func requireRg(t *testing.T) {
@@ -182,6 +184,44 @@ func TestSearchHugeLineDoesNotBreakOthers(t *testing.T) {
 	}
 }
 
+func TestLongLinesAreWindowed(t *testing.T) {
+	requireRg(t)
+	root := t.TempDir()
+	long := strings.Repeat("a", 2000) + " needle " + strings.Repeat("b", 2000)
+	write(t, filepath.Join(root, "w.md"), strings.Repeat("c", 1000)+"\n"+long+"\n"+strings.Repeat("d", 1000)+"\n")
+	res, err := Search(context.Background(), root, "needle", nil)
+	if err != nil || len(res.Hits) != 1 {
+		t.Fatalf("hits = %v, %v", res.Hits, err)
+	}
+	h := res.Hits[0]
+	if n := utf8.RuneCountInString(h.Text); n > MaxText+2 {
+		t.Fatalf("text is %d runes, want at most %d plus marks", n, MaxText+2)
+	}
+	if !strings.HasPrefix(h.Text, "…") || !strings.HasSuffix(h.Text, "…") {
+		t.Fatalf("text = %q, want both ends marked", h.Text)
+	}
+	if len(h.Matches) != 1 || sliceUTF16(h.Text, h.Matches[0]) != "needle" {
+		t.Fatalf("matches %v do not point at the needle in %q", h.Matches, h.Text)
+	}
+	if utf8.RuneCountInString(h.Before) != MaxContext+1 || utf8.RuneCountInString(h.After) != MaxContext+1 {
+		t.Fatalf("context not clipped: %d / %d", len(h.Before), len(h.After))
+	}
+}
+
+func TestWindowKeepsOffsetsWithNonASCII(t *testing.T) {
+	text := strings.Repeat("é", 400) + "needle" + strings.Repeat("😀", 400)
+	h := window(Hit{Text: text, Matches: [][2]int{{400, 406}}})
+	if got := sliceUTF16(h.Text, h.Matches[0]); got != "needle" {
+		t.Fatalf("window offsets point at %q", got)
+	}
+}
+
+// sliceUTF16 slices s by UTF-16 unit offsets, as JavaScript would.
+func sliceUTF16(s string, m [2]int) string {
+	u := utf16.Encode([]rune(s))
+	return string(utf16.Decode(u[m[0]:m[1]]))
+}
+
 func TestSearchNonUTF8Line(t *testing.T) {
 	requireRg(t)
 	root := t.TempDir()
@@ -193,7 +233,7 @@ func TestSearchNonUTF8Line(t *testing.T) {
 }
 
 func TestSearchBadQuery(t *testing.T) {
-	for _, q := range []string{"", "  ", "a\nb", "a\x00b", "\t"} {
+	for _, q := range []string{"", "  ", "a\nb", "a\x00b", "\t", "\x1b[0m"} {
 		if _, err := Search(context.Background(), t.TempDir(), q, nil); !errors.Is(err, ErrBadQuery) {
 			t.Errorf("query %q: err = %v, want ErrBadQuery", q, err)
 		}

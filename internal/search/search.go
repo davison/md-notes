@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"path"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/davison/md-notes/internal/tree"
 )
@@ -33,6 +35,11 @@ type Hit struct {
 const (
 	MaxHits        = 200
 	MaxHitsPerFile = 20
+	// MaxText bounds a hit's line, as a window around its first match, and
+	// MaxContext bounds each context line, both in runes. A very long line
+	// would otherwise make one keystroke a huge response.
+	MaxText    = 300
+	MaxContext = 200
 )
 
 // ErrNoRipgrep is returned when the rg binary cannot be found.
@@ -79,7 +86,7 @@ func Search(ctx context.Context, root, query string, warnf func(string, ...any))
 	if warnf == nil {
 		warnf = func(string, ...any) {}
 	}
-	if strings.TrimSpace(query) == "" || strings.ContainsFunc(query, func(r rune) bool { return r < ' ' || r == 0x7f }) {
+	if strings.TrimSpace(query) == "" || strings.ContainsFunc(query, func(r rune) bool { return (r < ' ' && r != '\t') || r == 0x7f }) {
 		return Result{}, ErrBadQuery
 	}
 	rg, err := lookPath("rg")
@@ -118,9 +125,9 @@ func Search(ctx context.Context, root, query string, warnf func(string, ...any))
 			return
 		}
 		for _, h := range fl.pending {
-			h.Before = fl.text[h.Line-1]
-			h.After = fl.text[h.Line+1]
-			hits = append(hits, h)
+			h.Before = clip(fl.text[h.Line-1], MaxContext)
+			h.After = clip(fl.text[h.Line+1], MaxContext)
+			hits = append(hits, window(h))
 		}
 		delete(files, p)
 	}
@@ -233,4 +240,52 @@ func utf16Offset(s string, byteOff int) int {
 		}
 	}
 	return n
+}
+
+// clip shortens s to at most n runes, marking the cut.
+func clip(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:n]) + "…"
+}
+
+// window shortens a long hit line to MaxText runes around its first match,
+// adjusting match offsets and dropping matches that fall outside.
+func window(h Hit) Hit {
+	if utf8.RuneCountInString(h.Text) <= MaxText {
+		return h
+	}
+	units := utf16.Encode([]rune(h.Text))
+	start := 0
+	if len(h.Matches) > 0 {
+		start = h.Matches[0][0] - MaxText/3
+	}
+	if start < 0 {
+		start = 0
+	}
+	end := start + MaxText
+	if end > len(units) {
+		end = len(units)
+		start = max(0, end-MaxText)
+	}
+	var out Hit
+	out.Path, out.Line = h.Path, h.Line
+	prefix, suffix := "", ""
+	if start > 0 {
+		prefix = "…"
+	}
+	if end < len(units) {
+		suffix = "…"
+	}
+	out.Text = prefix + string(utf16.Decode(units[start:end])) + suffix
+	shift := len(utf16.Encode([]rune(prefix))) - start
+	for _, m := range h.Matches {
+		if m[0] >= start && m[1] <= end {
+			out.Matches = append(out.Matches, [2]int{m[0] + shift, m[1] + shift})
+		}
+	}
+	out.Before, out.After = h.Before, h.After
+	return out
 }

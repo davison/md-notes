@@ -69,7 +69,8 @@ export function NoteView({ slug, path, version = 0, line = null }: NoteProps) {
         const t = setTimeout(() => flash.classList.remove("flash"), 1500);
         return () => clearTimeout(t);
       }
-      return;
+      // No block at or before that line (a hit in the frontmatter, say):
+      // fall through to the usual top-of-note behaviour for a fresh open.
     }
     if (!fresh) return;
     const pane = body.current?.closest("main");
