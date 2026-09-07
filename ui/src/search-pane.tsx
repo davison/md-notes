@@ -24,6 +24,7 @@ export function SearchPane({ slug, refresh = 0, keep = {} }: Props) {
     abort.current?.abort();
     if (query.trim() === "") {
       setHits(null);
+      setTruncated(false);
       setError(null);
       return;
     }
@@ -69,7 +70,7 @@ export function SearchPane({ slug, refresh = 0, keep = {} }: Props) {
       />
       {error && <p class="error">{error}</p>}
       {hits && hits.length === 0 && <p class="muted">No matches.</p>}
-      {truncated && <p class="muted">Showing the first {hits!.length} matches.</p>}
+      {hits && truncated && <p class="muted">Showing the first {hits.length} matches.</p>}
       {groups.map((g) => (
         <div class="hit-group" key={g.path}>
           <div class="hit-path">{g.path}</div>
