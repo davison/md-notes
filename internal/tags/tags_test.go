@@ -20,6 +20,8 @@ func TestExtract(t *testing.T) {
 		{"heading is not a tag", "# Heading\n## Sub\n", nil},
 		{"numeric is not a tag", "see #123 and #2024\n", nil},
 		{"url fragment is not a tag", "https://x.example/page#section text\n", nil},
+		{"link target is not a tag", "see [anchor](#anchor-link) and [x](../a.md#frag) then #real\n", []string{"real"}},
+		{"capitalised key", "---\nTags: [Up]\n---\n", []string{"up"}},
 		{"fenced code excluded", "```\n#notatag\n```\n#real\n", []string{"real"}},
 		{"tilde fence excluded", "~~~\n#notatag\n~~~\n", nil},
 		{"inline code excluded", "use `#notatag` but #yes\n", []string{"yes"}},

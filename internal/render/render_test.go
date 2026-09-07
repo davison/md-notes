@@ -265,6 +265,20 @@ continues.
 		`<li data-line="11">`,
 		`<blockquote data-line="13">`,
 		`<table data-line="15">`,
+		`<div class="line-anchor" data-line="19"></div>`,
+	)
+}
+
+func TestLineAnchorsForAttributelessBlocks(t *testing.T) {
+	n := render(t, "x.md", "para\n\n---\n\n<div>raw</div>\n\n    indented code\n\n```\nfence\n```\n")
+	// A rule has no source segment; its anchor sits just after the block
+	// before it, which is close enough for scrolling.
+	wantContains(t, n.HTML,
+		`<p data-line="1">`,
+		`<div class="line-anchor" data-line="2"></div>`,
+		`<div class="line-anchor" data-line="5"></div>`,
+		`<div class="line-anchor" data-line="7"></div>`,
+		`<div class="line-anchor" data-line="9"></div>`,
 	)
 }
 
