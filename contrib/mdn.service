@@ -9,12 +9,12 @@
 
 [Unit]
 Description=mdn markdown notes daemon
-After=network.target
 
 [Service]
 ExecStart=%h/.local/bin/mdn serve
 Restart=on-failure
 RestartSec=2
+NoNewPrivileges=yes
 
 [Install]
 WantedBy=default.target

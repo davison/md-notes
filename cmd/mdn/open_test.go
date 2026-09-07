@@ -47,8 +47,9 @@ func TestOpenRegistersAndOpensBrowser(t *testing.T) {
 	os.Mkdir(dir, 0o755)
 
 	var opened string
+	orig := openBrowser
 	openBrowser = func(url string) error { opened = url; return nil }
-	t.Cleanup(func() { openBrowser = nil })
+	t.Cleanup(func() { openBrowser = orig })
 
 	var out, errb bytes.Buffer
 	code := run([]string{"open", "--config", "/nonexistent", "--port", strconv.Itoa(port), dir}, &out, &errb)
@@ -77,7 +78,9 @@ func TestOpenRegistersAndOpensBrowser(t *testing.T) {
 
 func TestOpenNoBrowserPrintsURL(t *testing.T) {
 	port := startDaemon(t)
+	orig := openBrowser
 	openBrowser = func(string) error { t.Fatal("browser must not open"); return nil }
+	t.Cleanup(func() { openBrowser = orig })
 	var out, errb bytes.Buffer
 	code := run([]string{"open", "--config", "/nonexistent", "--port", strconv.Itoa(port), "--no-browser", t.TempDir()}, &out, &errb)
 	if code != 0 || !strings.HasPrefix(out.String(), "http://localhost:") {
@@ -89,7 +92,9 @@ func TestOpenDaemonDown(t *testing.T) {
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
+	orig := openBrowser
 	openBrowser = func(string) error { t.Fatal("browser must not open"); return nil }
+	t.Cleanup(func() { openBrowser = orig })
 	var out, errb bytes.Buffer
 	code := run([]string{"open", "--config", "/nonexistent", "--port", strconv.Itoa(port), t.TempDir()}, &out, &errb)
 	if code != 1 {
