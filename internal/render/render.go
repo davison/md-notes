@@ -264,6 +264,9 @@ func newPolicy() *bluemonday.Policy {
 	p.AllowAttrs("align").Matching(regexp.MustCompile(`^(left|center|right)$`)).OnElements("td", "th")
 	p.AllowElements("kbd", "samp", "mark")
 	p.AllowRelativeURLs(true)
+	// nofollow is only meaningful on links leaving the app.
+	p.RequireNoFollowOnLinks(false)
+	p.RequireNoFollowOnFullyQualifiedLinks(true)
 	p.AddTargetBlankToFullyQualifiedLinks(true)
 	return p
 }
