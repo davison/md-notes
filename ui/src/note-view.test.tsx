@@ -80,6 +80,26 @@ describe("NoteView", () => {
     expect(screen.getByText("two")).toBeTruthy();
   });
 
+  it("recovers from an error when a different note is opened", async () => {
+    mockNote(null, 404);
+    const { rerender } = render(<NoteView slug="n" path="gone.md" version={3} />);
+    await waitFor(() => expect(screen.getByText("not found")).toBeTruthy());
+    mockNote({ path: "other.md", title: "Other", html: "<p>fine</p>" });
+    rerender(<NoteView slug="n" path="other.md" version={3} />);
+    await waitFor(() => expect(screen.getByText("Other")).toBeTruthy());
+    expect(screen.queryByText("not found")).toBeNull();
+  });
+
+  it("clears an error when the same note reappears", async () => {
+    mockNote(null, 404);
+    const { rerender } = render(<NoteView slug="n" path="x.md" version={1} />);
+    await waitFor(() => expect(screen.getByText("not found")).toBeTruthy());
+    mockNote({ path: "x.md", title: "Back", html: "<p>again</p>" });
+    rerender(<NoteView slug="n" path="x.md" version={2} />);
+    await waitFor(() => expect(screen.getByText("Back")).toBeTruthy());
+    expect(screen.queryByText("not found")).toBeNull();
+  });
+
   it("surfaces the daemon's error", async () => {
     mockNote(null, 404);
     render(<NoteView slug="n" path="missing.md" />);

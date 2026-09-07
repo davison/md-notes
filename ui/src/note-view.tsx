@@ -11,17 +11,22 @@ export function NoteView({ slug, path, version = 0 }: { slug: string; path: stri
   const [error, setError] = useState<string | null>(null);
   const body = useRef<HTMLDivElement>(null);
 
-  // A version bump refetches in place, keeping the old body on screen
-  // until the new one arrives so a live update does not flash.
+  // Opening a different note clears the pane; a version bump for the same
+  // note refetches in place so a live update does not flash.
+  const shown = useRef("");
   useEffect(() => {
     let cancelled = false;
-    if (version === 0) {
+    const key = slug + "\0" + path;
+    if (shown.current !== key) {
+      shown.current = key;
       setNote(null);
       setError(null);
     }
     fetchNote(slug, path).then(
       (n) => {
-        if (!cancelled) setNote(n);
+        if (cancelled) return;
+        setNote(n);
+        setError(null);
       },
       (e: Error) => {
         if (!cancelled) setError(e.message);

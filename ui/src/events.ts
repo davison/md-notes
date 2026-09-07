@@ -39,3 +39,19 @@ export function affects(paths: string[], path: string): boolean {
   if (paths.length === 0) return true;
   return paths.some((p) => p === path || path.startsWith(p + "/"));
 }
+
+/**
+ * Whether a change batch can alter the navigator. A batch made only of
+ * files with non-markdown extensions cannot; anything else, including a
+ * deleted path whose kind is unknown, can.
+ */
+export function affectsTree(paths: string[]): boolean {
+  if (paths.length === 0) return true;
+  return paths.some((p) => {
+    const name = p.slice(p.lastIndexOf("/") + 1);
+    const dot = name.lastIndexOf(".");
+    if (dot <= 0) return true;
+    const ext = name.slice(dot + 1).toLowerCase();
+    return ext === "md" || ext === "markdown";
+  });
+}

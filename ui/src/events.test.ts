@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, cleanup } from "@testing-library/preact";
-import { affects, useEvents } from "./events";
+import { affects, affectsTree, useEvents } from "./events";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -40,6 +40,17 @@ describe("affects", () => {
     expect(affects(["a/b.md"], "a/b.markdown")).toBe(false);
     expect(affects(["ab"], "a/b.md")).toBe(false);
     expect(affects([], "a/b.md")).toBe(true);
+  });
+});
+
+describe("affectsTree", () => {
+  it("skips batches made only of non-markdown files", () => {
+    expect(affectsTree(["img/pic.png", "data.json"])).toBe(false);
+    expect(affectsTree(["img/pic.png", "note.md"])).toBe(true);
+    expect(affectsTree(["docs"])).toBe(true);
+    expect(affectsTree(["a/README.MD"])).toBe(true);
+    expect(affectsTree([".hidden"])).toBe(true);
+    expect(affectsTree([])).toBe(true);
   });
 });
 

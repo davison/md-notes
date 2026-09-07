@@ -64,5 +64,11 @@ describe("RootView live update", () => {
 
     FakeEventSource.last!.emit([]);
     await waitFor(() => expect(noteCalls()).toBe(3));
+    expect(treeCalls()).toBe(4);
+
+    FakeEventSource.last!.emit(["img/pic.png"]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(treeCalls()).toBe(4);
+    expect(noteCalls()).toBe(3);
   });
 });
