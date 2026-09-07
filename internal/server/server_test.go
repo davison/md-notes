@@ -25,6 +25,7 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	notes := filepath.Join(base, "notes")
 	os.MkdirAll(filepath.Join(notes, "sub"), 0o755)
 	os.WriteFile(filepath.Join(notes, "hello.md"), []byte("# hi\n"), 0o644)
+	os.WriteFile(filepath.Join(notes, "sub", "linked.md"), []byte("---\ntitle: Linked\n---\n[back](../hello.md) ![p](pic.png)\n"), 0o644)
 	os.WriteFile(filepath.Join(notes, "sub", "pic.png"), []byte("PNG"), 0o644)
 	os.WriteFile(filepath.Join(base, "secret"), []byte("s"), 0o644)
 	os.Symlink(filepath.Join(base, "secret"), filepath.Join(notes, "escape"))
@@ -223,15 +224,54 @@ func TestTree(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&root); err != nil {
 		t.Fatal(err)
 	}
-	// The fixture has hello.md at the top and sub/pic.png, which is not
-	// markdown, so sub must not appear.
-	if !root.Dir || len(root.Children) != 1 || root.Children[0].Path != "hello.md" || root.Children[0].Dir {
+	// The fixture has hello.md at the top, sub/linked.md, and sub/pic.png,
+	// which is not markdown and must not appear.
+	if !root.Dir || len(root.Children) != 2 || root.Children[0].Path != "sub" || root.Children[1].Path != "hello.md" {
 		t.Fatalf("tree = %+v", root)
+	}
+	sub := root.Children[0]
+	if len(sub.Children) != 1 || sub.Children[0].Path != "sub/linked.md" {
+		t.Fatalf("sub = %+v", sub)
 	}
 
 	resp = do(t, ts, "GET", "/api/r/nope/tree", "", nil)
 	if resp.StatusCode != 404 {
 		t.Errorf("unknown root: status %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestNote(t *testing.T) {
+	ts, _ := newTestServer(t)
+	resp := do(t, ts, "GET", "/api/r/notes/note/sub/linked.md", "", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d: %s", resp.StatusCode, readAll(t, resp.Body))
+	}
+	var note struct {
+		Path, Title, HTML string
+		Frontmatter       map[string]any
+	}
+	json.NewDecoder(resp.Body).Decode(&note)
+	if note.Path != "sub/linked.md" || note.Title != "Linked" || note.Frontmatter["title"] != "Linked" {
+		t.Errorf("note = %+v", note)
+	}
+	for _, want := range []string{`href="/r/notes/hello.md"`, `src="/api/r/notes/raw/sub/pic.png"`} {
+		if !strings.Contains(note.HTML, want) {
+			t.Errorf("html lacks %s: %s", want, note.HTML)
+		}
+	}
+
+	for path, want := range map[string]int{
+		"/api/r/notes/note/hello.md":       200,
+		"/api/r/notes/note/sub/pic.png":    404,
+		"/api/r/notes/note/missing.md":     404,
+		"/api/r/nope/note/hello.md":        404,
+		"/api/r/notes/note/escape":         404,
+		"/api/r/notes/note/..%2Fsecret.md": 403,
+	} {
+		resp := do(t, ts, "GET", path, "", nil)
+		if resp.StatusCode != want {
+			t.Errorf("%s: status %d, want %d", path, resp.StatusCode, want)
+		}
 	}
 }
 
