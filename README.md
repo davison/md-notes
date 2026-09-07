@@ -35,9 +35,52 @@ do a few things well and nothing else:
   phone become proper clips when the folder next syncs to a machine running
   the daemon.
 
+## Building
+
+Requires Go, pnpm, and ripgrep on the machine that runs the daemon.
+
+```
+make build      # builds the UI and the static ./mdn binary
+make check      # vet, typecheck, tests, build
+```
+
+## Running
+
+Create `~/.config/mdn/config.yml`:
+
+```yaml
+notes_root: /home/you/notes
+port: 7337
+```
+
+Then run the daemon and open the browser:
+
+```
+mdn serve
+xdg-open http://localhost:7337/
+```
+
+`mdn serve --root DIR --port N` overrides the file. To run it under systemd
+as a user service, see [contrib/mdn.service](contrib/mdn.service).
+
+To browse the markdown in any other folder, such as a code project:
+
+```
+mdn open ~/projects/some-repo
+```
+
+That registers the folder with the running daemon, remembers it under
+"Recent" on the home page, and opens the browser at it. `--no-browser`
+prints the URL instead. The daemon must already be running.
+
+The daemon listens on the loopback address only, refuses requests whose
+Host or Origin is not its own, and never serves a path that resolves
+outside a registered root, symlinks included.
+
 ## Status
 
-Design stage. Nothing runnable yet. Progress is tracked in
+Milestone one in progress: the daemon skeleton, roots, and confinement are
+in place; rendering, live update, search, and tags follow. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
 is run as a [CodeCrew](https://github.com/radiusred/gh-codecrew) project.
 
