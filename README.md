@@ -83,9 +83,14 @@ Changes on disk show up in the browser without a refresh: the daemon watches
 every registered root and streams change events to the page. Only
 directories the navigator would show are watched, so ignored and hidden
 trees cost nothing. A very large root can still exceed the kernel's
-inotify watch limit; the daemon logs that and serves the root without live
-update for the unwatched parts. Raise the limit with
-`sysctl fs.inotify.max_user_watches=524288` if it happens.
+inotify watch limit; the daemon logs one line saying how many directories
+it could not watch and serves the root without live update for those. If
+that happens, raise the limit (this needs root):
+
+```
+sudo sysctl fs.inotify.max_user_watches=524288
+echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-mdn.conf
+```
 
 The daemon listens on the loopback address only, refuses requests whose
 Host or Origin is not its own, and never serves a path that resolves
