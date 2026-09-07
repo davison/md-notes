@@ -32,7 +32,7 @@ export function NoteView({ slug, path }: { slug: string; path: string }) {
   useEffect(() => {
     if (!note) return;
     const pane = body.current?.closest("main");
-    const target = fragmentTarget(window.location.hash);
+    const target = fragmentTarget(body.current, window.location.hash);
     if (target) target.scrollIntoView();
     else if (pane) pane.scrollTop = 0;
   }, [note]);
@@ -42,7 +42,7 @@ export function NoteView({ slug, path }: { slug: string; path: string }) {
     if (!a) return;
     const href = a.getAttribute("href") ?? "";
     if (!href.startsWith("#")) return;
-    const target = fragmentTarget(href);
+    const target = fragmentTarget(body.current, href);
     if (!target) return;
     e.preventDefault();
     target.scrollIntoView();
@@ -68,15 +68,19 @@ export function NoteView({ slug, path }: { slug: string; path: string }) {
   );
 }
 
-function fragmentTarget(hash: string): Element | null {
-  if (!hash || hash.length < 2) return null;
+/**
+ * Finds the element a fragment points at, looking only inside the note so
+ * a heading cannot resolve to one of the app's own elements.
+ */
+export function fragmentTarget(scope: Element | null, hash: string): Element | null {
+  if (!scope || !hash || hash.length < 2) return null;
   let id = hash.slice(1);
   try {
     id = decodeURIComponent(id);
   } catch {
     // keep the raw id
   }
-  return document.getElementById(id);
+  return scope.querySelector(`[id="${id.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`);
 }
 
 export function formatValue(v: unknown): string {

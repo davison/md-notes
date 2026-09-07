@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
-import { NoteView, formatValue } from "./note-view";
+import { LocationProvider, Router, Route, useLocation } from "preact-iso";
+import { NoteView, formatValue, fragmentTarget } from "./note-view";
 
 function mockNote(note: unknown, status = 200) {
   vi.stubGlobal(
@@ -21,6 +22,18 @@ beforeEach(() => {
   window.location.hash = "";
 });
 afterEach(() => vi.unstubAllGlobals());
+
+describe("fragmentTarget", () => {
+  it("looks only inside the note", () => {
+    document.body.innerHTML = '<div id="app"><article><h2 id="sec">s</h2><h2 id="fn:1">f</h2></article></div>';
+    const scope = document.querySelector("article");
+    expect(fragmentTarget(scope, "#sec")?.textContent).toBe("s");
+    expect(fragmentTarget(scope, "#fn%3A1")?.textContent).toBe("f");
+    expect(fragmentTarget(scope, "#app")).toBeNull();
+    expect(fragmentTarget(scope, "#")).toBeNull();
+    document.body.innerHTML = "";
+  });
+});
 
 describe("formatValue", () => {
   it("renders scalars, arrays, and objects readably", () => {
@@ -59,6 +72,39 @@ describe("NoteView", () => {
     render(<NoteView slug="n" path="missing.md" />);
     await waitFor(() => expect(screen.getByText("not found")).toBeTruthy());
     expect(screen.getByText("missing.md")).toBeTruthy();
+  });
+
+  it("routes in-app links client-side and leaves raw links to the browser", async () => {
+    mockNote({
+      path: "x.md",
+      title: "T",
+      html: '<p><a href="/r/n/other.md">next</a> <a href="/api/r/n/raw/f.pdf" target="_blank">pdf</a></p>',
+    });
+    let seen = "";
+    function Probe() {
+      seen = useLocation().url;
+      return null;
+    }
+    history.replaceState(null, "", "/r/n/x.md");
+    render(
+      <LocationProvider>
+        <Probe />
+        <Router>
+          <Route path="/r/:slug/:note*" component={() => <NoteView slug="n" path="x.md" />} />
+          <Route default component={() => null} />
+        </Router>
+      </LocationProvider>,
+    );
+    await waitFor(() => expect(screen.getByText("next")).toBeTruthy());
+    fireEvent.click(screen.getByText("next"));
+    await waitFor(() => expect(seen).toBe("/r/n/other.md"));
+    expect(window.location.pathname).toBe("/r/n/other.md");
+
+    const pdf = screen.getByText("pdf");
+    const notPrevented = fireEvent.click(pdf);
+    expect(notPrevented).toBe(true);
+    expect(window.location.pathname).toBe("/r/n/other.md");
+    history.replaceState(null, "", "/");
   });
 
   it("scrolls to a fragment link inside the note without routing", async () => {
