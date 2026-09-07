@@ -220,21 +220,27 @@ func TestDirs(t *testing.T) {
 	root := t.TempDir()
 	write(t, filepath.Join(root, "a", "b", "note.md"), "")
 	write(t, filepath.Join(root, "images", "pic.png"), "")
-	os.MkdirAll(filepath.Join(root, "empty"), 0o755)
+	os.MkdirAll(filepath.Join(root, "empty", "nested", "deeper"), 0o755)
 	os.MkdirAll(filepath.Join(root, "a", "emptychild"), 0o755)
+	os.MkdirAll(filepath.Join(root, "onlyhidden", ".cache"), 0o755)
+	write(t, filepath.Join(root, "onlyhidden", ".cache", "x"), "")
 	os.MkdirAll(filepath.Join(root, ".git", "objects"), 0o755)
 	write(t, filepath.Join(root, ".ignore"), "vendor/\n")
 	write(t, filepath.Join(root, "vendor", "lib", "x.md"), "")
 
-	got, err := Dirs(context.Background(), root, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// vendor is ignored but is a direct child of the root, so it gets one
-	// watch; vendor/lib does not.
-	want := []string{"", "a", "a/b", "a/emptychild", "empty", "images", "vendor"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Dirs() = %v, want %v", got, want)
+	// vendor is ignored and holds files, so it is not watched. onlyhidden
+	// has nothing but a hidden cache, which the navigator would skip, so a
+	// note created there would be listed and it is watched. Empty nests
+	// are watched throughout.
+	want := []string{"", "a", "a/b", "a/emptychild", "empty", "empty/nested", "empty/nested/deeper", "images", "onlyhidden"}
+	for i := 0; i < 50; i++ {
+		got, err := Dirs(context.Background(), root, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("run %d: Dirs() = %v, want %v", i, got, want)
+		}
 	}
 }
 

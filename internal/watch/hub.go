@@ -5,19 +5,24 @@ import "sync"
 // Hub fans one root's batches out to any number of subscribers.
 type Hub struct {
 	mu   sync.Mutex
-	subs map[chan Batch]struct{}
+	subs map[chan Batch]*subscriber
+}
+
+type subscriber struct {
+	lost bool
 }
 
 // NewHub returns an empty Hub.
-func NewHub() *Hub { return &Hub{subs: map[chan Batch]struct{}{}} }
+func NewHub() *Hub { return &Hub{subs: map[chan Batch]*subscriber{}} }
 
 // Subscribe returns a channel of batches and a function that unsubscribes
 // and closes it. A subscriber that falls behind drops batches rather than
-// blocking the others.
+// blocking the others; the next batch it does receive has empty Paths so
+// it refreshes everything.
 func (h *Hub) Subscribe() (<-chan Batch, func()) {
 	ch := make(chan Batch, 8)
 	h.mu.Lock()
-	h.subs[ch] = struct{}{}
+	h.subs[ch] = &subscriber{}
 	h.mu.Unlock()
 	var once sync.Once
 	return ch, func() {
@@ -34,10 +39,16 @@ func (h *Hub) Subscribe() (<-chan Batch, func()) {
 func (h *Hub) Publish(b Batch) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for ch := range h.subs {
+	for ch, sub := range h.subs {
+		out := b
+		if sub.lost {
+			out = Batch{Paths: []string{}}
+		}
 		select {
-		case ch <- b:
+		case ch <- out:
+			sub.lost = false
 		default:
+			sub.lost = true
 		}
 	}
 }

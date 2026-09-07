@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -57,11 +58,12 @@ func List(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 	return list(ctx, root, warnf, IsMarkdown)
 }
 
-// Dirs returns the directories a watcher should cover: every directory
-// holding a file ripgrep would list, their ancestors, and their direct
-// non-hidden subdirectories, so that a directory which is empty or holds
-// only ignored files at startup still reports the first note created in
-// it. The root ("") is included.
+// Dirs returns the directories a watcher should cover, relative to root
+// and including the root itself (""): every directory holding a file
+// ripgrep would list, their ancestors, and any subtree beneath those that
+// contains no files at all, so a directory created empty (or a nest of
+// them) still reports its first note. A subtree that has files but none
+// ripgrep lists is ignored or hidden and is left unwatched.
 func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]string, error) {
 	files, err := list(ctx, root, warnf, func(string) bool { return true })
 	if err != nil {
@@ -73,14 +75,28 @@ func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 			set[d] = struct{}{}
 		}
 	}
+	listed := make([]string, 0, len(set))
 	for d := range set {
+		listed = append(listed, d)
+	}
+	sort.Strings(listed)
+	for _, d := range listed {
 		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(d)))
 		if err != nil {
 			continue
 		}
 		for _, e := range entries {
-			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
-				set[path.Join(d, e.Name())] = struct{}{}
+			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			child := path.Join(d, e.Name())
+			if _, ok := set[child]; ok {
+				continue
+			}
+			if dirs, fileless := filelessSubtree(filepath.Join(root, filepath.FromSlash(child))); fileless {
+				for _, sub := range dirs {
+					set[path.Join(child, sub)] = struct{}{}
+				}
 			}
 		}
 	}
@@ -90,6 +106,34 @@ func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// filelessSubtree walks abs and reports its non-hidden directories
+// (relative to abs, "" for abs itself) if the subtree holds no files at
+// all. It stops at the first file, so an ignored tree full of files costs
+// one directory read.
+func filelessSubtree(abs string) ([]string, bool) {
+	var dirs []string
+	fileless := true
+	filepath.WalkDir(abs, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() {
+			fileless = false
+			return fs.SkipAll
+		}
+		if p != abs && strings.HasPrefix(d.Name(), ".") {
+			return filepath.SkipDir
+		}
+		rel, _ := filepath.Rel(abs, p)
+		if rel == "." {
+			rel = ""
+		}
+		dirs = append(dirs, filepath.ToSlash(rel))
+		return nil
+	})
+	return dirs, fileless
 }
 
 func list(ctx context.Context, root string, warnf func(string, ...any), keep func(string) bool) ([]string, error) {

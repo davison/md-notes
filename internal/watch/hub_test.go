@@ -33,9 +33,9 @@ func TestHubFanOutAndUnsubscribe(t *testing.T) {
 	h.Publish(Batch{})
 }
 
-func TestHubSlowSubscriberDropsNotBlocks(t *testing.T) {
+func TestHubSlowSubscriberDropsThenRefreshes(t *testing.T) {
 	h := NewHub()
-	_, cancel := h.Subscribe()
+	ch, cancel := h.Subscribe()
 	defer cancel()
 	done := make(chan struct{})
 	go func() {
@@ -48,5 +48,18 @@ func TestHubSlowSubscriberDropsNotBlocks(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("Publish blocked on a slow subscriber")
+	}
+	// Drain what fitted in the buffer, then the next batch must be a
+	// full-refresh marker because some were lost.
+	for i := 0; i < 8; i++ {
+		<-ch
+	}
+	h.Publish(Batch{Paths: []string{"y"}})
+	if got := <-ch; len(got.Paths) != 0 {
+		t.Fatalf("after loss, got %v; want an empty full-refresh batch", got.Paths)
+	}
+	h.Publish(Batch{Paths: []string{"z"}})
+	if got := <-ch; !reflect.DeepEqual(got.Paths, []string{"z"}) {
+		t.Fatalf("after recovery, got %v", got.Paths)
 	}
 }
