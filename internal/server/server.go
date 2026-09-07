@@ -119,6 +119,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 }
 
+// setupWait bounds how long Close waits for a watcher setup in progress.
+var setupWait = 5 * time.Second
+
 // Close ends every event stream and stops every root's watcher. Safe to
 // call more than once.
 func (s *Server) Close() {
@@ -136,7 +139,7 @@ func (s *Server) Close() {
 	}
 	s.wmu.Unlock()
 	// A setup stuck on a slow filesystem must not hold shutdown for long.
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(setupWait)
 	for _, ch := range starting {
 		select {
 		case <-ch:
@@ -379,26 +382,22 @@ func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query().Get("q")
-	if strings.TrimSpace(q) == "" {
-		writeError(w, http.StatusBadRequest, "q is required")
-		return
-	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	hits, err := search.Search(ctx, root.Path, q, s.log.Printf)
-	if err != nil {
+	res, err := search.Search(ctx, root.Path, q, s.log.Printf)
+	switch {
+	case errors.Is(err, search.ErrBadQuery):
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	case errors.Is(err, search.ErrNoRipgrep):
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	case err != nil:
 		s.log.Printf("search %s %q: %v", root.Slug, q, err)
-		if errors.Is(err, search.ErrNoRipgrep) {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
 		writeError(w, http.StatusInternalServerError, "search failed")
 		return
 	}
-	if hits == nil {
-		hits = []search.Hit{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"hits": hits, "truncated": len(hits) >= search.MaxHits})
+	writeJSON(w, http.StatusOK, res)
 }
 
 // tagsHandler lists a root's tags with counts and the notes carrying them.

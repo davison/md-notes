@@ -434,10 +434,7 @@ func TestSearch(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("status %d: %s", resp.StatusCode, readAll(t, resp.Body))
 	}
-	var body struct {
-		Hits      []search.Hit
-		Truncated bool
-	}
+	var body search.Result
 	json.NewDecoder(resp.Body).Decode(&body)
 	if len(body.Hits) != 1 || body.Hits[0].Path != "hello.md" || body.Hits[0].Line != 1 || body.Truncated {
 		t.Fatalf("hits = %+v", body)
@@ -445,6 +442,8 @@ func TestSearch(t *testing.T) {
 	for path, want := range map[string]int{
 		"/api/r/notes/search":            400,
 		"/api/r/notes/search?q=%20":      400,
+		"/api/r/notes/search?q=a%0Ab":    400,
+		"/api/r/notes/search?q=a%00b":    400,
 		"/api/r/nope/search?q=x":         404,
 		"/api/r/notes/search?q=zzz-none": 200,
 	} {
@@ -475,6 +474,22 @@ func TestTags(t *testing.T) {
 	}
 	if resp := do(t, ts, "GET", "/api/r/nope/tags", "", nil); resp.StatusCode != 404 {
 		t.Errorf("unknown root: %d", resp.StatusCode)
+	}
+}
+
+func TestCloseBoundsWaitForStuckSetup(t *testing.T) {
+	ts, _ := newTestServer(t)
+	s := serverOf(t, ts)
+	orig := setupWait
+	setupWait = 50 * time.Millisecond
+	t.Cleanup(func() { setupWait = orig })
+	s.wmu.Lock()
+	s.starting["stuck"] = make(chan struct{}) // never closed
+	s.wmu.Unlock()
+	start := time.Now()
+	s.Close()
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("Close waited %v for a stuck setup", d)
 	}
 }
 
