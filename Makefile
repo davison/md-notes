@@ -13,6 +13,7 @@ build: ui
 ui:
 	pnpm --dir ui install --frozen-lockfile
 	pnpm --dir ui build
+	touch ui/dist/.gitkeep
 
 ## test: run Go tests
 test:

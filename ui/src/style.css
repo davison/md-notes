@@ -1,0 +1,150 @@
+:root {
+  --bg: #fbfbfa;
+  --fg: #1f1f1f;
+  --muted: #6b6b6b;
+  --line: #e2e2df;
+  --accent: #2a6db0;
+  --pane: #ffffff;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b1b;
+    --fg: #e6e6e3;
+    --muted: #9a9a96;
+    --line: #333331;
+    --accent: #7fb0e6;
+    --pane: #202020;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code {
+  font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.page {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: #b3261e;
+}
+
+.roots {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.roots li {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.path {
+  color: var(--muted);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell {
+  display: grid;
+  height: 100vh;
+  grid-template-columns: 16rem minmax(0, 1fr) 18rem;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "top top top"
+    "nav note side";
+}
+
+.topbar {
+  grid-area: top;
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--pane);
+}
+
+.brand {
+  font-weight: 600;
+}
+
+.root-name {
+  font-weight: 500;
+}
+
+.nav {
+  grid-area: nav;
+  border-right: 1px solid var(--line);
+  overflow: auto;
+  padding: 0.75rem;
+}
+
+.note {
+  grid-area: note;
+  overflow: auto;
+  padding: 1.5rem 2rem;
+  background: var(--pane);
+}
+
+.side {
+  grid-area: side;
+  border-left: 1px solid var(--line);
+  overflow: auto;
+  padding: 0.75rem;
+}
+
+@media (max-width: 60rem) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "top"
+      "nav"
+      "note"
+      "side";
+  }
+  .nav,
+  .side {
+    border: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}

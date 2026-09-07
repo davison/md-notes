@@ -44,11 +44,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-func runServe(args []string, stdout, stderr io.Writer) int {
-	fmt.Fprintln(stderr, "mdn serve: not implemented")
-	return 1
-}
-
 func runOpen(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stderr, "mdn open: not implemented")
 	return 1
