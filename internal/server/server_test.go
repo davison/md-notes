@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"github.com/davison/md-notes/internal/roots"
+	"github.com/davison/md-notes/internal/tree"
 )
 
 const port = 7337
@@ -205,6 +207,31 @@ func TestRawFileHeadersSandboxContent(t *testing.T) {
 	}
 	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
 		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+}
+
+func TestTree(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed; CI installs it")
+	}
+	ts, _ := newTestServer(t)
+	resp := do(t, ts, "GET", "/api/r/notes/tree", "", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d: %s", resp.StatusCode, readAll(t, resp.Body))
+	}
+	var root tree.Node
+	if err := json.NewDecoder(resp.Body).Decode(&root); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture has hello.md at the top and sub/pic.png, which is not
+	// markdown, so sub must not appear.
+	if !root.Dir || len(root.Children) != 1 || root.Children[0].Path != "hello.md" || root.Children[0].Dir {
+		t.Fatalf("tree = %+v", root)
+	}
+
+	resp = do(t, ts, "GET", "/api/r/nope/tree", "", nil)
+	if resp.StatusCode != 404 {
+		t.Errorf("unknown root: status %d, want 404", resp.StatusCode)
 	}
 }
 
