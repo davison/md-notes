@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listRoots } from "./api";
+import { fetchRaw, listRoots } from "./api";
 
 function mockFetch(status: number, body: unknown) {
   const res = {
@@ -39,5 +39,12 @@ describe("listRoots", () => {
       ),
     );
     await expect(listRoots()).rejects.toThrow("502 Bad Gateway");
+  });
+});
+
+describe("fetchRaw", () => {
+  it("surfaces the daemon's error message", async () => {
+    mockFetch(403, { error: "path is outside the root" });
+    await expect(fetchRaw("notes", "x.md")).rejects.toThrow("path is outside the root");
   });
 });

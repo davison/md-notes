@@ -6,18 +6,21 @@ export interface Root {
   kind: RootKind;
 }
 
+/** Builds an Error from a failed response, preferring the daemon's message. */
+async function errorFrom(res: Response): Promise<Error> {
+  let message = `${res.status} ${res.statusText}`;
+  try {
+    const body = (await res.json()) as { error?: string };
+    if (body.error) message = body.error;
+  } catch {
+    // not JSON; keep the status text
+  }
+  return new Error(message);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
-  if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
-    } catch {
-      // not JSON; keep the status text
-    }
-    throw new Error(message);
-  }
+  if (!res.ok) throw await errorFrom(res);
   return (await res.json()) as T;
 }
 
@@ -54,6 +57,6 @@ export function encodePath(path: string): string {
 
 export async function fetchRaw(slug: string, path: string): Promise<string> {
   const res = await fetch(rawURL(slug, path));
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw await errorFrom(res);
   return res.text();
 }
