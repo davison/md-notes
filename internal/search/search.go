@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"path"
 	"strings"
@@ -47,7 +48,8 @@ type rgLine struct {
 			Text string `json:"text"`
 		} `json:"path"`
 		Lines struct {
-			Text string `json:"text"`
+			Text  string `json:"text"`
+			Bytes []byte `json:"bytes"` // base64 in the stream; set for non-UTF-8 lines
 		} `json:"lines"`
 		LineNumber int `json:"line_number"`
 		Submatches []struct {
@@ -57,25 +59,37 @@ type rgLine struct {
 	} `json:"data"`
 }
 
+// ErrBadQuery is returned for a query that cannot be searched for: empty,
+// or containing control characters.
+var ErrBadQuery = errors.New("query must be non-empty text without control characters")
+
+// Result is what a search returns.
+type Result struct {
+	Hits []Hit `json:"hits"`
+	// Truncated reports that more hits existed than MaxHits.
+	Truncated bool `json:"truncated"`
+}
+
 // Search returns hits for query under root in path order, capped at
 // MaxHits overall and MaxHitsPerFile per file. ripgrep's ignore rules
-// apply; the markdown type filter is a type, not an include glob, so it
-// does not override them.
-func Search(ctx context.Context, root, query string, warnf func(string, ...any)) ([]Hit, error) {
+// apply: the markdown type filter honours them, unlike an include glob.
+// The type filter does re-include hidden files, so those are excluded
+// again with a glob, matching the navigator.
+func Search(ctx context.Context, root, query string, warnf func(string, ...any)) (Result, error) {
 	if warnf == nil {
 		warnf = func(string, ...any) {}
 	}
-	if strings.TrimSpace(query) == "" {
-		return nil, errors.New("empty query")
+	if strings.TrimSpace(query) == "" || strings.ContainsFunc(query, func(r rune) bool { return r < ' ' || r == 0x7f }) {
+		return Result{}, ErrBadQuery
 	}
 	rg, err := lookPath("rg")
 	if err != nil {
-		return nil, ErrNoRipgrep
+		return Result{}, ErrNoRipgrep
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, rg,
-		"--json", "--fixed-strings", "--ignore-case", "--type", "md",
+		"--json", "--fixed-strings", "--ignore-case", "--type", "md", "--glob", "!.*",
 		"--context", "1", "--max-count", fmt.Sprint(MaxHitsPerFile),
 		"--sort", "path", "-e", query, ".")
 	cmd.Dir = root
@@ -83,10 +97,10 @@ func Search(ctx context.Context, root, query string, warnf func(string, ...any))
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("rg: %w", err)
+		return Result{}, fmt.Errorf("rg: %w", err)
 	}
 
 	var hits []Hit
@@ -95,68 +109,78 @@ func Search(ctx context.Context, root, query string, warnf func(string, ...any))
 	type fileLines struct {
 		text    map[int]string
 		matches int
+		pending []Hit // hits whose After may still arrive
 	}
 	files := map[string]*fileLines{}
-	var pending []Hit // hits whose After may still arrive
 	flushFile := func(p string) {
 		fl := files[p]
 		if fl == nil {
 			return
 		}
-		for i := range pending {
-			if pending[i].Path != p {
-				continue
-			}
-			pending[i].Before = fl.text[pending[i].Line-1]
-			pending[i].After = fl.text[pending[i].Line+1]
-			hits = append(hits, pending[i])
+		for _, h := range fl.pending {
+			h.Before = fl.text[h.Line-1]
+			h.After = fl.text[h.Line+1]
+			hits = append(hits, h)
 		}
-		pending = pending[:0]
 		delete(files, p)
 	}
 
-	sc := bufio.NewScanner(stdout)
-	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	// Lines are read with an unbounded reader: a match line can be as long
+	// as any line in a note, and the stream is JSON per line.
+	rd := bufio.NewReaderSize(stdout, 64*1024)
 	full := false
-	for sc.Scan() {
-		var l rgLine
-		if err := json.Unmarshal(sc.Bytes(), &l); err != nil {
-			continue
-		}
-		p := path.Clean(strings.TrimPrefix(l.Data.Path.Text, "./"))
-		switch l.Type {
-		case "begin":
-			if !tree.IsMarkdown(p) {
-				continue
-			}
-			files[p] = &fileLines{text: map[int]string{}}
-		case "match", "context":
-			fl := files[p]
-			if fl == nil {
-				continue
-			}
-			text := strings.TrimRight(l.Data.Lines.Text, "\r\n")
-			fl.text[l.Data.LineNumber] = text
-			// rg emits a trailing context line that also matches as a match,
-			// so the per-file cap is enforced here as well.
-			if l.Type == "match" && fl.matches < MaxHitsPerFile {
-				fl.matches++
-				h := Hit{Path: p, Line: l.Data.LineNumber, Text: text}
-				for _, sm := range l.Data.Submatches {
-					h.Matches = append(h.Matches, [2]int{utf16Offset(text, sm.Start), utf16Offset(text, sm.End)})
+	var readErr error
+	for {
+		raw, err := rd.ReadBytes('\n')
+		if len(raw) > 0 {
+			var l rgLine
+			if json.Unmarshal(raw, &l) == nil {
+				p := path.Clean(strings.TrimPrefix(l.Data.Path.Text, "./"))
+				switch l.Type {
+				case "begin":
+					if tree.IsMarkdown(p) {
+						files[p] = &fileLines{text: map[int]string{}}
+					}
+				case "match", "context":
+					fl := files[p]
+					if fl == nil {
+						break
+					}
+					text := l.Data.Lines.Text
+					if text == "" && len(l.Data.Lines.Bytes) > 0 {
+						text = string(l.Data.Lines.Bytes)
+					}
+					text = strings.TrimRight(text, "\r\n")
+					fl.text[l.Data.LineNumber] = text
+					// rg emits a trailing context line that also matches as a
+					// match, so the per-file cap is enforced here as well.
+					if l.Type == "match" && fl.matches < MaxHitsPerFile {
+						fl.matches++
+						h := Hit{Path: p, Line: l.Data.LineNumber, Text: text}
+						for _, sm := range l.Data.Submatches {
+							h.Matches = append(h.Matches, [2]int{utf16Offset(text, sm.Start), utf16Offset(text, sm.End)})
+						}
+						fl.pending = append(fl.pending, h)
+						if len(hits)+fl.matches > MaxHits {
+							full = true
+						}
+					}
+				case "end":
+					flushFile(p)
 				}
-				pending = append(pending, h)
-				if len(hits)+len(pending) >= MaxHits {
-					full = true
-				}
-			}
-		case "end":
-			flushFile(p)
-			if full {
-				cancel()
 			}
 		}
-		if full && len(hits) >= MaxHits {
+		if err != nil {
+			if err != io.EOF {
+				readErr = err
+			}
+			break
+		}
+		if full {
+			// One more than the cap has been seen, which is all that is
+			// needed to report truncation. Stop rg and drain it.
+			cancel()
+			io.Copy(io.Discard, rd)
 			break
 		}
 	}
@@ -165,7 +189,10 @@ func Search(ctx context.Context, root, query string, warnf func(string, ...any))
 	}
 	runErr := cmd.Wait()
 	if !full && ctx.Err() != nil {
-		return nil, ctx.Err()
+		return Result{}, ctx.Err()
+	}
+	if readErr != nil {
+		return Result{}, fmt.Errorf("rg: reading output: %w", readErr)
 	}
 	if runErr != nil && !full {
 		var exit *exec.ExitError
@@ -173,19 +200,23 @@ func Search(ctx context.Context, root, query string, warnf func(string, ...any))
 			switch {
 			case exit.ExitCode() == 1 && stderr.Len() == 0:
 				// No matches.
-			case exit.ExitCode() == 2 && (len(hits) > 0 || stderr.Len() > 0):
+			case exit.ExitCode() == 2 && len(hits) > 0:
 				warnf("rg: search of %s reported errors: %s", root, strings.TrimSpace(stderr.String()))
 			default:
-				return nil, fmt.Errorf("rg: %w: %s", runErr, strings.TrimSpace(stderr.String()))
+				return Result{}, fmt.Errorf("rg: %w: %s", runErr, strings.TrimSpace(stderr.String()))
 			}
 		} else {
-			return nil, fmt.Errorf("rg: %w", runErr)
+			return Result{}, fmt.Errorf("rg: %w", runErr)
 		}
 	}
-	if len(hits) > MaxHits {
-		hits = hits[:MaxHits]
+	res := Result{Hits: hits, Truncated: len(hits) > MaxHits}
+	if res.Truncated {
+		res.Hits = hits[:MaxHits]
 	}
-	return hits, nil
+	if res.Hits == nil {
+		res.Hits = []Hit{}
+	}
+	return res, nil
 }
 
 // utf16Offset converts a byte offset into s to a UTF-16 code unit offset.

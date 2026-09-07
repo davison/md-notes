@@ -36,6 +36,8 @@ func fixture(t *testing.T) string {
 	write(t, filepath.Join(root, ".ignore"), "vendor/\n")
 	write(t, filepath.Join(root, "vendor", "v.md"), "needle in vendor\n")
 	write(t, filepath.Join(root, "notes", "x.mdx"), "needle in mdx\n")
+	write(t, filepath.Join(root, ".secret.md"), "needle hidden file\n")
+	write(t, filepath.Join(root, ".hid", "h.md"), "needle hidden dir\n")
 	return root
 }
 
@@ -52,10 +54,11 @@ func find(hits []Hit, p string) []Hit {
 func TestSearchBasics(t *testing.T) {
 	requireRg(t)
 	root := fixture(t)
-	hits, err := Search(context.Background(), root, "needle", nil)
+	res, err := Search(context.Background(), root, "needle", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	hits := res.Hits
 	paths := map[string]bool{}
 	for _, h := range hits {
 		paths[h.Path] = true
@@ -65,7 +68,7 @@ func TestSearchBasics(t *testing.T) {
 			t.Errorf("missing hits in %s; got %v", want, paths)
 		}
 	}
-	for _, no := range []string{"c.txt", "vendor/v.md", "notes/x.mdx"} {
+	for _, no := range []string{"c.txt", "vendor/v.md", "notes/x.mdx", ".secret.md", ".hid/h.md"} {
 		if paths[no] {
 			t.Errorf("unexpected hits in %s", no)
 		}
@@ -102,13 +105,13 @@ func TestMatchOffsetsAreUTF16(t *testing.T) {
 	requireRg(t)
 	root := t.TempDir()
 	write(t, filepath.Join(root, "u.md"), "café 😀 needle\n")
-	hits, err := Search(context.Background(), root, "needle", nil)
-	if err != nil || len(hits) != 1 {
-		t.Fatalf("hits = %v, %v", hits, err)
+	res, err := Search(context.Background(), root, "needle", nil)
+	if err != nil || len(res.Hits) != 1 {
+		t.Fatalf("hits = %v, %v", res.Hits, err)
 	}
 	// "café " is 5 units, the emoji is 2, then a space: needle starts at 8.
-	if hits[0].Matches[0] != [2]int{8, 14} {
-		t.Fatalf("matches = %v, want [8 14]", hits[0].Matches)
+	if res.Hits[0].Matches[0] != [2]int{8, 14} {
+		t.Fatalf("matches = %v, want [8 14]", res.Hits[0].Matches)
 	}
 }
 
@@ -116,11 +119,11 @@ func TestSearchIsLiteral(t *testing.T) {
 	requireRg(t)
 	root := fixture(t)
 	for q, want := range map[string]int{"a.b (c)": 1, "[d]": 1, "needle*": 1, "a.b": 1, "aXb": 0} {
-		hits, err := Search(context.Background(), root, q, nil)
+		res, err := Search(context.Background(), root, q, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := len(find(hits, "regex.md")); got != want {
+		if got := len(find(res.Hits, "regex.md")); got != want {
 			t.Errorf("query %q: %d hits in regex.md, want %d", q, got, want)
 		}
 	}
@@ -136,33 +139,76 @@ func TestSearchCaps(t *testing.T) {
 	for i := 0; i < 15; i++ {
 		write(t, filepath.Join(root, fmt.Sprintf("f%02d.md", i)), big.String())
 	}
-	hits, err := Search(context.Background(), root, "cap", nil)
+	res, err := Search(context.Background(), root, "cap", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(hits) != MaxHits {
-		t.Fatalf("got %d hits, want cap %d", len(hits), MaxHits)
+	if len(res.Hits) != MaxHits || !res.Truncated {
+		t.Fatalf("got %d hits, truncated %v; want cap %d and truncated", len(res.Hits), res.Truncated, MaxHits)
 	}
-	if n := len(find(hits, "f00.md")); n != MaxHitsPerFile {
+	if n := len(find(res.Hits, "f00.md")); n != MaxHitsPerFile {
 		t.Fatalf("per-file cap: %d, want %d", n, MaxHitsPerFile)
+	}
+}
+
+func TestSearchExactlyAtCapIsNotTruncated(t *testing.T) {
+	requireRg(t)
+	root := t.TempDir()
+	var b strings.Builder
+	for i := 0; i < MaxHitsPerFile; i++ {
+		b.WriteString("cap line\n")
+	}
+	for i := 0; i < MaxHits/MaxHitsPerFile; i++ {
+		write(t, filepath.Join(root, fmt.Sprintf("f%02d.md", i)), b.String())
+	}
+	res, err := Search(context.Background(), root, "cap", nil)
+	if err != nil || len(res.Hits) != MaxHits || res.Truncated {
+		t.Fatalf("hits %d, truncated %v, err %v; want exactly %d and not truncated", len(res.Hits), res.Truncated, err, MaxHits)
+	}
+}
+
+func TestSearchHugeLineDoesNotBreakOthers(t *testing.T) {
+	requireRg(t)
+	root := t.TempDir()
+	write(t, filepath.Join(root, "a.md"), "needle early\n")
+	write(t, filepath.Join(root, "big.md"), "needle "+strings.Repeat("x", 5*1024*1024)+"\n")
+	write(t, filepath.Join(root, "z.md"), "needle late\n")
+	res, err := Search(context.Background(), root, "needle", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) != 3 || res.Hits[2].Path != "z.md" {
+		t.Fatalf("hits = %d (%v)", len(res.Hits), res.Hits)
+	}
+}
+
+func TestSearchNonUTF8Line(t *testing.T) {
+	requireRg(t)
+	root := t.TempDir()
+	write(t, filepath.Join(root, "bin.md"), "needle \xff\xfe here\n")
+	res, err := Search(context.Background(), root, "needle", nil)
+	if err != nil || len(res.Hits) != 1 || !strings.HasPrefix(res.Hits[0].Text, "needle ") {
+		t.Fatalf("hits = %+v, %v", res.Hits, err)
+	}
+}
+
+func TestSearchBadQuery(t *testing.T) {
+	for _, q := range []string{"", "  ", "a\nb", "a\x00b", "\t"} {
+		if _, err := Search(context.Background(), t.TempDir(), q, nil); !errors.Is(err, ErrBadQuery) {
+			t.Errorf("query %q: err = %v, want ErrBadQuery", q, err)
+		}
 	}
 }
 
 func TestSearchNoMatchesAndEmptyRoot(t *testing.T) {
 	requireRg(t)
-	hits, err := Search(context.Background(), fixture(t), "zzzz-nothing", nil)
-	if err != nil || len(hits) != 0 {
-		t.Fatalf("no matches: %v, %v", hits, err)
+	res, err := Search(context.Background(), fixture(t), "zzzz-nothing", nil)
+	if err != nil || len(res.Hits) != 0 || res.Hits == nil {
+		t.Fatalf("no matches: %v, %v", res, err)
 	}
-	hits, err = Search(context.Background(), t.TempDir(), "x", nil)
-	if err != nil || len(hits) != 0 {
-		t.Fatalf("empty root: %v, %v", hits, err)
-	}
-}
-
-func TestSearchEmptyQuery(t *testing.T) {
-	if _, err := Search(context.Background(), t.TempDir(), "  ", nil); err == nil {
-		t.Fatal("want error for empty query")
+	res, err = Search(context.Background(), t.TempDir(), "x", nil)
+	if err != nil || len(res.Hits) != 0 {
+		t.Fatalf("empty root: %v, %v", res, err)
 	}
 }
 
