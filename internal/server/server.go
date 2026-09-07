@@ -132,10 +132,8 @@ func (s *Server) watchRoot(root roots.Root) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	var dirs []string
-	if files, err := tree.List(ctx, root.Path, s.log.Printf); err == nil {
-		dirs = watch.DirsOf(files)
-	} else {
+	dirs, err := tree.Dirs(ctx, root.Path, s.log.Printf)
+	if err != nil {
 		s.log.Printf("watch %s: %v; watching every non-hidden directory", root.Slug, err)
 		dirs = watch.Walk(root.Path)
 	}
