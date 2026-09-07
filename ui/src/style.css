@@ -148,3 +148,64 @@ code {
     border-bottom: 1px solid var(--line);
   }
 }
+
+/* Navigator tree */
+.tree,
+.tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree ul {
+  padding-left: 1rem;
+}
+
+.tree li {
+  margin: 0;
+}
+
+.tree .dir,
+.tree .file {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.15rem 0.35rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree .dir:hover,
+.tree .file:hover {
+  background: var(--line);
+  text-decoration: none;
+}
+
+.tree .file.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.twisty {
+  display: inline-block;
+  width: 1rem;
+  color: var(--muted);
+}
+
+.note-title {
+  margin-top: 0;
+}
+
+.raw {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+  font-size: 0.9em;
+}

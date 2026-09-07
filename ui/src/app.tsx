@@ -18,8 +18,7 @@ export function App() {
     <LocationProvider>
       <Router>
         <Route path="/" component={Home} />
-        <Route path="/r/:slug/*" component={RootView} />
-        <Route path="/r/:slug" component={RootView} />
+        <Route path="/r/:slug/:note*" component={RootView} />
         <Route default component={NotFound} />
       </Router>
     </LocationProvider>

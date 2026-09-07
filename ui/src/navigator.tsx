@@ -1,0 +1,128 @@
+import { useEffect, useMemo, useState } from "preact/hooks";
+import { noteURL, type TreeNode } from "./api";
+
+interface Props {
+  slug: string;
+  tree: TreeNode;
+  /** Path of the note being shown, or empty when none. */
+  current: string;
+}
+
+function storageKey(slug: string) {
+  return `mdn:nav:${slug}`;
+}
+
+function loadExpanded(slug: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(storageKey(slug));
+    if (raw) return new Set(JSON.parse(raw) as string[]);
+  } catch {
+    // storage unavailable or corrupt: start collapsed
+  }
+  return new Set();
+}
+
+function saveExpanded(slug: string, expanded: Set<string>) {
+  try {
+    localStorage.setItem(storageKey(slug), JSON.stringify([...expanded]));
+  } catch {
+    // storage unavailable: forget between loads
+  }
+}
+
+/** Directories that must be open for path to be visible. */
+export function ancestors(path: string): string[] {
+  const parts = path.split("/");
+  parts.pop();
+  const out: string[] = [];
+  for (let i = 1; i <= parts.length; i++) out.push(parts.slice(0, i).join("/"));
+  return out;
+}
+
+/**
+ * The navigator pane: a collapsible tree of the root's markdown files.
+ * Expanded directories are remembered per root, and the current note's
+ * ancestors are opened so it is always visible.
+ */
+export function Navigator({ slug, tree, current }: Props) {
+  const [expanded, setExpanded] = useState<Set<string>>(() => loadExpanded(slug));
+
+  useEffect(() => {
+    setExpanded(loadExpanded(slug));
+  }, [slug]);
+
+  useEffect(() => {
+    if (!current) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const a of ancestors(current)) next.add(a);
+      if (next.size === prev.size) return prev;
+      saveExpanded(slug, next);
+      return next;
+    });
+  }, [slug, current]);
+
+  const toggle = (path: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      saveExpanded(slug, next);
+      return next;
+    });
+  };
+
+  const empty = useMemo(() => !tree.children || tree.children.length === 0, [tree]);
+
+  if (empty) return <p class="muted">No markdown files here.</p>;
+  return (
+    <ul class="tree" role="tree">
+      {tree.children!.map((n) => (
+        <Entry key={n.path} node={n} slug={slug} current={current} expanded={expanded} toggle={toggle} />
+      ))}
+    </ul>
+  );
+}
+
+function Entry({
+  node,
+  slug,
+  current,
+  expanded,
+  toggle,
+}: {
+  node: TreeNode;
+  slug: string;
+  current: string;
+  expanded: Set<string>;
+  toggle: (path: string) => void;
+}) {
+  if (node.dir) {
+    const open = expanded.has(node.path);
+    return (
+      <li role="treeitem" aria-expanded={open}>
+        <button type="button" class="dir" onClick={() => toggle(node.path)}>
+          <span class="twisty" aria-hidden="true">
+            {open ? "▾" : "▸"}
+          </span>
+          {node.name}
+        </button>
+        {open && node.children && (
+          <ul role="group">
+            {node.children.map((c) => (
+              <Entry key={c.path} node={c} slug={slug} current={current} expanded={expanded} toggle={toggle} />
+            ))}
+          </ul>
+        )}
+      </li>
+    );
+  }
+  const active = node.path === current;
+  return (
+    <li role="treeitem" aria-selected={active}>
+      <a href={noteURL(slug, node.path)} class={active ? "file active" : "file"} aria-current={active ? "page" : undefined}>
+        {node.name}
+      </a>
+    </li>
+  );
+}
