@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/preact";
+import { LocationProvider } from "preact-iso";
 import { RootView } from "./root-view";
 
 class FakeEventSource {
@@ -28,7 +29,16 @@ function mockApi() {
       let body: unknown;
       if (url === "/api/roots") body = { roots: [{ slug: "n", path: "/n", kind: "notes" }] };
       else if (url === "/api/r/n/tree")
-        body = { name: "", path: "", dir: true, children: [{ name: "a.md", path: "docs/a.md", dir: false }] };
+        body = {
+          name: "",
+          path: "",
+          dir: true,
+          children: [
+            { name: "docs", path: "docs", dir: true, children: [{ name: "a.md", path: "docs/a.md", dir: false }] },
+            { name: "b.md", path: "b.md", dir: false },
+          ],
+        };
+      else if (url === "/api/r/n/tags") body = { tags: [{ name: "x", count: 1, notes: ["b.md"] }] };
       else body = { path: "docs/a.md", title: "A", html: "<p>body</p>" };
       return Promise.resolve({ ok: true, status: 200, statusText: "OK", json: () => Promise.resolve(body) } as Response);
     }),
@@ -45,9 +55,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function mount(url: string) {
+  history.replaceState(null, "", url);
+  return render(
+    <LocationProvider>
+      <RootView slug="n" note="docs/a.md" />
+    </LocationProvider>,
+  );
+}
+
 describe("RootView live update", () => {
   it("refetches the tree on any batch and the note only when it is affected", async () => {
-    render(<RootView slug="n" note="docs/a.md" />);
+    mount("/r/n/docs/a.md");
     await waitFor(() => expect(screen.getByText("body")).toBeTruthy());
     const treeCalls = () => calls.filter((u) => u === "/api/r/n/tree").length;
     const noteCalls = () => calls.filter((u) => u.startsWith("/api/r/n/note/")).length;
@@ -70,5 +89,31 @@ describe("RootView live update", () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(treeCalls()).toBe(4);
     expect(noteCalls()).toBe(3);
+  });
+
+  it("refreshes tags when the tree changes", async () => {
+    mount("/r/n/docs/a.md");
+    await waitFor(() => expect(screen.getByText("#x")).toBeTruthy());
+    const tagCalls = () => calls.filter((u) => u === "/api/r/n/tags").length;
+    expect(tagCalls()).toBe(1);
+    FakeEventSource.last!.emit(["new.md"]);
+    await waitFor(() => expect(tagCalls()).toBe(2));
+  });
+});
+
+describe("RootView tag filter", () => {
+  it("filters the navigator to the tag's notes and offers to clear", async () => {
+    mount("/r/n/docs/a.md?tag=x");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+    expect(screen.queryByText("docs")).toBeNull();
+    expect(screen.getByText("Clear filter: x")).toBeTruthy();
+    expect(screen.getByText("#x").closest("a")!.classList.contains("active")).toBe(true);
+  });
+
+  it("passes the line query to the note view", async () => {
+    mount("/r/n/docs/a.md?l=7");
+    await waitFor(() => expect(screen.getByText("body")).toBeTruthy());
+    // No marker at or before line 7 in the fixture body, so nothing to scroll; the view still renders.
+    expect(screen.getByText("A")).toBeTruthy();
   });
 });

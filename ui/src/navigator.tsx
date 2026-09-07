@@ -6,6 +6,16 @@ interface Props {
   tree: TreeNode;
   /** Path of the note being shown, or empty when none. */
   current: string;
+  /** When set, only these note paths are shown and empty directories are pruned. */
+  only?: Set<string> | null;
+}
+
+/** Returns a copy of tree keeping only the files in keep, pruning empty directories. */
+export function filterTree(tree: TreeNode, keep: Set<string>): TreeNode {
+  const children = (tree.children ?? [])
+    .map((c) => (c.dir ? filterTree(c, keep) : keep.has(c.path) ? c : null))
+    .filter((c): c is TreeNode => c !== null && (!c.dir || (c.children?.length ?? 0) > 0));
+  return { ...tree, children };
 }
 
 function storageKey(slug: string) {
@@ -44,7 +54,8 @@ export function ancestors(path: string): string[] {
  * Expanded directories are remembered per root, and the current note's
  * ancestors are opened so it is always visible.
  */
-export function Navigator({ slug, tree, current }: Props) {
+export function Navigator({ slug, tree: fullTree, current, only = null }: Props) {
+  const tree = useMemo(() => (only ? filterTree(fullTree, only) : fullTree), [fullTree, only]);
   const [expanded, setExpanded] = useState<Set<string>>(() => loadExpanded(slug));
 
   useEffect(() => {
@@ -62,6 +73,15 @@ export function Navigator({ slug, tree, current }: Props) {
     });
   }, [slug, current]);
 
+  useEffect(() => {
+    if (!only) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const p of only) for (const a of ancestors(p)) next.add(a);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [only]);
+
   const toggle = (path: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -74,7 +94,7 @@ export function Navigator({ slug, tree, current }: Props) {
 
   const empty = useMemo(() => !tree.children || tree.children.length === 0, [tree]);
 
-  if (empty) return <p class="muted">No markdown files here.</p>;
+  if (empty) return <p class="muted">{only ? "No notes match the filter." : "No markdown files here."}</p>;
   // Plain list semantics rather than an ARIA tree: nested lists of links
   // and buttons are keyboard-reachable as they are, while a proper tree
   // widget would need roving focus to be an improvement.

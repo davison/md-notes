@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useState } from "preact/hooks";
-import { fetchTree, listRoots, type Root, type TreeNode } from "./api";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { useLocation } from "preact-iso";
+import { fetchTags, fetchTree, listRoots, type Root, type Tag, type TreeNode } from "./api";
 import { affects, affectsTree, useEvents } from "./events";
 import { Navigator } from "./navigator";
 import { NoteView } from "./note-view";
+import { SearchPane } from "./search-pane";
+import { TagPanel } from "./tag-panel";
 
 /**
  * The three-pane shell for one root: navigator, note, and the search and
@@ -15,7 +18,18 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
   const [treeError, setTreeError] = useState<string | null>(null);
   // Bumped when the open note changes on disk, so NoteView refetches.
   const [noteVersion, setNoteVersion] = useState(0);
+  // Bumped when the tree may have changed, so search results and tags refresh.
+  const [treeVersion, setTreeVersion] = useState(0);
+  const [tags, setTags] = useState<Tag[] | null>(null);
   const current = note ?? "";
+  const { query } = useLocation();
+  const line = query.l && /^\d+$/.test(query.l) ? Number(query.l) : null;
+  const activeTag = query.tag ? query.tag.toLowerCase() : null;
+  const only = useMemo(() => {
+    if (!activeTag || !tags) return null;
+    const t = tags.find((x) => x.name === activeTag);
+    return new Set(t ? t.notes : []);
+  }, [activeTag, tags]);
 
   useEffect(() => {
     setRoot(undefined);
@@ -42,8 +56,27 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
     loadTree();
   }, [root, loadTree]);
 
+  useEffect(() => {
+    if (!root) return;
+    let cancelled = false;
+    fetchTags(slug).then(
+      (t) => {
+        if (!cancelled) setTags(t);
+      },
+      () => {
+        if (!cancelled) setTags([]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [root, slug, treeVersion]);
+
   useEvents(slug, (paths) => {
-    if (affectsTree(paths)) loadTree();
+    if (affectsTree(paths)) {
+      loadTree();
+      setTreeVersion((v) => v + 1);
+    }
     if (current && affects(paths, current)) setNoteVersion((v) => v + 1);
   });
 
@@ -69,17 +102,18 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
       <aside class="nav">
         {treeError && <p class="error">{treeError}</p>}
         {!tree && !treeError && <p class="muted">Loading…</p>}
-        {tree && <Navigator slug={slug} tree={tree} current={current} />}
+        {tree && <Navigator slug={slug} tree={tree} current={current} only={only} />}
       </aside>
       <main class="note">
         {current ? (
-          <NoteView slug={slug} path={current} version={noteVersion} />
+          <NoteView slug={slug} path={current} version={noteVersion} line={line} />
         ) : (
           <p class="muted">Select a note.</p>
         )}
       </main>
       <aside class="side">
-        <p class="muted">Search and tags</p>
+        <SearchPane slug={slug} refresh={treeVersion} keep={activeTag ? { tag: activeTag } : {}} />
+        <TagPanel slug={slug} tags={tags} active={activeTag} current={current} />
       </aside>
     </div>
   );
