@@ -5,6 +5,7 @@
   --line: #e2e2df;
   --accent: #2a6db0;
   --pane: #ffffff;
+  --error: #b3261e;
   color-scheme: light dark;
 }
 
@@ -57,7 +58,7 @@ code {
 }
 
 .error {
-  color: #b3261e;
+  color: var(--error);
 }
 
 .roots {
@@ -179,13 +180,13 @@ code {
 .unsaved-drafts {
   margin-left: auto;
   font-size: 0.85em;
-  color: #b3261e;
+  color: var(--error);
 }
 
 .conflict {
   padding: 0.6rem 1rem;
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, #b3261e 10%, var(--pane));
+  background: color-mix(in srgb, var(--error) 10%, var(--pane));
   font-size: 0.9em;
 }
 

@@ -100,6 +100,8 @@ export class Session {
   private resent = false;
   private recovered = false;
   private stored: Stored | null = null;
+  /** The record this session last wrote to storage, so it removes only its own. */
+  private mirrored: Stored | null = null;
   private opening: Promise<void> | null = null;
 
   constructor(
@@ -117,8 +119,18 @@ export class Session {
   private set(patch: Partial<SessionState>) {
     this.state = { ...this.state, ...patch };
     const s = this.state;
-    if (hasUnsaved(s)) writeStored(this.key, { revision: s.base?.revision ?? "", draft: s.draft });
-    else if (s.status === "clean") writeStored(this.key, null);
+    if (hasUnsaved(s)) {
+      this.mirrored = { revision: s.base?.revision ?? "", draft: s.draft };
+      writeStored(this.key, this.mirrored);
+    } else if (s.status === "clean") {
+      // The key is shared by every tab on the origin: remove only a record
+      // this session wrote, never another tab's draft of the same note.
+      const stored = readStored(this.key);
+      if (stored && this.mirrored && stored.draft === this.mirrored.draft && stored.revision === this.mirrored.revision) {
+        writeStored(this.key, null);
+      }
+      this.mirrored = null;
+    }
     for (const fn of this.listeners) fn();
     for (const fn of globalListeners) fn();
   }
@@ -165,6 +177,7 @@ export class Session {
       this.set({ draft, status: "clean", error: null });
       return;
     }
+    this.resent = false;
     this.set({ draft, status: "pending", error: null });
     this.schedule();
   }
@@ -280,6 +293,8 @@ export class Session {
     const stored = this.stored;
     this.stored = null;
     if (stored && !s.base) {
+      // A recovered record becomes this session's own to clear.
+      this.mirrored = stored;
       if (stored.draft === fetched.source) {
         // The final save on the way out landed; nothing to recover.
         this.set({ base: fetched, draft: fetched.source, status: "clean", generation: s.generation + 1 });

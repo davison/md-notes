@@ -97,11 +97,11 @@ export function NotePane({ slug, path, version = 0, line = null }: Props) {
       </div>
       {state.status === "conflict" && state.conflict && <ConflictBanner session={session} state={state} />}
       {mode === "edit" ? (
-        <div class="editor-body">
+        <main class="editor-body">
           {state.status === "loading" && <p class="muted pad">Loading…</p>}
           {state.status === "error" && <p class="error pad">{state.error?.message}</p>}
           {state.status !== "loading" && state.status !== "error" && <Editor session={session} />}
-        </div>
+        </main>
       ) : (
         <main class="note-body">
           <NoteView slug={slug} path={path} version={version + saved} line={line} />
@@ -183,7 +183,9 @@ function ConflictBanner({ session, state }: { session: Session; state: SessionSt
 /**
  * Page-wide guard: pending edits are sent when the window loses focus or
  * is hidden, and closing the page with unsaved work sends a final save
- * and asks before leaving.
+ * and asks before leaving. The final save is a keepalive request, which
+ * browsers cap at 64 KiB of body: a larger draft is refused, stays in
+ * storage, and is recovered on the next open.
  */
 export function useUnsavedGuard() {
   useEffect(() => {
