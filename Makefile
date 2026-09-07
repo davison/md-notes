@@ -1,7 +1,8 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build ui test vet check clean
+.PHONY: all build ui ui-deps test vet check install clean
+PREFIX ?= $(HOME)/.local
 
 all: build
 
@@ -9,9 +10,12 @@ all: build
 build: ui
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o mdn ./cmd/mdn
 
-## ui: install UI dependencies and produce ui/dist
-ui:
+## ui-deps: install UI dependencies
+ui-deps:
 	pnpm --dir ui install --frozen-lockfile
+
+## ui: produce ui/dist
+ui: ui-deps
 	pnpm --dir ui build
 	touch ui/dist/.gitkeep
 
@@ -20,12 +24,17 @@ test:
 	go test ./...
 
 ## vet: static checks for Go and the UI
-vet:
+vet: ui-deps
 	go vet ./...
 	pnpm --dir ui typecheck
 
 ## check: everything CI runs
 check: vet test build
 
+## install: copy the binary to $(PREFIX)/bin (default ~/.local/bin)
+install: build
+	install -Dm755 mdn $(PREFIX)/bin/mdn
+
 clean:
-	rm -rf mdn ui/dist
+	rm -f mdn
+	find ui/dist -mindepth 1 ! -name .gitkeep -delete
