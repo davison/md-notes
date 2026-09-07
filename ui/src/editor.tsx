@@ -70,13 +70,15 @@ let exDefined = false;
 function defineEx() {
   if (exDefined) return;
   exDefined = true;
-  // :w saves now; the editor never closes, so :wq and :q just save too.
-  Vim.defineEx("write", "w", (cm: { cm6: EditorView }) => {
+  // :w saves now. The editor never closes, so the commands a vim user
+  // reaches for to mean "done here" (:q, :x, :wq) save too, and nothing else.
+  const save = (cm: { cm6: EditorView }) => {
     void flushFor(cm.cm6);
-  });
-  Vim.defineEx("wq", "wq", (cm: { cm6: EditorView }) => {
-    void flushFor(cm.cm6);
-  });
+  };
+  Vim.defineEx("write", "w", save);
+  Vim.defineEx("quit", "q", save);
+  Vim.defineEx("xit", "x", save);
+  Vim.defineEx("wq", "wq", save);
 }
 
 const owners = new WeakMap<EditorView, Session>();
