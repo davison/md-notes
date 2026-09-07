@@ -109,7 +109,7 @@ func TestLinkRewriting(t *testing.T) {
 	cases := []struct {
 		name, md, want string
 	}{
-		{"sibling", "[a](other.md)", `href="/r/notes/docs/other.md"`},
+		{"sibling", "[a](other.md)", `href="/r/notes/docs/other.md">`},
 		{"markdown ext case", "[a](Other.MD)", `href="/r/notes/docs/Other.MD"`},
 		{"parent", "[a](../top.md)", `href="/r/notes/top.md"`},
 		{"root relative", "[a](/index.md)", `href="/r/notes/index.md"`},
