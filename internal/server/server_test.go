@@ -22,6 +22,18 @@ import (
 
 const port = 7337
 
+// servers maps a test server to the Server behind it.
+var servers = map[*httptest.Server]*Server{}
+
+func serverOf(t *testing.T, ts *httptest.Server) *Server {
+	t.Helper()
+	s, ok := servers[ts]
+	if !ok {
+		t.Fatal("unknown test server")
+	}
+	return s
+}
+
 func newTestServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
 	base := t.TempDir()
@@ -47,6 +59,7 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	t.Cleanup(s.Close)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
+	servers[ts] = s
 	return ts, base
 }
 
@@ -370,6 +383,44 @@ func TestAddedRootIsWatched(t *testing.T) {
 	next(func(l string) bool { return l == ": connected" })
 	os.WriteFile(filepath.Join(proj, "readme.md"), []byte("x"), 0o644)
 	next(func(l string) bool { return strings.Contains(l, `"readme.md"`) })
+}
+
+func TestEventsUnavailableWithoutWatcher(t *testing.T) {
+	ts, _ := newTestServer(t)
+	// Simulate a root whose watcher failed: registered, no hub, not starting.
+	s := serverOf(t, ts)
+	s.hub(context.Background(), "notes")
+	s.wmu.Lock()
+	delete(s.hubs, "notes")
+	s.wmu.Unlock()
+	resp := do(t, ts, "GET", "/api/r/notes/events", "", nil)
+	if resp.StatusCode != 503 {
+		t.Fatalf("status %d, want 503 when live update is unavailable", resp.StatusCode)
+	}
+}
+
+func TestCloseEndsOpenStreamsQuickly(t *testing.T) {
+	ts, _ := newTestServer(t)
+	s := serverOf(t, ts)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/r/notes/events", nil)
+	req.Host = "localhost:7337"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	next := sseReader(t, resp.Body)
+	next(func(l string) bool { return l == ": connected" })
+	start := time.Now()
+	s.Close()
+	if _, err := io.ReadAll(resp.Body); err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("stream took %v to end after Close", d)
+	}
 }
 
 func TestUIFallback(t *testing.T) {

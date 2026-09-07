@@ -40,6 +40,11 @@ type Server struct {
 	wmu      sync.Mutex
 	hubs     map[string]*watch.Hub
 	watchers map[string]*watch.Watcher
+	// starting holds a channel per root whose watcher is being set up,
+	// closed when setup finishes either way.
+	starting map[string]chan struct{}
+	// closing is closed by Close so event streams end promptly.
+	closing chan struct{}
 }
 
 // New builds a Server. ui is the built single-page app; every path that is
@@ -54,7 +59,11 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger) *Server {
 		keepalive: 30 * time.Second,
 		hubs:      map[string]*watch.Hub{},
 		watchers:  map[string]*watch.Watcher{},
+		starting:  map[string]chan struct{}{},
+		closing:   make(chan struct{}),
 	}
+	// Watchers are set up in the background so a large root does not
+	// delay binding the port; the events endpoint waits for its root.
 	for _, root := range reg.List() {
 		s.watchRoot(root)
 	}
@@ -106,51 +115,116 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 }
 
-// Close stops every root's watcher.
+// Close ends every event stream and stops every root's watcher. Safe to
+// call more than once.
 func (s *Server) Close() {
 	s.wmu.Lock()
-	defer s.wmu.Unlock()
+	select {
+	case <-s.closing:
+	default:
+		close(s.closing)
+	}
+	watchers := s.watchers
+	s.watchers = map[string]*watch.Watcher{}
+	var starting []chan struct{}
+	for _, ch := range s.starting {
+		starting = append(starting, ch)
+	}
+	s.wmu.Unlock()
+	for _, ch := range starting {
+		<-ch
+	}
+	s.wmu.Lock()
 	for slug, w := range s.watchers {
+		watchers[slug] = w
+	}
+	s.watchers = map[string]*watch.Watcher{}
+	s.wmu.Unlock()
+	for _, w := range watchers {
 		w.Close()
-		delete(s.watchers, slug)
 	}
 }
 
-// watchRoot starts watching root, if it is not already watched, and pumps
-// its batches into the root's hub. The directory set comes from the same
+// watchRoot starts watching root in the background, if it is not already
+// watched or being set up, and pumps its batches into the root's hub. The
+// hub exists only once the watcher does, so the events endpoint can say
+// when live update is unavailable. The directory set comes from the same
 // listing the navigator uses; without ripgrep it falls back to a walk.
 func (s *Server) watchRoot(root roots.Root) {
 	s.wmu.Lock()
-	defer s.wmu.Unlock()
 	if _, ok := s.watchers[root.Slug]; ok {
+		s.wmu.Unlock()
 		return
 	}
-	hub, ok := s.hubs[root.Slug]
-	if !ok {
-		hub = watch.NewHub()
+	if _, ok := s.starting[root.Slug]; ok {
+		s.wmu.Unlock()
+		return
+	}
+	select {
+	case <-s.closing:
+		s.wmu.Unlock()
+		return
+	default:
+	}
+	ready := make(chan struct{})
+	s.starting[root.Slug] = ready
+	s.wmu.Unlock()
+
+	go func() {
+		defer func() {
+			s.wmu.Lock()
+			delete(s.starting, root.Slug)
+			s.wmu.Unlock()
+			close(ready)
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		dirs, err := tree.Dirs(ctx, root.Path, s.log.Printf)
+		if err != nil {
+			s.log.Printf("watch %s: %v; watching every non-hidden directory", root.Slug, err)
+			dirs = watch.Walk(root.Path)
+		}
+		w, err := watch.New(root.Path, dirs, s.log.Printf)
+		if err != nil {
+			s.log.Printf("watch %s: %v; live update disabled for this root", root.Slug, err)
+			return
+		}
+		s.wmu.Lock()
+		select {
+		case <-s.closing:
+			s.wmu.Unlock()
+			w.Close()
+			return
+		default:
+		}
+		hub := watch.NewHub()
 		s.hubs[root.Slug] = hub
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	dirs, err := tree.Dirs(ctx, root.Path, s.log.Printf)
-	if err != nil {
-		s.log.Printf("watch %s: %v; watching every non-hidden directory", root.Slug, err)
-		dirs = watch.Walk(root.Path)
-	}
-	w, err := watch.New(root.Path, dirs, s.log.Printf)
-	if err != nil {
-		s.log.Printf("watch %s: %v; live update disabled for this root", root.Slug, err)
-		return
-	}
-	s.watchers[root.Slug] = w
-	go hub.Pump(w)
+		s.watchers[root.Slug] = w
+		s.wmu.Unlock()
+		go hub.Pump(w)
+	}()
 }
 
-func (s *Server) hub(slug string) (*watch.Hub, bool) {
-	s.wmu.Lock()
-	defer s.wmu.Unlock()
-	h, ok := s.hubs[slug]
-	return h, ok
+// hub returns the root's hub, waiting for a setup in progress. The second
+// result is false when live update is unavailable for the root.
+func (s *Server) hub(ctx context.Context, slug string) (*watch.Hub, bool) {
+	for {
+		s.wmu.Lock()
+		h, ok := s.hubs[slug]
+		starting := s.starting[slug]
+		s.wmu.Unlock()
+		if ok {
+			return h, true
+		}
+		if starting == nil {
+			return nil, false
+		}
+		select {
+		case <-starting:
+		case <-ctx.Done():
+			return nil, false
+		}
+	}
 }
 
 // eventsHandler streams a root's change batches as Server-Sent Events.
@@ -160,7 +234,7 @@ func (s *Server) eventsHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "unknown root")
 		return
 	}
-	hub, ok := s.hub(slug)
+	hub, ok := s.hub(r.Context(), slug)
 	if !ok {
 		writeError(w, http.StatusServiceUnavailable, "live update is not available for this root")
 		return
@@ -186,6 +260,8 @@ func (s *Server) eventsHandler(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-s.closing:
 			return
 		case b, ok := <-ch:
 			if !ok {
