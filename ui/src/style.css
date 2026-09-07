@@ -367,3 +367,129 @@ code {
   border-radius: 3px;
   padding: 0 0.3em;
 }
+
+/* Search pane */
+.search input {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--pane);
+  color: var(--fg);
+  font: inherit;
+  margin-bottom: 0.75rem;
+}
+
+.hit-group {
+  margin-bottom: 0.75rem;
+}
+
+.hit-path {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.8em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hit {
+  display: block;
+  padding: 0.2rem 0.35rem;
+  border-radius: 4px;
+  color: var(--fg);
+  font-size: 0.9em;
+  line-height: 1.35;
+}
+
+.hit:hover {
+  background: var(--line);
+  text-decoration: none;
+}
+
+.hit .ctx {
+  display: block;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hit .hit-line {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hit .ln {
+  color: var(--muted);
+  font-size: 0.8em;
+  margin-right: 0.4em;
+}
+
+.hit mark {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* Tag panel */
+.tags {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+
+.tags ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tag {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  color: var(--fg);
+}
+
+.tag:hover {
+  background: var(--line);
+  text-decoration: none;
+}
+
+.tag.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tag-count {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.tag.active .tag-count {
+  color: inherit;
+}
+
+.tag-clear {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.9em;
+}
+
+/* Scroll-to-match highlight */
+.markdown .flash {
+  animation: flash 1.5s ease-out;
+}
+
+@keyframes flash {
+  from {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}

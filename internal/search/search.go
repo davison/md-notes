@@ -21,7 +21,8 @@ type Hit struct {
 	Path string `json:"path"`
 	Line int    `json:"line"`
 	Text string `json:"text"`
-	// Matches are byte offsets [start, end) into Text.
+	// Matches are [start, end) offsets into Text in UTF-16 code units, so
+	// JavaScript string indexing lines up with them.
 	Matches [][2]int `json:"matches"`
 	Before  string   `json:"before,omitempty"`
 	After   string   `json:"after,omitempty"`
@@ -142,7 +143,7 @@ func Search(ctx context.Context, root, query string, warnf func(string, ...any))
 				fl.matches++
 				h := Hit{Path: p, Line: l.Data.LineNumber, Text: text}
 				for _, sm := range l.Data.Submatches {
-					h.Matches = append(h.Matches, [2]int{sm.Start, sm.End})
+					h.Matches = append(h.Matches, [2]int{utf16Offset(text, sm.Start), utf16Offset(text, sm.End)})
 				}
 				pending = append(pending, h)
 				if len(hits)+len(pending) >= MaxHits {
@@ -185,4 +186,20 @@ func Search(ctx context.Context, root, query string, warnf func(string, ...any))
 		hits = hits[:MaxHits]
 	}
 	return hits, nil
+}
+
+// utf16Offset converts a byte offset into s to a UTF-16 code unit offset.
+func utf16Offset(s string, byteOff int) int {
+	if byteOff > len(s) {
+		byteOff = len(s)
+	}
+	n := 0
+	for _, r := range s[:byteOff] {
+		if r > 0xFFFF {
+			n += 2
+		} else {
+			n++
+		}
+	}
+	return n
 }

@@ -71,3 +71,34 @@ export interface Note {
 export function fetchNote(slug: string, path: string): Promise<Note> {
   return request<Note>(`/api/r/${encodeURIComponent(slug)}/note/${encodePath(path)}`);
 }
+
+export interface Hit {
+  path: string;
+  line: number;
+  text: string;
+  /** [start, end) offsets into text, in string units. */
+  matches: [number, number][];
+  before?: string;
+  after?: string;
+}
+
+export interface SearchResult {
+  hits: Hit[];
+  truncated: boolean;
+}
+
+export function searchNotes(slug: string, query: string, signal?: AbortSignal): Promise<SearchResult> {
+  const q = encodeURIComponent(query);
+  return request<SearchResult>(`/api/r/${encodeURIComponent(slug)}/search?q=${q}`, { signal });
+}
+
+export interface Tag {
+  name: string;
+  count: number;
+  notes: string[];
+}
+
+export async function fetchTags(slug: string): Promise<Tag[]> {
+  const body = await request<{ tags: Tag[] }>(`/api/r/${encodeURIComponent(slug)}/tags`);
+  return body.tags;
+}
