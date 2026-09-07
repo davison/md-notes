@@ -61,6 +61,11 @@ describe("Navigator", () => {
     expect(link.getAttribute("href")).toBe("/r/my%20notes/top.md");
   });
 
+  it("keeps the query string on note links", () => {
+    render(<Navigator slug="notes" tree={tree} current="" query="?tag=x" />);
+    expect((screen.getByText("top.md") as HTMLAnchorElement).getAttribute("href")).toBe("/r/notes/top.md?tag=x");
+  });
+
   it("reveals and highlights the current note", () => {
     render(<Navigator slug="notes" tree={tree} current="docs/deep/inner.md" />);
     const link = screen.getByText("inner.md");

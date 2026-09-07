@@ -102,7 +102,15 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
       <aside class="nav">
         {treeError && <p class="error">{treeError}</p>}
         {!tree && !treeError && <p class="muted">Loading…</p>}
-        {tree && <Navigator slug={slug} tree={tree} current={current} only={only} />}
+        {tree && (
+          <Navigator
+            slug={slug}
+            tree={tree}
+            current={current}
+            only={only}
+            query={activeTag ? `?tag=${encodeURIComponent(activeTag)}` : ""}
+          />
+        )}
       </aside>
       <main class="note">
         {current ? (

@@ -8,6 +8,8 @@ interface Props {
   current: string;
   /** When set, only these note paths are shown and empty directories are pruned. */
   only?: Set<string> | null;
+  /** Query string, including the leading "?", to keep on note links (such as the tag filter). */
+  query?: string;
 }
 
 /** Returns a copy of tree keeping only the files in keep, pruning empty directories. */
@@ -54,7 +56,7 @@ export function ancestors(path: string): string[] {
  * Expanded directories are remembered per root, and the current note's
  * ancestors are opened so it is always visible.
  */
-export function Navigator({ slug, tree: fullTree, current, only = null }: Props) {
+export function Navigator({ slug, tree: fullTree, current, only = null, query = "" }: Props) {
   const tree = useMemo(() => (only ? filterTree(fullTree, only) : fullTree), [fullTree, only]);
   const [expanded, setExpanded] = useState<Set<string>>(() => loadExpanded(slug));
 
@@ -102,7 +104,7 @@ export function Navigator({ slug, tree: fullTree, current, only = null }: Props)
     <nav aria-label="Notes">
       <ul class="tree">
         {tree.children!.map((n) => (
-          <Entry key={n.path} node={n} slug={slug} current={current} expanded={expanded} toggle={toggle} />
+          <Entry key={n.path} node={n} slug={slug} current={current} expanded={expanded} toggle={toggle} query={query} />
         ))}
       </ul>
     </nav>
@@ -115,12 +117,14 @@ function Entry({
   current,
   expanded,
   toggle,
+  query,
 }: {
   node: TreeNode;
   slug: string;
   current: string;
   expanded: Set<string>;
   toggle: (path: string) => void;
+  query: string;
 }) {
   if (node.dir) {
     const open = expanded.has(node.path);
@@ -135,7 +139,7 @@ function Entry({
         {open && node.children && (
           <ul>
             {node.children.map((c) => (
-              <Entry key={c.path} node={c} slug={slug} current={current} expanded={expanded} toggle={toggle} />
+              <Entry key={c.path} node={c} slug={slug} current={current} expanded={expanded} toggle={toggle} query={query} />
             ))}
           </ul>
         )}
@@ -145,7 +149,7 @@ function Entry({
   const active = node.path === current;
   return (
     <li>
-      <a href={noteURL(slug, node.path)} class={active ? "file active" : "file"} aria-current={active ? "page" : undefined}>
+      <a href={noteURL(slug, node.path) + query} class={active ? "file active" : "file"} aria-current={active ? "page" : undefined}>
         {node.name}
       </a>
     </li>

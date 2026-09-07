@@ -61,6 +61,17 @@ describe("SearchPane", () => {
     expect(screen.getByText(/Showing the first 3 matches/)).toBeTruthy();
   });
 
+  it("does not throw when a truncated result is followed by clearing the box", async () => {
+    render(<SearchPane slug="n" />);
+    const input = screen.getByLabelText("Search notes") as HTMLInputElement;
+    fireEvent.input(input, { target: { value: "needle" } });
+    await vi.advanceTimersByTimeAsync(250);
+    await waitFor(() => expect(screen.getByText(/Showing the first/)).toBeTruthy());
+    fireEvent.input(input, { target: { value: "" } });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(screen.queryByText(/Showing the first/)).toBeNull();
+  });
+
   it("says when nothing matches and clears when the box empties", async () => {
     render(<SearchPane slug="n" />);
     const input = screen.getByLabelText("Search notes") as HTMLInputElement;

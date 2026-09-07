@@ -100,6 +100,29 @@ describe("NoteView", () => {
     expect(screen.queryByText("not found")).toBeNull();
   });
 
+  it("scrolls to the requested line once, and flashes the block after an anchor", async () => {
+    mockNote({
+      path: "x.md",
+      title: "T",
+      html: '<p data-line="1">a</p><div class="line-anchor" data-line="5"></div><pre>code</pre><p data-line="9">c</p>',
+    });
+    const scrolls: string[] = [];
+    Element.prototype.scrollIntoView = function () {
+      scrolls.push((this as Element).className);
+    };
+    const { rerender } = render(<NoteView slug="n" path="x.md" version={0} line={6} />);
+    await waitFor(() => expect(scrolls.length).toBe(1));
+    expect(scrolls[0]).toContain("line-anchor");
+    expect(document.querySelector("pre")!.classList.contains("flash")).toBe(true);
+    // A live refetch of the same note and line does not scroll again.
+    rerender(<NoteView slug="n" path="x.md" version={1} line={6} />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(scrolls.length).toBe(1);
+    // A different line does.
+    rerender(<NoteView slug="n" path="x.md" version={1} line={9} />);
+    await waitFor(() => expect(scrolls.length).toBe(2));
+  });
+
   it("surfaces the daemon's error", async () => {
     mockNote(null, 404);
     render(<NoteView slug="n" path="missing.md" />);

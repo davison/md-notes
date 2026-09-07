@@ -49,19 +49,27 @@ export function NoteView({ slug, path, version = 0, line = null }: NoteProps) {
   // refetch of the same note keeps the reader's place. A requested line
   // wins over both and is honoured whenever it changes.
   const opened = useRef("");
+  const scrolled = useRef("");
   useEffect(() => {
     if (!note) return;
     const key = slug + "\0" + path;
     const fresh = opened.current !== key;
     opened.current = key;
     if (line !== null) {
+      // Honour a requested line once per note and line, so a live refetch
+      // of the same note keeps the reader's place.
+      const lineKey = key + "\0" + line;
+      if (scrolled.current === lineKey) return;
+      scrolled.current = lineKey;
       const target = lineTarget(body.current, line);
       if (target) {
         target.scrollIntoView({ block: "center" });
-        target.classList.add("flash");
-        const t = setTimeout(() => target.classList.remove("flash"), 1500);
+        const flash = target.classList.contains("line-anchor") ? (target.nextElementSibling ?? target) : target;
+        flash.classList.add("flash");
+        const t = setTimeout(() => flash.classList.remove("flash"), 1500);
         return () => clearTimeout(t);
       }
+      return;
     }
     if (!fresh) return;
     const pane = body.current?.closest("main");
