@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/davison/md-notes/internal/roots"
+	"github.com/davison/md-notes/internal/tree"
 )
 
 // Server serves the API and UI for a registry of roots.
@@ -41,6 +42,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger) *Server {
 	s.mux.HandleFunc("GET /api/roots", s.listRoots)
 	s.mux.HandleFunc("POST /api/roots", s.addRoot)
 	s.mux.HandleFunc("GET /api/r/{slug}/raw/{path...}", s.rawFile)
+	s.mux.HandleFunc("GET /api/r/{slug}/tree", s.treeHandler)
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})
@@ -139,6 +141,26 @@ func (s *Server) addRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, root)
+}
+
+// treeHandler returns the markdown files of a root as a directory tree.
+func (s *Server) treeHandler(w http.ResponseWriter, r *http.Request) {
+	root, ok := s.reg.Get(r.PathValue("slug"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "unknown root")
+		return
+	}
+	files, err := tree.List(root.Path)
+	if err != nil {
+		s.log.Printf("tree %s: %v", root.Slug, err)
+		if errors.Is(err, tree.ErrNoRipgrep) {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not list files")
+		return
+	}
+	writeJSON(w, http.StatusOK, tree.Build(files))
 }
 
 func (s *Server) rawFile(w http.ResponseWriter, r *http.Request) {
