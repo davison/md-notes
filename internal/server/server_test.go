@@ -150,6 +150,8 @@ func TestAddRootErrors(t *testing.T) {
 		{`{}`, 400},
 		{`{"path":"` + filepath.Join(base, "missing") + `"}`, 400},
 		{`{"path":"` + filepath.Join(base, "secret") + `"}`, 400},
+		{`{"path":"relative/dir"}`, 400},
+		{`{"path":"."}`, 400},
 	}
 	for _, c := range cases {
 		resp := do(t, ts, "POST", "/api/roots", c.body, nil)
@@ -192,6 +194,17 @@ func TestRawFile(t *testing.T) {
 	resp := do(t, ts, "GET", "/api/r/notes/raw/../../../secret", "", nil)
 	if b := readAll(t, resp.Body); strings.Contains(b, "s") && resp.StatusCode == 200 && b == "s" {
 		t.Errorf("dot-dot traversal served the secret")
+	}
+}
+
+func TestRawFileHeadersSandboxContent(t *testing.T) {
+	ts, _ := newTestServer(t)
+	resp := do(t, ts, "GET", "/api/r/notes/raw/hello.md", "", nil)
+	if got := resp.Header.Get("Content-Security-Policy"); got != "sandbox" {
+		t.Errorf("CSP = %q, want sandbox", got)
+	}
+	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
 	}
 }
 

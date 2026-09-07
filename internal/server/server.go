@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -123,6 +124,10 @@ func (s *Server) addRoot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "path is required")
 		return
 	}
+	if !filepath.IsAbs(body.Path) {
+		writeError(w, http.StatusBadRequest, "path must be absolute")
+		return
+	}
 	root, err := s.reg.Add(body.Path)
 	switch {
 	case errors.Is(err, roots.ErrNotDir), errors.Is(err, os.ErrNotExist):
@@ -160,6 +165,12 @@ func (s *Server) rawFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	// Raw files are user content served on the daemon's own origin. The
+	// sandbox directive stops an HTML or SVG file from running script with
+	// that origin's authority, which would otherwise let a crafted note
+	// register roots and read files through the API.
+	w.Header().Set("Content-Security-Policy", "sandbox")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 }
 
