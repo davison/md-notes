@@ -141,26 +141,19 @@ func splitFrontmatter(src []byte) (map[string]any, []byte) {
 	return fm, rest[after:]
 }
 
-// firstH1 returns the plain text of the first level-one heading and the
-// heading node itself, or "" and nil.
+// firstH1 returns the plain text of the first top-level level-one heading
+// and the heading node itself, or "" and nil. Headings nested in quotes or
+// lists are not titles and are left alone.
 func firstH1(doc ast.Node, src []byte) (string, ast.Node) {
-	var out string
-	var node ast.Node
-	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
-		}
+	for n := doc.FirstChild(); n != nil; n = n.NextSibling() {
 		if h, ok := n.(*ast.Heading); ok && h.Level == 1 {
-			out = strings.TrimSpace(plainText(h, src))
-			node = h
-			return ast.WalkStop, nil
+			if t := strings.TrimSpace(plainText(h, src)); t != "" {
+				return t, h
+			}
+			return "", nil
 		}
-		return ast.WalkContinue, nil
-	})
-	if out == "" {
-		return "", nil
 	}
-	return out, node
+	return "", nil
 }
 
 func plainText(n ast.Node, src []byte) string {
@@ -208,6 +201,10 @@ func (linkRewriter) Transform(doc *ast.Document, reader text.Reader, pc parser.C
 			}
 		case *ast.Image:
 			dest, _ := rewrite(lc, string(l.Destination), false)
+			if dest == "" && len(l.Destination) > 0 {
+				l.Title = []byte("Image is outside this root")
+				l.SetAttributeString("class", []byte("outside-root"))
+			}
 			l.Destination = []byte(dest)
 		}
 		return ast.WalkContinue, nil
@@ -275,7 +272,10 @@ var (
 	idPattern = regexp.MustCompile(`^(fn|fnref):\d+$|^[\pL\pN_\-]+$`)
 	// Only the classes goldmark and chroma emit, so a note cannot borrow
 	// the app's own layout classes.
-	codeClassPattern = regexp.MustCompile(`^(chroma|line|cl|hl|ln|lnt|lntd|lntable|language-[\w+#.\-]+|[a-z]{1,3})( (chroma|line|cl|hl|ln|lnt|lntd|lntable|[a-z]{1,3}))*$`)
+	// Chroma token classes are one to three letters, some with a digit
+	// (c1, s1, s2). TestChromaClassesPassSanitiser ties this to the
+	// generated stylesheet.
+	codeClassPattern = regexp.MustCompile(`^(chroma|line|cl|hl|ln|lnt|lntd|lntable|language-[\w+#.\-]+|[a-z]{1,3}[0-9]?)( (chroma|line|cl|hl|ln|lnt|lntd|lntable|[a-z]{1,3}[0-9]?))*$`)
 	noteClassPattern = regexp.MustCompile(`^(footnotes|footnote-ref|footnote-backref|outside-root)$`)
 )
 
@@ -303,7 +303,7 @@ func newPolicy() *bluemonday.Policy {
 	p.AllowImages()
 	p.AllowAttrs("id").Matching(idPattern).OnElements("h1", "h2", "h3", "h4", "h5", "h6", "sup", "li")
 	p.AllowAttrs("class").Matching(codeClassPattern).OnElements("pre", "code", "span")
-	p.AllowAttrs("class").Matching(noteClassPattern).OnElements("a", "div", "section")
+	p.AllowAttrs("class").Matching(noteClassPattern).OnElements("a", "img", "div", "section")
 	p.AllowAttrs("role").Matching(regexp.MustCompile(`^doc-(noteref|endnotes|backlink)$`)).OnElements("a", "div", "section")
 	p.AllowAttrs("type").Matching(regexp.MustCompile(`^checkbox$`)).OnElements("input")
 	p.AllowAttrs("checked", "disabled").OnElements("input")

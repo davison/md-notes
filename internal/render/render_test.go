@@ -1,6 +1,8 @@
 package render
 
 import (
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -128,6 +130,12 @@ func TestTitleSources(t *testing.T) {
 	if n = render(t, "x.md", "---\ntitle: FM\n---\n# Kept\n"); !strings.Contains(n.HTML, "Kept") {
 		t.Errorf("frontmatter title must not remove the H1: %s", n.HTML)
 	}
+	// Nested headings are neither titles nor removed.
+	n = render(t, "quoted.md", "> # Quoted\n\n- # Listed\n")
+	if n.Title != "quoted" {
+		t.Errorf("nested h1 title = %q, want file name", n.Title)
+	}
+	wantContains(t, n.HTML, "Quoted", "Listed")
 	if n := render(t, "x.md", "---\ntitle: ''\n---\n# From H1\n"); n.Title != "From H1" {
 		t.Errorf("empty fm title = %q", n.Title)
 	}
@@ -153,6 +161,7 @@ func TestLinkRewriting(t *testing.T) {
 		{"already encoded", "[a](my%20note.md)", `href="/r/notes/docs/my%20note.md"`},
 		{"escapes root", "[a](../../etc/passwd)", `<a title="Link target is outside this root" class="outside-root">a</a>`},
 		{"escapes root via root-relative", "[a](/../x.md)", `href="/r/notes/x.md"`},
+		{"image escapes root", "![alt](../../x.png)", `<img alt="alt" title="Image is outside this root" class="outside-root">`},
 	}
 	for _, c := range cases {
 		n := render(t, "docs/note.md", c.md)
@@ -194,6 +203,37 @@ func TestIDsAndClassesAreScoped(t *testing.T) {
 `)
 	wantContains(t, n.HTML, `<h2 id="app">x</h2>`, `<span class="kd">w</span>`, `class="footnote-ref"`)
 	wantMissing(t, n.HTML, `javascript:alert`, `class="side pane note-title"`)
+}
+
+// TestChromaClassesPassSanitiser reads the generated stylesheet and checks
+// every token class it styles survives the class allow-list, so the two
+// cannot drift apart.
+func TestChromaClassesPassSanitiser(t *testing.T) {
+	css, err := os.ReadFile("../../ui/src/chroma.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	classes := regexp.MustCompile(`\.chroma \.([A-Za-z0-9]+)`).FindAllStringSubmatch(string(css), -1)
+	if len(classes) < 20 {
+		t.Fatalf("found only %d chroma classes; is the stylesheet generated?", len(classes))
+	}
+	seen := map[string]bool{}
+	for _, m := range classes {
+		c := m[1]
+		if seen[c] {
+			continue
+		}
+		seen[c] = true
+		out := r.policy.Sanitize(`<span class="` + c + `">x</span>`)
+		if !strings.Contains(out, `class="`+c+`"`) {
+			t.Errorf("chroma class %q is stripped by the sanitiser", c)
+		}
+	}
+	for _, c := range []string{"c1", "s1", "s2"} {
+		if !seen[c] {
+			t.Errorf("stylesheet lacks %q; the check is weaker than intended", c)
+		}
+	}
 }
 
 func TestRawHTMLAllowedSubset(t *testing.T) {

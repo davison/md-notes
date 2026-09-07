@@ -80,7 +80,12 @@ export function fragmentTarget(scope: Element | null, hash: string): Element | n
   } catch {
     // keep the raw id
   }
-  return scope.querySelector(`[id="${id.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`);
+  // Compared as strings rather than built into a selector, so any id a
+  // note can produce is safe to look up.
+  for (const el of scope.querySelectorAll("[id]")) {
+    if (el.id === id) return el;
+  }
+  return null;
 }
 
 export function formatValue(v: unknown): string {
