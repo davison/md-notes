@@ -3,10 +3,12 @@ package tree
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -95,7 +97,7 @@ func TestListFiltersAndHonoursIgnores(t *testing.T) {
 	write(t, filepath.Join(root, "UPPER.MD"), "")
 	write(t, filepath.Join(root, "back\\slash.md"), "")
 
-	got, err := List(context.Background(), root)
+	got, err := List(context.Background(), root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +127,7 @@ func TestListHonoursGitignoreInRepo(t *testing.T) {
 	write(t, filepath.Join(root, "api.gen.md"), "")
 	write(t, filepath.Join(root, "private", "p.md"), "")
 
-	got, err := List(context.Background(), root)
+	got, err := List(context.Background(), root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +139,7 @@ func TestListHonoursGitignoreInRepo(t *testing.T) {
 
 func TestListEmptyRoot(t *testing.T) {
 	requireRg(t)
-	got, err := List(context.Background(), t.TempDir())
+	got, err := List(context.Background(), t.TempDir(), nil)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("List(empty) = %v, %v", got, err)
 	}
@@ -147,7 +149,7 @@ func TestListNewlineInName(t *testing.T) {
 	requireRg(t)
 	root := t.TempDir()
 	write(t, filepath.Join(root, "line\nbreak.md"), "")
-	got, err := List(context.Background(), root)
+	got, err := List(context.Background(), root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,12 +169,16 @@ func TestListUnreadableSubdirIsPartial(t *testing.T) {
 	write(t, filepath.Join(locked, "hidden.md"), "")
 	os.Chmod(locked, 0)
 	t.Cleanup(func() { os.Chmod(locked, 0o755) })
-	got, err := List(context.Background(), root)
+	var warnings []string
+	got, err := List(context.Background(), root, func(f string, a ...any) { warnings = append(warnings, fmt.Sprintf(f, a...)) })
 	if err != nil {
 		t.Fatalf("unreadable subdir must not fail the listing: %v", err)
 	}
 	if !reflect.DeepEqual(got, []string{"ok.md"}) {
 		t.Fatalf("List() = %v", got)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "partial") {
+		t.Fatalf("warnings = %q, want one partial-listing warning", warnings)
 	}
 }
 
@@ -180,7 +186,7 @@ func TestListCancelled(t *testing.T) {
 	requireRg(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := List(ctx, t.TempDir()); !errors.Is(err, context.Canceled) {
+	if _, err := List(ctx, t.TempDir(), nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
@@ -193,11 +199,27 @@ func TestIsMarkdown(t *testing.T) {
 	}
 }
 
+func TestListManyFilesStreams(t *testing.T) {
+	requireRg(t)
+	root := t.TempDir()
+	for i := 0; i < 2000; i++ {
+		name := filepath.Join(root, "d", fmt.Sprintf("f%04d.txt", i))
+		if i%100 == 0 {
+			name = strings.TrimSuffix(name, ".txt") + ".md"
+		}
+		write(t, name, "")
+	}
+	got, err := List(context.Background(), root, nil)
+	if err != nil || len(got) != 20 {
+		t.Fatalf("List() = %d files, %v", len(got), err)
+	}
+}
+
 func TestListMissingRipgrep(t *testing.T) {
 	orig := lookPath
 	lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
 	t.Cleanup(func() { lookPath = orig })
-	if _, err := List(context.Background(), t.TempDir()); !errors.Is(err, ErrNoRipgrep) {
+	if _, err := List(context.Background(), t.TempDir(), nil); !errors.Is(err, ErrNoRipgrep) {
 		t.Fatalf("err = %v, want ErrNoRipgrep", err)
 	}
 }
