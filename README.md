@@ -37,12 +37,17 @@ do a few things well and nothing else:
 
 ## Building
 
-Requires Go, pnpm, and ripgrep on the machine that runs the daemon.
+Requires Go and pnpm to build. Later milestones add ripgrep as a runtime
+dependency for search.
 
 ```
 make build      # builds the UI and the static ./mdn binary
 make check      # vet, typecheck, tests, build
+make install    # copies ./mdn to ~/.local/bin/mdn (PREFIX=... to change)
 ```
+
+The commands below assume `~/.local/bin` is on your PATH; otherwise run
+`./mdn` from the repository.
 
 ## Running
 
@@ -75,7 +80,9 @@ prints the URL instead. The daemon must already be running.
 
 The daemon listens on the loopback address only, refuses requests whose
 Host or Origin is not its own, and never serves a path that resolves
-outside a registered root, symlinks included.
+outside a registered root, symlinks included. It has no authentication of
+its own: it assumes a single-user machine, where every local process
+already runs as the user who owns the notes.
 
 ## Status
 
