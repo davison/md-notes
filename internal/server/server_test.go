@@ -483,9 +483,11 @@ func TestCloseBoundsWaitForStuckSetup(t *testing.T) {
 	orig := setupWait
 	setupWait = 50 * time.Millisecond
 	t.Cleanup(func() { setupWait = orig })
+	stuck := make(chan struct{})
 	s.wmu.Lock()
-	s.starting["stuck"] = make(chan struct{}) // never closed
+	s.starting["stuck"] = stuck
 	s.wmu.Unlock()
+	t.Cleanup(func() { close(stuck) }) // so the server's own cleanup does not wait again
 	start := time.Now()
 	s.Close()
 	if d := time.Since(start); d > time.Second {

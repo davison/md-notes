@@ -123,6 +123,19 @@ describe("NoteView", () => {
     await waitFor(() => expect(scrolls.length).toBe(2));
   });
 
+  it("scrolls a fresh open to the top when the requested line has no block", async () => {
+    mockNote({ path: "x.md", title: "T", html: '<p data-line="6">a</p>' });
+    const { container } = render(
+      <main>
+        <NoteView slug="n" path="x.md" version={0} line={2} />
+      </main>,
+    );
+    const pane = container.querySelector("main")!;
+    pane.scrollTop = 500;
+    await waitFor(() => expect(screen.getByText("a")).toBeTruthy());
+    await waitFor(() => expect(pane.scrollTop).toBe(0));
+  });
+
   it("surfaces the daemon's error", async () => {
     mockNote(null, 404);
     render(<NoteView slug="n" path="missing.md" />);

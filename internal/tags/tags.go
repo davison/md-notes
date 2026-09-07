@@ -97,11 +97,19 @@ func frontmatterTags(fm map[string]any) []string {
 			out = append(out, n)
 		}
 	}
-	var raw any
-	for k, v := range fm {
-		if strings.EqualFold(k, "tags") {
-			raw = v
-			break
+	// "tags" exactly, else the first case-insensitive match by name, so
+	// a file with several spellings gives the same answer every time.
+	raw, ok := fm["tags"]
+	if !ok {
+		var keys []string
+		for k := range fm {
+			if strings.EqualFold(k, "tags") {
+				keys = append(keys, k)
+			}
+		}
+		if len(keys) > 0 {
+			sort.Strings(keys)
+			raw = fm[keys[0]]
 		}
 	}
 	switch v := raw.(type) {
@@ -132,6 +140,9 @@ func inlineTags(body []byte) []string {
 		if inFence {
 			continue
 		}
+		if refDef.Match(trimmed) {
+			continue
+		}
 		text := stripLinkTargets(stripInlineCode(string(line)))
 		for _, m := range inline.FindAllStringSubmatch(text, -1) {
 			if n := normalise(m[1]); n != "" {
@@ -145,6 +156,8 @@ func inlineTags(body []byte) []string {
 var (
 	linkTarget = regexp.MustCompile(`\]\([^)]*\)`)
 	bareURL    = regexp.MustCompile(`\b[a-z][a-z0-9+.-]*://\S+`)
+	// A reference-style link definition line: [label]: destination
+	refDef = regexp.MustCompile(`^\[[^\]]+\]:\s*\S`)
 )
 
 // stripLinkTargets blanks markdown link destinations and bare URLs so a
