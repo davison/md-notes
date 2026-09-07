@@ -120,19 +120,6 @@ export class SourceError extends Error {
   }
 }
 
-/** Codes the daemon returns for a source read or save. Anything else is treated as an I/O failure. */
-export type SourceCode =
-  | "invalid_body"
-  | "outside_root"
-  | "permission_denied"
-  | "not_found"
-  | "not_markdown"
-  | "conflict"
-  | "too_large"
-  | "unsupported_source"
-  | "revision_required"
-  | "io_error";
-
 function sourceURL(slug: string, path: string): string {
   return `/api/r/${encodeURIComponent(slug)}/source/${encodePath(path)}`;
 }
@@ -151,8 +138,8 @@ async function sourceErrorFrom(res: Response): Promise<SourceError> {
 }
 
 /** The unmodified markdown source of a note and its current revision. */
-export async function fetchSource(slug: string, path: string, signal?: AbortSignal): Promise<Source> {
-  const res = await fetch(sourceURL(slug, path), { signal, cache: "no-store" });
+export async function fetchSource(slug: string, path: string): Promise<Source> {
+  const res = await fetch(sourceURL(slug, path), { cache: "no-store" });
   if (!res.ok) throw await sourceErrorFrom(res);
   return (await res.json()) as Source;
 }

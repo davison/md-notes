@@ -449,6 +449,28 @@ describe("Session: external changes", () => {
     expect(daemon.file?.source).toBe("mine\n");
   });
 
+  it("a fresh edit after a refused resend allows one more resend", async () => {
+    const s = await opened();
+    s.edit("mine\n");
+    daemon.touch();
+    const orig = daemon.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (init?.method === "PUT" && daemon.puts().length === 1) daemon.touch();
+        return orig(url, init);
+      }),
+    );
+    await s.flush();
+    expect(s.state.status).toBe("failed");
+    vi.stubGlobal("fetch", vi.fn(orig));
+    s.edit("mine again\n");
+    daemon.touch();
+    await s.flush();
+    expect(s.state.status).toBe("clean");
+    expect(daemon.file?.source).toBe("mine again\n");
+  });
+
   it("a save refused twice for touches stays failed rather than looping", async () => {
     const s = await opened();
     s.edit("mine\n");
@@ -583,6 +605,31 @@ describe("Session: stored drafts", () => {
     expect(s.state.status).toBe("conflict");
     expect(s.state.conflict?.kind).toBe("deleted");
     expect(s.state.draft).toBe("recovered\n");
+  });
+
+  it("another tab reaching clean leaves this tab's stored draft alone", async () => {
+    // Tab B opens the note with nothing in storage; tab A then stores a draft.
+    const b = await opened();
+    const recordA = JSON.stringify({ revision: "r1", draft: "tab A draft\n" });
+    localStorage.setItem("mdn:draft:n\0a.md", recordA);
+    // Tab B settling to clean again does not remove a record it did not write.
+    daemon.touch();
+    await b.changed();
+    expect(b.state.status).toBe("clean");
+    expect(localStorage.getItem("mdn:draft:n\0a.md")).toBe(recordA);
+    // Tab B's own record is written over the shared slot and cleared by its save.
+    b.edit("tab B\n");
+    await b.flush();
+    expect(localStorage.getItem("mdn:draft:n\0a.md")).toBeNull();
+  });
+
+  it("a session clears a record it recovered once the draft lands", async () => {
+    localStorage.setItem("mdn:draft:n\0a.md", JSON.stringify({ revision: "r1", draft: "recovered\n" }));
+    const s = getSession("n", "a.md");
+    await s.open();
+    await s.flush();
+    expect(s.state.status).toBe("clean");
+    expect(hasStoredDraft("n", "a.md")).toBe(false);
   });
 
   it("ignores corrupt storage", async () => {
