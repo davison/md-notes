@@ -67,13 +67,13 @@ described under [Confinement](#confinement).
 
 | Endpoint | What it does |
 |----------|--------------|
-| `GET /api/roots` | Every root as `{slug, path, kind}` |
+| `GET /api/roots` | `{roots: [{slug, path, kind}]}` |
 | `POST /api/roots` | Registers `{"path": "/absolute/dir"}` and returns the root. Relative paths are refused |
 | `GET /api/r/{slug}/tree` | The root's markdown tree as nested `{name, path, dir, children}` |
 | `GET /api/r/{slug}/note/{path...}` | A rendered note as `{path, title, frontmatter, html}`. Non-markdown paths are 404 here |
 | `GET /api/r/{slug}/raw/{path...}` | File bytes, for images and other assets. Served with `Content-Security-Policy: sandbox` and `X-Content-Type-Options: nosniff` |
 | `GET /api/r/{slug}/search?q=` | `{hits, truncated}`; each hit is a path, line number, matching text with match offsets, and the lines either side |
-| `GET /api/r/{slug}/tags` | `[{name, count, notes}]`, sorted by count then name |
+| `GET /api/r/{slug}/tags` | `{tags: [{name, count, notes}]}`, sorted by count then name |
 | `GET /api/r/{slug}/events` | A Server-Sent Events stream of change batches |
 
 Everything else serves the embedded UI bundle, falling back to `index.html` so
@@ -144,6 +144,10 @@ the root is served without live update for the directories it could not watch.
   rejected if it leaves the root lexically, then symlinks are evaluated and it is
   rejected again if the real path leaves the root. A symlink pointing back inside the
   root is served.
+- The two halves of that meet at symlinks inside a root: ripgrep does not follow them,
+  so a symlinked file or directory is in neither the navigator nor search, but one
+  whose target is inside the root is still served by direct URL, and one whose target
+  leaves the root is refused.
 
 The daemon has no authentication of its own. It assumes a single-user machine, where
 every local process already runs as the user who owns the notes — so any local
