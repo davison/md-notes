@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { fetchTree, listRoots, type Root, type TreeNode } from "./api";
-import { affects, useEvents } from "./events";
+import { affects, affectsTree, useEvents } from "./events";
 import { Navigator } from "./navigator";
 import { NoteView } from "./note-view";
 
@@ -43,7 +43,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
   }, [root, loadTree]);
 
   useEvents(slug, (paths) => {
-    loadTree();
+    if (affectsTree(paths)) loadTree();
     if (current && affects(paths, current)) setNoteVersion((v) => v + 1);
   });
 
