@@ -318,13 +318,21 @@ watcher observations from the live-update re-review
 - **Rejected:** another review round for changes that are small, low, and about to be
   touched again by the next task anyway.
 
-Each deferral named the task that would carry it, and each was carried: the navigator
-items landed in the live-update PR
-([#9](https://github.com/davison/md-notes/pull/9)) and the watcher items in the
-search PR ([#12](https://github.com/davison/md-notes/pull/12)). The one exception is
-the class-leak nit, which QA later found to be wider than the single `nav` class it
-was recorded as and which is now backlog issue
-[#14](https://github.com/davison/md-notes/issues/14).
+Each deferral named the task that would carry it, and each was carried. The two
+navigator items and the rendering nit landed together in the live-update PR
+([#9](https://github.com/davison/md-notes/pull/9)) — the class-leak fix as
+[`e435c60`](https://github.com/davison/md-notes/commit/e435c60), which scoped the
+shell's layout selectors (`.nav` became `.shell > .nav`, and `.note`, `.side` and
+`.topbar` likewise) exactly as the deferral said it would. The watcher items landed
+in the search PR ([#12](https://github.com/davison/md-notes/pull/12)).
+
+QA then found that a note can still wear those class names, by a different route: the
+sanitiser's `codeClassPattern` in `internal/render/render.go`, which admits any class
+of up to three letters plus an optional digit so that chroma's token classes survive,
+also admits `nav`, `hit`, `tag` and `ctx`
+([#5](https://github.com/davison/md-notes/issues/5#issuecomment-5575184182)). That is
+the surface [#14](https://github.com/davison/md-notes/issues/14) targets, which is why
+its proposed shape is prefixing chroma's classes rather than more CSS scoping.
 
 ## Deviations
 
@@ -508,8 +516,10 @@ Beyond those, three things are true of M1 as shipped and are not defects, but wi
 surprise someone who has not read this far:
 
 - Symlinked files and directories inside a root are absent from the navigator and
-  from search, which is consistent with the confinement policy but is documented
-  nowhere else ([#1](https://github.com/davison/md-notes/issues/1#issuecomment-5575193559)).
+  from search, while a symlink whose target is inside the root is still served by
+  direct URL. QA recorded this as consistent but undocumented
+  ([#1](https://github.com/davison/md-notes/issues/1#issuecomment-5575193559)); it is
+  now stated in [the introduction](../introduction.md).
 - Hidden and gitignored files are readable by direct URL even though the navigator
   and search hide them, which the accepted single-user premise covers explicitly
   ([#2](https://github.com/davison/md-notes/issues/2#issuecomment-5572874194)).
@@ -537,5 +547,6 @@ Two gaps, named rather than filled:
   choices is starting from scratch.
 
 A third, smaller silence: the default port `7337` appears in the skeleton plan on
-[#2](https://github.com/davison/md-notes/issues/2) and nowhere else, with no
-rationale.
+[#2](https://github.com/davison/md-notes/issues/2) and nowhere else in the record. It
+is of course in the code, the README and the introduction; what was never written down
+is why that number.
