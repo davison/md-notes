@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
@@ -55,7 +57,10 @@ func New() *Renderer {
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
-			parser.WithASTTransformers(util.Prioritized(&linkRewriter{}, 100)),
+			parser.WithASTTransformers(
+				util.Prioritized(&linkRewriter{}, 100),
+				util.Prioritized(&lineMarker{}, 200),
+			),
 		),
 		goldmark.WithRendererOptions(html.WithUnsafe()),
 	)
@@ -68,6 +73,9 @@ func (r *Renderer) Render(slug, notePath string, src []byte) (Note, error) {
 	fm, body := splitFrontmatter(src)
 	ctx := parser.NewContext()
 	ctx.Set(linkContextKey, linkContext{slug: slug, noteDir: path.Dir(notePath)})
+	// Lines removed with the frontmatter, so markers count from the file's
+	// first line as ripgrep does.
+	ctx.Set(lineOffsetKey, bytes.Count(src[:len(src)-len(body)], []byte{'\n'}))
 
 	doc := r.md.Parser().Parse(text.NewReader(body), parser.WithContext(ctx))
 
@@ -265,6 +273,61 @@ func encodePath(p string) string {
 	return strings.Join(parts, "/")
 }
 
+// Source line markers ----------------------------------------------------
+
+var lineOffsetKey = parser.NewContextKey()
+
+// lineMarker sets data-line on every block element to the 1-based source
+// line it starts at, so a search hit can be scrolled to in the rendered
+// note. Blocks without their own source lines, such as lists, take the
+// line of their first descendant that has one.
+type lineMarker struct{}
+
+func (lineMarker) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
+	src := reader.Source()
+	offset, _ := pc.Get(lineOffsetKey).(int)
+	// Byte offset of the start of each line, for a binary search.
+	starts := []int{0}
+	for i, b := range src {
+		if b == '\n' {
+			starts = append(starts, i+1)
+		}
+	}
+	lineOf := func(pos int) int {
+		return sort.Search(len(starts), func(i int) bool { return starts[i] > pos }) + offset
+	}
+	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering || n.Type() != ast.TypeBlock || n == doc {
+			return ast.WalkContinue, nil
+		}
+		if pos, ok := firstSegment(n); ok {
+			line := lineOf(pos)
+			if _, fenced := n.(*ast.FencedCodeBlock); fenced {
+				line-- // the opening fence is the line before the content
+			}
+			n.SetAttributeString("data-line", []byte(strconv.Itoa(line)))
+		}
+		return ast.WalkContinue, nil
+	})
+}
+
+// firstSegment returns the byte offset of the first source segment of n
+// or of its first descendant that has one.
+func firstSegment(n ast.Node) (int, bool) {
+	if lines := n.Lines(); lines != nil && lines.Len() > 0 {
+		return lines.At(0).Start, true
+	}
+	if t, ok := n.(*ast.Text); ok {
+		return t.Segment.Start, true
+	}
+	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+		if pos, ok := firstSegment(c); ok {
+			return pos, true
+		}
+	}
+	return 0, false
+}
+
 // Sanitisation -----------------------------------------------------------
 
 var (
@@ -302,6 +365,8 @@ func newPolicy() *bluemonday.Policy {
 	p.AllowTables()
 	p.AllowImages()
 	p.AllowAttrs("id").Matching(idPattern).OnElements("h1", "h2", "h3", "h4", "h5", "h6", "sup", "li")
+	p.AllowAttrs("data-line").Matching(regexp.MustCompile(`^[0-9]{1,9}$`)).OnElements(
+		"p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "table", "pre", "hr", "div")
 	p.AllowAttrs("class").Matching(codeClassPattern).OnElements("pre", "code", "span")
 	p.AllowAttrs("class").Matching(noteClassPattern).OnElements("a", "img", "div", "section")
 	p.AllowAttrs("role").Matching(regexp.MustCompile(`^doc-(noteref|endnotes|backlink)$`)).OnElements("a", "div", "section")
