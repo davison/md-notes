@@ -51,8 +51,11 @@ Footnote here[^1].
 [^1]: The note.
 
 `+"```go\nfunc main() {}\n```\n")
+	if n.Title != "Title" {
+		t.Errorf("title = %q", n.Title)
+	}
+	wantMissing(t, n.HTML, "<h1")
 	wantContains(t, n.HTML,
-		`<h1 id="title">Title</h1>`,
 		`<table>`, `align="left"`, `align="right"`,
 		`type="checkbox"`, `checked=""`, `disabled=""`,
 		`<del>gone</del>`,
@@ -81,6 +84,24 @@ func TestFrontmatterCRLFAndDots(t *testing.T) {
 	}
 }
 
+func TestEmptyFrontmatter(t *testing.T) {
+	n := render(t, "x.md", "---\n---\nBody\n")
+	if n.Frontmatter == nil || len(n.Frontmatter) != 0 {
+		t.Errorf("frontmatter = %#v, want empty map", n.Frontmatter)
+	}
+	wantContains(t, n.HTML, "<p>Body</p>")
+	wantMissing(t, n.HTML, "<hr")
+}
+
+func TestNonMappingFrontmatterIsBody(t *testing.T) {
+	for _, src := range []string{"---\n- a\n- b\n---\nBody\n", "---\nscalar\n---\nBody\n"} {
+		n := render(t, "x.md", src)
+		if n.Frontmatter != nil {
+			t.Errorf("%q: frontmatter = %#v, want nil", src, n.Frontmatter)
+		}
+	}
+}
+
 func TestMalformedFrontmatterIsBody(t *testing.T) {
 	n := render(t, "x.md", "---\nnot: [valid\n---\nBody\n")
 	if n.Frontmatter != nil {
@@ -97,8 +118,15 @@ func TestTitleSources(t *testing.T) {
 	if n := render(t, "sub/file-name.md", "no heading\n"); n.Title != "file-name" {
 		t.Errorf("filename title = %q", n.Title)
 	}
-	if n := render(t, "x.md", "## Two\n\n# The *real* `title`\n"); n.Title != "The real title" {
+	n := render(t, "x.md", "## Two\n\n# The *real* `title`\n\n# Second\n")
+	if n.Title != "The real title" {
 		t.Errorf("h1 title = %q", n.Title)
+	}
+	// The heading that supplied the title is removed; a later H1 stays.
+	wantMissing(t, n.HTML, "real")
+	wantContains(t, n.HTML, "<h2 id=\"two\">Two</h2>", "<h1 id=\"second\">Second</h1>")
+	if n = render(t, "x.md", "---\ntitle: FM\n---\n# Kept\n"); !strings.Contains(n.HTML, "Kept") {
+		t.Errorf("frontmatter title must not remove the H1: %s", n.HTML)
 	}
 	if n := render(t, "x.md", "---\ntitle: ''\n---\n# From H1\n"); n.Title != "From H1" {
 		t.Errorf("empty fm title = %q", n.Title)
@@ -123,7 +151,8 @@ func TestLinkRewriting(t *testing.T) {
 		{"image of markdown is raw", "![p](other.md)", `src="/api/r/notes/raw/docs/other.md"`},
 		{"spaces encoded", "[a](<my note.md>)", `href="/r/notes/docs/my%20note.md"`},
 		{"already encoded", "[a](my%20note.md)", `href="/r/notes/docs/my%20note.md"`},
-		{"escapes root", "[a](../../etc/passwd)", `href="../../etc/passwd"`},
+		{"escapes root", "[a](../../etc/passwd)", `<a title="Link target is outside this root" class="outside-root">a</a>`},
+		{"escapes root via root-relative", "[a](/../x.md)", `href="/r/notes/x.md"`},
 	}
 	for _, c := range cases {
 		n := render(t, "docs/note.md", c.md)
@@ -150,6 +179,21 @@ func TestSanitisation(t *testing.T) {
 	// Raw HTML images are kept but not rewritten: only markdown image
 	// syntax is resolved against the root.
 	wantContains(t, n.HTML, "<p>para</p>", `type="checkbox"`, `<img src="x.png">`)
+}
+
+func TestIDsAndClassesAreScoped(t *testing.T) {
+	n := render(t, "x.md", `<h2 id="app">x</h2>
+
+<h2 id="javascript:alert(1)">y</h2>
+
+<p class="side pane note-title">z</p>
+
+<span class="kd">w</span>
+
+<a class="footnote-ref" href="#fn:1">f</a>
+`)
+	wantContains(t, n.HTML, `<h2 id="app">x</h2>`, `<span class="kd">w</span>`, `class="footnote-ref"`)
+	wantMissing(t, n.HTML, `javascript:alert`, `class="side pane note-title"`)
 }
 
 func TestRawHTMLAllowedSubset(t *testing.T) {

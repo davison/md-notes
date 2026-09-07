@@ -70,18 +70,22 @@ func (r *Renderer) Render(slug, notePath string, src []byte) (Note, error) {
 	ctx.Set(linkContextKey, linkContext{slug: slug, noteDir: path.Dir(notePath)})
 
 	doc := r.md.Parser().Parse(text.NewReader(body), parser.WithContext(ctx))
-	var buf bytes.Buffer
-	if err := r.md.Renderer().Render(&buf, body, doc); err != nil {
-		return Note{}, fmt.Errorf("render %s: %w", notePath, err)
-	}
 
+	// The app shows the title above the note, so a heading that supplied it
+	// is removed from the body rather than shown twice.
 	title := ""
 	if t, ok := fm["title"].(string); ok && strings.TrimSpace(t) != "" {
 		title = strings.TrimSpace(t)
-	} else if h := firstH1(doc, body); h != "" {
+	} else if h, node := firstH1(doc, body); h != "" {
 		title = h
+		node.Parent().RemoveChild(node.Parent(), node)
 	} else {
 		title = strings.TrimSuffix(path.Base(notePath), path.Ext(notePath))
+	}
+
+	var buf bytes.Buffer
+	if err := r.md.Renderer().Render(&buf, body, doc); err != nil {
+		return Note{}, fmt.Errorf("render %s: %w", notePath, err)
 	}
 
 	return Note{
@@ -124,8 +128,12 @@ func splitFrontmatter(src []byte) (map[string]any, []byte) {
 		return nil, src
 	}
 	var fm map[string]any
-	if err := yaml.Unmarshal(rest[:end], &fm); err != nil || fm == nil {
+	if err := yaml.Unmarshal(rest[:end], &fm); err != nil {
 		return nil, src
+	}
+	if fm == nil {
+		// An empty block is still frontmatter, with nothing in it.
+		fm = map[string]any{}
 	}
 	if after > len(rest) {
 		after = len(rest)
@@ -133,20 +141,26 @@ func splitFrontmatter(src []byte) (map[string]any, []byte) {
 	return fm, rest[after:]
 }
 
-// firstH1 returns the plain text of the first level-one heading.
-func firstH1(doc ast.Node, src []byte) string {
+// firstH1 returns the plain text of the first level-one heading and the
+// heading node itself, or "" and nil.
+func firstH1(doc ast.Node, src []byte) (string, ast.Node) {
 	var out string
+	var node ast.Node
 	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
 		if h, ok := n.(*ast.Heading); ok && h.Level == 1 {
 			out = strings.TrimSpace(plainText(h, src))
+			node = h
 			return ast.WalkStop, nil
 		}
 		return ast.WalkContinue, nil
 	})
-	return out
+	if out == "" {
+		return "", nil
+	}
+	return out, node
 }
 
 func plainText(n ast.Node, src []byte) string {
@@ -184,6 +198,10 @@ func (linkRewriter) Transform(doc *ast.Document, reader text.Reader, pc parser.C
 		switch l := n.(type) {
 		case *ast.Link:
 			dest, raw := rewrite(lc, string(l.Destination), true)
+			if dest == "" && len(l.Destination) > 0 {
+				l.Title = []byte("Link target is outside this root")
+				l.SetAttributeString("class", []byte("outside-root"))
+			}
 			l.Destination = []byte(dest)
 			if raw {
 				l.SetAttributeString("target", []byte("_blank"))
@@ -200,8 +218,8 @@ func (linkRewriter) Transform(doc *ast.Document, reader text.Reader, pc parser.C
 // serves it at. Markdown targets become in-app routes; other relative
 // files are served raw. The second result reports a raw-file link, which
 // opens in a new tab so the client-side router leaves it alone. Absolute
-// URLs, fragments, and targets that escape the root are returned as they
-// are.
+// URLs and fragments are returned as they are; a target that escapes the
+// root becomes an empty destination.
 func rewrite(lc linkContext, dest string, isLink bool) (string, bool) {
 	if dest == "" || strings.HasPrefix(dest, "#") || strings.HasPrefix(dest, "//") {
 		return dest, false
@@ -220,7 +238,13 @@ func rewrite(lc linkContext, dest string, isLink bool) (string, bool) {
 	} else {
 		resolved = path.Clean(path.Join(lc.noteDir, target))
 	}
-	if resolved == ".." || strings.HasPrefix(resolved, "../") || resolved == "." {
+	if resolved == ".." || strings.HasPrefix(resolved, "../") {
+		// Left relative, the browser would resolve this against the app's
+		// route and land on a dead page. An empty destination keeps the
+		// text and the title says why.
+		return "", false
+	}
+	if resolved == "." {
 		return dest, false
 	}
 	suffix := ""
@@ -247,16 +271,39 @@ func encodePath(p string) string {
 // Sanitisation -----------------------------------------------------------
 
 var (
-	idPattern    = regexp.MustCompile(`^[\pL\pN_:.\-]+$`)
-	classPattern = regexp.MustCompile(`^[a-zA-Z0-9 _\-]+$`)
+	// Heading IDs from goldmark, plus the footnote IDs it generates.
+	idPattern = regexp.MustCompile(`^(fn|fnref):\d+$|^[\pL\pN_\-]+$`)
+	// Only the classes goldmark and chroma emit, so a note cannot borrow
+	// the app's own layout classes.
+	codeClassPattern = regexp.MustCompile(`^(chroma|line|cl|hl|ln|lnt|lntd|lntable|language-[\w+#.\-]+|[a-z]{1,3})( (chroma|line|cl|hl|ln|lnt|lntd|lntable|[a-z]{1,3}))*$`)
+	noteClassPattern = regexp.MustCompile(`^(footnotes|footnote-ref|footnote-backref|outside-root)$`)
 )
 
-// newPolicy is bluemonday's user-generated-content policy extended with
+// newPolicy is bluemonday's user-generated-content element set, without
+// its global id allowance (whose pattern is unanchored), extended with
 // what goldmark's task lists, heading IDs, footnotes, and chroma emit.
 func newPolicy() *bluemonday.Policy {
-	p := bluemonday.UGCPolicy()
-	p.AllowAttrs("id").Matching(idPattern).OnElements("h1", "h2", "h3", "h4", "h5", "h6", "sup", "li", "div", "section")
-	p.AllowAttrs("class").Matching(classPattern).OnElements("pre", "code", "span", "a", "div", "sup", "ol", "ul", "li", "input", "section")
+	p := bluemonday.NewPolicy()
+	p.AllowStandardURLs()
+	p.AllowAttrs("title").Matching(bluemonday.Paragraph).Globally()
+	p.AllowAttrs("dir").Matching(bluemonday.Direction).Globally()
+	p.AllowAttrs("lang").Matching(regexp.MustCompile(`^[a-zA-Z]{2,20}$`)).Globally()
+	p.AllowElements("article", "aside", "section", "figure", "figcaption", "details", "summary",
+		"h1", "h2", "h3", "h4", "h5", "h6", "hgroup",
+		"br", "div", "hr", "p", "span", "wbr",
+		"abbr", "acronym", "cite", "code", "dfn", "em", "s", "strong", "sub", "sup", "var",
+		"b", "i", "pre", "small", "strike", "tt", "u", "rp", "rt", "ruby", "q", "time", "bdi", "bdo")
+	p.AllowAttrs("open").Matching(regexp.MustCompile(`(?i)^(|open)$`)).OnElements("details")
+	p.AllowAttrs("cite").OnElements("blockquote", "q")
+	p.AllowAttrs("cite").Matching(bluemonday.Paragraph).OnElements("del", "ins")
+	p.AllowAttrs("datetime").Matching(bluemonday.ISO8601).OnElements("time", "del", "ins")
+	p.AllowAttrs("href").OnElements("a")
+	p.AllowLists()
+	p.AllowTables()
+	p.AllowImages()
+	p.AllowAttrs("id").Matching(idPattern).OnElements("h1", "h2", "h3", "h4", "h5", "h6", "sup", "li")
+	p.AllowAttrs("class").Matching(codeClassPattern).OnElements("pre", "code", "span")
+	p.AllowAttrs("class").Matching(noteClassPattern).OnElements("a", "div", "section")
 	p.AllowAttrs("role").Matching(regexp.MustCompile(`^doc-(noteref|endnotes|backlink)$`)).OnElements("a", "div", "section")
 	p.AllowAttrs("type").Matching(regexp.MustCompile(`^checkbox$`)).OnElements("input")
 	p.AllowAttrs("checked", "disabled").OnElements("input")
