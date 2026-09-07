@@ -155,8 +155,9 @@ func (w *Watcher) add(rel string) error {
 func (w *Watcher) addMissing() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	dirs, err := tree.Dirs(ctx, w.root, nil)
+	dirs, err := tree.Dirs(ctx, w.root, w.warnf)
 	if err != nil {
+		w.warnf("watch %s: relisting failed (%v); watching every non-hidden directory", w.root, err)
 		dirs = Walk(w.root)
 	}
 	watched := map[string]struct{}{}
@@ -254,6 +255,12 @@ func (w *Watcher) loop() {
 				flush()
 				return
 			}
+			if errors.Is(err, fsnotify.ErrEventOverflow) {
+				// The kernel dropped events: whatever they were, the
+				// consumer must refresh everything.
+				w.lost = true
+				arm(w.debounce)
+			}
 			w.warnf("watch %s: %v", w.root, err)
 		}
 	}
@@ -269,13 +276,17 @@ func (w *Watcher) loop() {
 // old name after the new one was added would silence the new one.
 func (w *Watcher) reconcile(paths map[string]struct{}) {
 	newDir := false
+	var watched []string // fetched once, only if something vanished
 	for p := range paths {
 		abs := filepath.Join(w.root, filepath.FromSlash(p))
 		info, err := os.Lstat(abs)
 		if err != nil {
-			for _, watched := range w.fsw.WatchList() {
-				if watched == abs || strings.HasPrefix(watched, abs+string(filepath.Separator)) {
-					w.fsw.Remove(watched)
+			if watched == nil {
+				watched = w.fsw.WatchList()
+			}
+			for _, x := range watched {
+				if x == abs || strings.HasPrefix(x, abs+string(filepath.Separator)) {
+					w.fsw.Remove(x)
 				}
 			}
 			continue

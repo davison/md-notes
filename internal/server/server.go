@@ -135,8 +135,13 @@ func (s *Server) Close() {
 		starting = append(starting, ch)
 	}
 	s.wmu.Unlock()
+	// A setup stuck on a slow filesystem must not hold shutdown for long.
+	deadline := time.After(5 * time.Second)
 	for _, ch := range starting {
-		<-ch
+		select {
+		case <-ch:
+		case <-deadline:
+		}
 	}
 	s.wmu.Lock()
 	for slug, w := range s.watchers {
