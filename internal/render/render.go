@@ -19,6 +19,7 @@ import (
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
@@ -62,7 +63,10 @@ func New() *Renderer {
 				util.Prioritized(&lineMarker{}, 200),
 			),
 		),
-		goldmark.WithRendererOptions(html.WithUnsafe()),
+		goldmark.WithRendererOptions(
+			html.WithUnsafe(),
+			renderer.WithNodeRenderers(util.Prioritized(lineAnchorRenderer{}, 500)),
+		),
 	)
 	return &Renderer{md: md, policy: newPolicy()}
 }
@@ -300,15 +304,90 @@ func (lineMarker) Transform(doc *ast.Document, reader text.Reader, pc parser.Con
 		if !entering || n.Type() != ast.TypeBlock || n == doc {
 			return ast.WalkContinue, nil
 		}
-		if pos, ok := firstSegment(n); ok {
-			line := lineOf(pos)
-			if _, fenced := n.(*ast.FencedCodeBlock); fenced {
-				line-- // the opening fence is the line before the content
+		if _, isAnchor := n.(*lineAnchor); isAnchor {
+			return ast.WalkSkipChildren, nil
+		}
+		pos, ok := firstSegment(n)
+		if !ok {
+			if _, hr := n.(*ast.ThematicBreak); !hr {
+				return ast.WalkContinue, nil
 			}
+			// A thematic break has no segment of its own; place it after
+			// the previous block's last line.
+			pos = -1
+			if prev := n.PreviousSibling(); prev != nil {
+				if last, ok := lastSegmentEnd(prev); ok {
+					pos = last
+				}
+			}
+			if pos < 0 {
+				return ast.WalkContinue, nil
+			}
+		}
+		line := lineOf(pos)
+		switch n.(type) {
+		case *ast.FencedCodeBlock:
+			// The opening fence is the line before the content; the
+			// highlighter drops node attributes, so an anchor precedes it.
+			anchorBefore(n, line-1)
+		case *ast.CodeBlock, *ast.HTMLBlock:
+			anchorBefore(n, line)
+		case *ast.ThematicBreak:
+			anchorBefore(n, line+1)
+		default:
 			n.SetAttributeString("data-line", []byte(strconv.Itoa(line)))
 		}
 		return ast.WalkContinue, nil
 	})
+}
+
+// lastSegmentEnd returns the byte offset of the end of n's last source
+// segment, searching its descendants.
+func lastSegmentEnd(n ast.Node) (int, bool) {
+	if lines := n.Lines(); lines != nil && lines.Len() > 0 {
+		return lines.At(lines.Len() - 1).Stop, true
+	}
+	for c := n.LastChild(); c != nil; c = c.PreviousSibling() {
+		if end, ok := lastSegmentEnd(c); ok {
+			return end, true
+		}
+	}
+	if t, ok := n.(*ast.Text); ok {
+		return t.Segment.Stop, true
+	}
+	return 0, false
+}
+
+func anchorBefore(n ast.Node, line int) {
+	if p := n.Parent(); p != nil {
+		p.InsertBefore(p, n, &lineAnchor{line: line})
+	}
+}
+
+// lineAnchor is an empty block that carries a data-line marker for a
+// following block whose renderer would discard attributes.
+type lineAnchor struct {
+	ast.BaseBlock
+	line int
+}
+
+var kindLineAnchor = ast.NewNodeKind("LineAnchor")
+
+func (n *lineAnchor) Kind() ast.NodeKind { return kindLineAnchor }
+
+func (n *lineAnchor) Dump(src []byte, level int) { ast.DumpHelper(n, src, level, nil, nil) }
+
+type lineAnchorRenderer struct{}
+
+func (r lineAnchorRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
+	reg.Register(kindLineAnchor, r.render)
+}
+
+func (lineAnchorRenderer) render(w util.BufWriter, _ []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
+	if entering {
+		fmt.Fprintf(w, "<div class=\"line-anchor\" data-line=\"%d\"></div>\n", n.(*lineAnchor).line)
+	}
+	return ast.WalkContinue, nil
 }
 
 // firstSegment returns the byte offset of the first source segment of n
@@ -339,7 +418,7 @@ var (
 	// (c1, s1, s2). TestChromaClassesPassSanitiser ties this to the
 	// generated stylesheet.
 	codeClassPattern = regexp.MustCompile(`^(chroma|line|cl|hl|ln|lnt|lntd|lntable|language-[\w+#.\-]+|[a-z]{1,3}[0-9]?)( (chroma|line|cl|hl|ln|lnt|lntd|lntable|[a-z]{1,3}[0-9]?))*$`)
-	noteClassPattern = regexp.MustCompile(`^(footnotes|footnote-ref|footnote-backref|outside-root)$`)
+	noteClassPattern = regexp.MustCompile(`^(footnotes|footnote-ref|footnote-backref|outside-root|line-anchor)$`)
 )
 
 // newPolicy is bluemonday's user-generated-content element set, without

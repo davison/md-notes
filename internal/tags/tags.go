@@ -97,7 +97,14 @@ func frontmatterTags(fm map[string]any) []string {
 			out = append(out, n)
 		}
 	}
-	switch v := fm["tags"].(type) {
+	var raw any
+	for k, v := range fm {
+		if strings.EqualFold(k, "tags") {
+			raw = v
+			break
+		}
+	}
+	switch v := raw.(type) {
 	case []any:
 		for _, x := range v {
 			if s, ok := x.(string); ok {
@@ -125,7 +132,7 @@ func inlineTags(body []byte) []string {
 		if inFence {
 			continue
 		}
-		text := stripInlineCode(string(line))
+		text := stripLinkTargets(stripInlineCode(string(line)))
 		for _, m := range inline.FindAllStringSubmatch(text, -1) {
 			if n := normalise(m[1]); n != "" {
 				out = append(out, n)
@@ -133,6 +140,18 @@ func inlineTags(body []byte) []string {
 		}
 	}
 	return out
+}
+
+var (
+	linkTarget = regexp.MustCompile(`\]\([^)]*\)`)
+	bareURL    = regexp.MustCompile(`\b[a-z][a-z0-9+.-]*://\S+`)
+)
+
+// stripLinkTargets blanks markdown link destinations and bare URLs so a
+// fragment such as [x](#anchor) or https://h/p#frag is not a tag.
+func stripLinkTargets(s string) string {
+	s = linkTarget.ReplaceAllStringFunc(s, func(m string) string { return strings.Repeat(" ", len(m)) })
+	return bareURL.ReplaceAllStringFunc(s, func(m string) string { return strings.Repeat(" ", len(m)) })
 }
 
 // stripInlineCode blanks the contents of backtick spans so a tag inside
