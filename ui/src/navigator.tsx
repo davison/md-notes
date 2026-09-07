@@ -75,12 +75,17 @@ export function Navigator({ slug, tree, current }: Props) {
   const empty = useMemo(() => !tree.children || tree.children.length === 0, [tree]);
 
   if (empty) return <p class="muted">No markdown files here.</p>;
+  // Plain list semantics rather than an ARIA tree: nested lists of links
+  // and buttons are keyboard-reachable as they are, while a proper tree
+  // widget would need roving focus to be an improvement.
   return (
-    <ul class="tree" role="tree">
-      {tree.children!.map((n) => (
-        <Entry key={n.path} node={n} slug={slug} current={current} expanded={expanded} toggle={toggle} />
-      ))}
-    </ul>
+    <nav aria-label="Notes">
+      <ul class="tree">
+        {tree.children!.map((n) => (
+          <Entry key={n.path} node={n} slug={slug} current={current} expanded={expanded} toggle={toggle} />
+        ))}
+      </ul>
+    </nav>
   );
 }
 
@@ -100,15 +105,15 @@ function Entry({
   if (node.dir) {
     const open = expanded.has(node.path);
     return (
-      <li role="treeitem" aria-expanded={open}>
-        <button type="button" class="dir" onClick={() => toggle(node.path)}>
+      <li>
+        <button type="button" class="dir" aria-expanded={open} onClick={() => toggle(node.path)}>
           <span class="twisty" aria-hidden="true">
             {open ? "▾" : "▸"}
           </span>
           {node.name}
         </button>
         {open && node.children && (
-          <ul role="group">
+          <ul>
             {node.children.map((c) => (
               <Entry key={c.path} node={c} slug={slug} current={current} expanded={expanded} toggle={toggle} />
             ))}
@@ -119,7 +124,7 @@ function Entry({
   }
   const active = node.path === current;
   return (
-    <li role="treeitem" aria-selected={active}>
+    <li>
       <a href={noteURL(slug, node.path)} class={active ? "file active" : "file"} aria-current={active ? "page" : undefined}>
         {node.name}
       </a>
