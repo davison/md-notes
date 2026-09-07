@@ -322,6 +322,7 @@ code {
   border: 1px solid var(--line);
   border-radius: 6px;
   line-height: 1.45;
+  background: var(--bg);
 }
 
 .markdown pre code {
@@ -350,6 +351,12 @@ code {
 .markdown a.footnote-ref,
 .markdown a.footnote-backref {
   text-decoration: none;
+}
+
+.markdown a.outside-root {
+  color: var(--muted);
+  text-decoration: line-through;
+  cursor: not-allowed;
 }
 
 .markdown kbd {
