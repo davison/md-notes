@@ -120,9 +120,106 @@ code {
 
 .shell > .note {
   grid-area: note;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--pane);
+}
+
+.note-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.note-body {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 1.5rem 2rem;
-  background: var(--pane);
+}
+
+/* Mode and save state */
+.note-bar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.35rem 1rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.note-bar button,
+.conflict button {
+  font: inherit;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.note-bar button:hover,
+.conflict button:hover {
+  border-color: var(--accent);
+}
+
+.mode-name {
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.save-status {
+  margin-left: auto;
+}
+
+.unsaved-drafts {
+  margin-left: auto;
+  font-size: 0.85em;
+  color: #b3261e;
+}
+
+.conflict {
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, #b3261e 10%, var(--pane));
+  font-size: 0.9em;
+}
+
+.conflict p {
+  margin: 0 0 0.5rem;
+}
+
+.conflict-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.conflict .conflict-actions {
+  margin-bottom: 0;
+}
+
+/* Editor */
+.editor-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-body .pad {
+  padding: 1.5rem 2rem;
+}
+
+.editor,
+.editor .cm-editor {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 
 .shell > .side {

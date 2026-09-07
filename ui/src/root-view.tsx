@@ -3,13 +3,13 @@ import { useLocation } from "preact-iso";
 import { fetchTags, fetchTree, listRoots, type Root, type Tag, type TreeNode } from "./api";
 import { affects, affectsTree, useEvents } from "./events";
 import { Navigator } from "./navigator";
-import { NoteView } from "./note-view";
+import { NotePane, UnsavedDrafts, useUnsavedGuard } from "./note-pane";
 import { SearchPane } from "./search-pane";
 import { TagPanel } from "./tag-panel";
 
 /**
  * The three-pane shell for one root: navigator, note, and the search and
- * tags pane that a later task fills. `note` is the wildcard remainder of
+ * tags pane. `note` is the wildcard remainder of
  * the route, already URL-decoded by the router.
  */
 export function RootView({ slug, note }: { slug: string; note?: string }) {
@@ -72,6 +72,8 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
     };
   }, [root, slug, treeVersion]);
 
+  useUnsavedGuard();
+
   useEvents(slug, (paths) => {
     if (affectsTree(paths)) {
       loadTree();
@@ -98,6 +100,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
         <a href="/" class="brand">mdn</a>
         <span class="root-name">{root.slug}</span>
         <span class="path">{root.path}</span>
+        <UnsavedDrafts slug={slug} current={current} />
       </header>
       <aside class="nav">
         {treeError && <p class="error">{treeError}</p>}
@@ -112,13 +115,15 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
           />
         )}
       </aside>
-      <main class="note">
+      <div class="note">
         {current ? (
-          <NoteView slug={slug} path={current} version={noteVersion} line={line} />
+          <NotePane key={slug + "\0" + current} slug={slug} path={current} version={noteVersion} line={line} />
         ) : (
-          <p class="muted">Select a note.</p>
+          <main class="note-body">
+            <p class="muted">Select a note.</p>
+          </main>
         )}
-      </main>
+      </div>
       <aside class="side">
         <SearchPane slug={slug} refresh={treeVersion} keep={activeTag ? { tag: activeTag } : {}} />
         <TagPanel slug={slug} tags={tags} active={activeTag} current={current} />
