@@ -60,3 +60,14 @@ export async function fetchRaw(slug: string, path: string): Promise<string> {
   if (!res.ok) throw await errorFrom(res);
   return res.text();
 }
+
+export interface Note {
+  path: string;
+  title: string;
+  frontmatter?: Record<string, unknown>;
+  html: string;
+}
+
+export function fetchNote(slug: string, path: string): Promise<Note> {
+  return request<Note>(`/api/r/${encodeURIComponent(slug)}/note/${encodePath(path)}`);
+}

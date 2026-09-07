@@ -203,9 +203,160 @@ code {
   margin-top: 0;
 }
 
-.raw {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+/* Rendered note */
+.note-article {
+  max-width: 48rem;
+}
+
+.metadata {
+  margin: 0 0 1.5rem;
   font-size: 0.9em;
+}
+
+.metadata summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.metadata table {
+  margin-top: 0.5rem;
+  border-collapse: collapse;
+}
+
+.metadata th {
+  text-align: left;
+  padding: 0.15rem 1rem 0.15rem 0;
+  color: var(--muted);
+  font-weight: 500;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.metadata td {
+  padding: 0.15rem 0;
+}
+
+.markdown {
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 1.6em 0 0.6em;
+  line-height: 1.25;
+}
+
+.markdown h1 {
+  font-size: 1.6em;
+}
+
+.markdown h2 {
+  font-size: 1.35em;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.2em;
+}
+
+.markdown h3 {
+  font-size: 1.15em;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown table,
+.markdown pre {
+  margin: 0 0 1em;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.6em;
+}
+
+.markdown li > ul,
+.markdown li > ol {
+  margin-bottom: 0;
+}
+
+.markdown li input[type="checkbox"] {
+  margin-right: 0.4em;
+}
+
+.markdown blockquote {
+  border-left: 3px solid var(--line);
+  padding-left: 1em;
+  color: var(--muted);
+}
+
+.markdown table {
+  border-collapse: collapse;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--line);
+  padding: 0.3em 0.7em;
+}
+
+.markdown th {
+  background: var(--bg);
+}
+
+.markdown code {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0.05em 0.3em;
+}
+
+.markdown pre {
+  overflow-x: auto;
+  padding: 0.8em 1em;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  line-height: 1.45;
+}
+
+.markdown pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.9em;
+}
+
+.markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 2em 0;
+}
+
+.markdown .footnotes {
+  font-size: 0.9em;
+  color: var(--muted);
+}
+
+.markdown a.footnote-ref,
+.markdown a.footnote-backref {
+  text-decoration: none;
+}
+
+.markdown kbd {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.85em;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 0 0.3em;
 }
