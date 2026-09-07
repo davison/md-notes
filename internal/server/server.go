@@ -22,6 +22,7 @@ import (
 	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/search"
+	"github.com/davison/md-notes/internal/tags"
 	"github.com/davison/md-notes/internal/tree"
 	"github.com/davison/md-notes/internal/watch"
 )
@@ -75,6 +76,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger) *Server {
 	s.mux.HandleFunc("GET /api/r/{slug}/note/{path...}", s.noteHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/events", s.eventsHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/search", s.searchHandler)
+	s.mux.HandleFunc("GET /api/r/{slug}/tags", s.tagsHandler)
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})
@@ -392,6 +394,32 @@ func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
 		hits = []search.Hit{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"hits": hits, "truncated": len(hits) >= search.MaxHits})
+}
+
+// tagsHandler lists a root's tags with counts and the notes carrying them.
+func (s *Server) tagsHandler(w http.ResponseWriter, r *http.Request) {
+	root, ok := s.reg.Get(r.PathValue("slug"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "unknown root")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	files, err := tree.List(ctx, root.Path, s.log.Printf)
+	if err != nil {
+		s.log.Printf("tags %s: %v", root.Slug, err)
+		if errors.Is(err, tree.ErrNoRipgrep) {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not list files")
+		return
+	}
+	list := tags.Collect(ctx, root.Path, files)
+	if list == nil {
+		list = []tags.Tag{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tags": list})
 }
 
 // noteHandler renders one markdown file. Paths that are not markdown are

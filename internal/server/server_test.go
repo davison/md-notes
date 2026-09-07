@@ -18,6 +18,7 @@ import (
 
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/search"
+	"github.com/davison/md-notes/internal/tags"
 	"github.com/davison/md-notes/internal/tree"
 )
 
@@ -42,7 +43,7 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	os.MkdirAll(filepath.Join(notes, "sub"), 0o755)
 	os.MkdirAll(filepath.Join(notes, "empty"), 0o755)
 	os.WriteFile(filepath.Join(notes, "hello.md"), []byte("# hi\n"), 0o644)
-	os.WriteFile(filepath.Join(notes, "sub", "linked.md"), []byte("---\ntitle: Linked\n---\n[back](../hello.md) ![p](pic.png)\n"), 0o644)
+	os.WriteFile(filepath.Join(notes, "sub", "linked.md"), []byte("---\ntitle: Linked\ntags: [demo]\n---\n[back](../hello.md) ![p](pic.png) #inline\n"), 0o644)
 	os.WriteFile(filepath.Join(notes, "sub", "pic.png"), []byte("PNG"), 0o644)
 	os.WriteFile(filepath.Join(base, "secret"), []byte("s"), 0o644)
 	os.Symlink(filepath.Join(base, "secret"), filepath.Join(notes, "escape"))
@@ -455,6 +456,25 @@ func TestSearch(t *testing.T) {
 	resp = do(t, ts, "GET", "/api/r/notes/search?q=zzz-none", "", nil)
 	if b := readAll(t, resp.Body); !strings.Contains(b, `"hits":[]`) {
 		t.Errorf("no-match body = %s, want an empty array", b)
+	}
+}
+
+func TestTags(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed; CI installs it")
+	}
+	ts, _ := newTestServer(t)
+	resp := do(t, ts, "GET", "/api/r/notes/tags", "", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	var body struct{ Tags []tags.Tag }
+	json.NewDecoder(resp.Body).Decode(&body)
+	if len(body.Tags) != 2 || body.Tags[0].Name != "demo" || body.Tags[1].Name != "inline" || body.Tags[0].Notes[0] != "sub/linked.md" {
+		t.Fatalf("tags = %+v", body.Tags)
+	}
+	if resp := do(t, ts, "GET", "/api/r/nope/tags", "", nil); resp.StatusCode != 404 {
+		t.Errorf("unknown root: %d", resp.StatusCode)
 	}
 }
 
