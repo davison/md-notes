@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 func newTestWatcher(t *testing.T, dirs []string) (*Watcher, string) {
@@ -189,6 +191,25 @@ func TestLostBatchAsksForFullRefresh(t *testing.T) {
 	}
 	if !sawEmpty {
 		t.Fatal("no full-refresh batch after drops")
+	}
+}
+
+func TestOverflowAsksForFullRefresh(t *testing.T) {
+	root := t.TempDir()
+	w, err := New(root, nil, nil, WithDebounce(10*time.Millisecond, 50*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	time.Sleep(20 * time.Millisecond)
+	w.fsw.Errors <- fsnotify.ErrEventOverflow
+	select {
+	case b := <-w.Events():
+		if len(b.Paths) != 0 {
+			t.Fatalf("after overflow got %v, want an empty full-refresh batch", b.Paths)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no batch after an event overflow")
 	}
 }
 
