@@ -301,3 +301,67 @@ func TestResolveConfinement(t *testing.T) {
 		t.Error("unknown slug should error")
 	}
 }
+
+func TestOpenParentConfinement(t *testing.T) {
+	base := t.TempDir()
+	notes := filepath.Join(base, "notes")
+	outside := filepath.Join(base, "outside")
+	for _, dir := range []string{notes, outside, filepath.Join(notes, "sub")} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(notes, "sub", "note.md"), []byte("inside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "note.md"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reg, err := New(notes, filepath.Join(base, "state.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(notes, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"../outside/note.md", "escape/note.md"} {
+		if parent, _, _, err := reg.OpenParent("notes", name); !errors.Is(err, ErrOutside) {
+			if parent != nil {
+				parent.Close()
+			}
+			t.Errorf("OpenParent(%q) = %v", name, err)
+		}
+	}
+	parent, name, canonical, err := reg.OpenParent("notes", "sub/note.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer parent.Close()
+	if name != "note.md" || canonical != filepath.Join(notes, "sub", "note.md") {
+		t.Fatalf("name=%s canonical=%s", name, canonical)
+	}
+	// Swapping the parent pathname after opening cannot redirect writes outside.
+	if err := os.Rename(filepath.Join(notes, "sub"), filepath.Join(notes, "original")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(notes, "sub")); err != nil {
+		t.Fatal(err)
+	}
+	if err := parent.WriteFile(name, []byte("updated"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(outside, "note.md"))
+	if err != nil || string(data) != "secret" {
+		t.Fatalf("outside changed: %q %v", data, err)
+	}
+	// A final-component symlink introduced after resolving is confined too.
+	if err := parent.Remove(name); err != nil {
+		t.Fatal(err)
+	}
+	if err := parent.Symlink(filepath.Join(outside, "note.md"), name); err != nil {
+		t.Fatal(err)
+	}
+	if err := parent.WriteFile(name, []byte("escape"), 0o644); err == nil {
+		t.Fatal("followed outside symlink")
+	}
+}

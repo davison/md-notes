@@ -71,6 +71,8 @@ described under [Confinement](#confinement).
 | `POST /api/roots` | Registers `{"path": "/absolute/dir"}` and returns the root. Relative paths are refused |
 | `GET /api/r/{slug}/tree` | The root's markdown tree as nested `{name, path, dir, children}` |
 | `GET /api/r/{slug}/note/{path...}` | A rendered note as `{path, title, frontmatter, html}`. Non-markdown paths are 404 here |
+| `GET /api/r/{slug}/source/{path...}` | Existing UTF-8 markdown as `{source, revision}`; see [conditional saves](#conditional-saves) |
+| `PUT /api/r/{slug}/source/{path...}` | Conditionally saves JSON `{source, revision}` and returns the saved `{source, revision}` |
 | `GET /api/r/{slug}/raw/{path...}` | File bytes, for images and other assets. Served with `Content-Security-Policy: sandbox` and `X-Content-Type-Options: nosniff` |
 | `GET /api/r/{slug}/search?q=` | `{hits, truncated}`; each hit is a path, line number, matching text with match offsets, and the lines either side |
 | `GET /api/r/{slug}/tags` | `{tags: [{name, count, notes}]}`, sorted by count then name |
@@ -78,6 +80,65 @@ described under [Confinement](#confinement).
 
 Everything else serves the embedded UI bundle, falling back to `index.html` so
 client-side routes such as `/r/notes/some/note.md` load.
+
+### Conditional saves
+
+Read the source endpoint before editing, retain its opaque `revision`, then PUT the
+complete new `source` with that revision and `Content-Type: application/json`.
+An empty source string is valid; omitted or null source is not. A successful save
+returns HTTP 200 and the new revision to use for the next save. Source responses
+use `Cache-Control: no-store`. The existing rendered and raw endpoints are unchanged.
+
+The API edits existing `.md` and `.markdown` regular files only, in any registered
+root. It preserves frontmatter, whitespace, line endings, Unicode and trailing
+newlines exactly as submitted; it never parses or rewrites the frontmatter.
+Editable source must be valid UTF-8 and at most 8 MiB. Invalid UTF-8 and unpaired
+JSON Unicode surrogate escapes are rejected. The encoded JSON request limit allows
+six bytes per source byte plus 1 KiB for the revision and object syntax.
+
+Source errors return JSON `{code, error}` with these statuses:
+
+| Status | Code | Client action |
+|--------|------|---------------|
+| 400 | `invalid_body` | Correct malformed JSON or missing/invalid fields |
+| 403 | `outside_root`, `permission_denied` | Retain the draft; check the path or file/directory permissions |
+| 404 | `not_found`, `not_markdown` | Retain the draft; the note/root is missing or the path is not markdown |
+| 409 | `conflict` | Retain the draft and fetch current source before choosing how to reconcile |
+| 413 | `too_large` | Source or request exceeds the size limit |
+| 415 | `invalid_body` | Send `Content-Type: application/json` |
+| 422 | `unsupported_source` | The file is nonregular or contains invalid UTF-8 |
+| 428 | `revision_required` | Read the source first and include its revision |
+| 500 | `io_error` | Retain the draft and retry after checking disk/storage health |
+
+The Host/Origin guard can also return 403 with the existing `{error}` body before
+the source handler runs. A failed save never supplies a replacement revision or
+instructs the client to discard its draft. A lost HTTP response can leave a save's
+outcome unknown; fetch the source and compare it with the retained draft before
+retrying. There is no force-save or create-on-missing option.
+
+Revisions track file identity, content, modification time and permissions. They
+remain stable while the observed file is unchanged, including across reads through
+symlink aliases and overlapping registered roots. They are local to one daemon
+session; a restart makes an old token conflict, so clients must re-read. The daemon
+keeps one small revision record per canonical path accessed during that session.
+
+Source reads and saves are serialized within the daemon. Saves check the revision,
+write and sync a temporary file in the same directory, check the current file again,
+then replace it by rename. Stale browser saves, detected external edits/replacements,
+and deleted notes are rejected. **An uncoordinated external editor can still write
+between the final revision check and replacement.** Ordinary filesystem rename is
+not atomic compare-and-swap; external tools do not participate in the daemon lock.
+
+Internal symlink aliases update their resolved target without replacing the alias;
+symlinks outside the registered root are refused. Open directory handles confine
+staging and replacement despite symlink changes. Read-only files are refused even
+when the directory permits replacement. Replacement preserves the file's nine Unix
+permission bits, but creates a new inode owned by the daemon user: hard-link identity,
+ownership, ACLs, extended attributes and other extended metadata are not preserved.
+The temporary file is synced before rename; the parent directory is not synced, so
+the API does not promise rename durability across power loss.
+
+### Live updates
 
 The events stream opens with a `: connected` comment, sends `event: change` frames
 whose data is `{"paths": [...]}`, and sends a keepalive comment every thirty seconds.

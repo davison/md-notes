@@ -22,6 +22,7 @@ import (
 	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/search"
+	"github.com/davison/md-notes/internal/source"
 	"github.com/davison/md-notes/internal/tags"
 	"github.com/davison/md-notes/internal/tree"
 	"github.com/davison/md-notes/internal/watch"
@@ -29,12 +30,13 @@ import (
 
 // Server serves the API and UI for a registry of roots.
 type Server struct {
-	reg  *roots.Registry
-	port int
-	ui   fs.FS
-	mux  *http.ServeMux
-	log  *log.Logger
-	md   *render.Renderer
+	reg    *roots.Registry
+	port   int
+	ui     fs.FS
+	mux    *http.ServeMux
+	log    *log.Logger
+	md     *render.Renderer
+	source *source.Store
 
 	// keepalive is how often an idle event stream sends a comment.
 	keepalive time.Duration
@@ -58,6 +60,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger) *Server {
 	}
 	s := &Server{
 		reg: reg, port: port, ui: ui, mux: http.NewServeMux(), log: logger, md: render.New(),
+		source:    source.New(reg),
 		keepalive: 30 * time.Second,
 		hubs:      map[string]*watch.Hub{},
 		watchers:  map[string]*watch.Watcher{},
@@ -74,6 +77,8 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger) *Server {
 	s.mux.HandleFunc("GET /api/r/{slug}/raw/{path...}", s.rawFile)
 	s.mux.HandleFunc("GET /api/r/{slug}/tree", s.treeHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/note/{path...}", s.noteHandler)
+	s.mux.HandleFunc("GET /api/r/{slug}/source/{path...}", s.sourceHandler)
+	s.mux.HandleFunc("PUT /api/r/{slug}/source/{path...}", s.saveSourceHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/events", s.eventsHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/search", s.searchHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/tags", s.tagsHandler)
