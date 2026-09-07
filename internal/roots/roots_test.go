@@ -2,6 +2,7 @@ package roots
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,7 @@ func newTestRegistry(t *testing.T) (*Registry, string, string) {
 		t.Fatal(err)
 	}
 	statePath := filepath.Join(t.TempDir(), "state", "roots.json")
-	r, err := New(notes, statePath)
+	r, err := New(notes, statePath, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,10 +34,10 @@ func TestNewRegistersNotesRootFirst(t *testing.T) {
 func TestNewRejectsFileOrMissingNotesRoot(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "f")
 	os.WriteFile(f, nil, 0o644)
-	if _, err := New(f, filepath.Join(t.TempDir(), "s.json")); !errors.Is(err, ErrNotDir) {
+	if _, err := New(f, filepath.Join(t.TempDir(), "s.json"), nil); !errors.Is(err, ErrNotDir) {
 		t.Fatalf("err = %v, want ErrNotDir", err)
 	}
-	if _, err := New(filepath.Join(t.TempDir(), "missing"), filepath.Join(t.TempDir(), "s.json")); err == nil {
+	if _, err := New(filepath.Join(t.TempDir(), "missing"), filepath.Join(t.TempDir(), "s.json"), nil); err == nil {
 		t.Fatal("want error for missing notes root")
 	}
 }
@@ -101,7 +102,7 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	r.Add(gone)
 	os.RemoveAll(gone)
 
-	r2, err := New(notes, statePath)
+	r2, err := New(notes, statePath, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +126,7 @@ func TestPersistenceKeepsSlugs(t *testing.T) {
 	r.Add(b)
 	os.RemoveAll(a)
 
-	r2, err := New(notes, statePath)
+	r2, err := New(notes, statePath, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +172,7 @@ func TestWithin(t *testing.T) {
 }
 
 func TestFilesystemRoot(t *testing.T) {
-	r, err := New("/", filepath.Join(t.TempDir(), "s.json"))
+	r, err := New("/", filepath.Join(t.TempDir(), "s.json"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +192,7 @@ func TestNewSkipsPersistedNotesRoot(t *testing.T) {
 	notes := t.TempDir()
 	statePath := filepath.Join(t.TempDir(), "roots.json")
 	os.WriteFile(statePath, []byte(`{"recent":[{"slug":"x","path":"`+notes+`"}]}`), 0o644)
-	r, err := New(notes, statePath)
+	r, err := New(notes, statePath, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,11 +201,51 @@ func TestNewSkipsPersistedNotesRoot(t *testing.T) {
 	}
 }
 
-func TestNewRejectsCorruptState(t *testing.T) {
+func TestNewWarnsAndContinuesOnStateProblems(t *testing.T) {
+	notes := t.TempDir()
+	var warnings []string
+	warnf := func(f string, a ...any) { warnings = append(warnings, fmt.Sprintf(f, a...)) }
+
+	// Corrupt JSON: the notes root still serves.
 	statePath := filepath.Join(t.TempDir(), "roots.json")
 	os.WriteFile(statePath, []byte(`{`), 0o644)
-	if _, err := New(t.TempDir(), statePath); err == nil {
-		t.Fatal("want error for corrupt state file")
+	r, err := New(notes, statePath, warnf)
+	if err != nil || len(r.List()) != 1 || len(warnings) != 1 {
+		t.Fatalf("corrupt state: err %v, roots %+v, warnings %q", err, r.List(), warnings)
+	}
+
+	// Previous on-disk format: unreadable entries are ignored, not fatal.
+	warnings = nil
+	os.WriteFile(statePath, []byte(`{"recent":["/tmp"]}`), 0o644)
+	r, err = New(notes, statePath, warnf)
+	if err != nil || len(r.List()) != 1 || len(warnings) != 1 {
+		t.Fatalf("old format: err %v, roots %+v, warnings %q", err, r.List(), warnings)
+	}
+
+	// A stale recent in an unwritable state directory: the prune cannot be
+	// saved, which is a warning and not a startup failure.
+	warnings = nil
+	dir := filepath.Join(t.TempDir(), "ro")
+	os.Mkdir(dir, 0o755)
+	statePath = filepath.Join(dir, "roots.json")
+	os.WriteFile(statePath, []byte(`{"recent":[{"slug":"gone","path":"`+filepath.Join(dir, "gone")+`"}]}`), 0o644)
+	os.Chmod(dir, 0o555)
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	r, err = New(notes, statePath, warnf)
+	if err != nil || len(r.List()) != 1 || len(warnings) != 1 {
+		t.Fatalf("unwritable state: err %v, roots %+v, warnings %q", err, r.List(), warnings)
+	}
+}
+
+func TestStateFileIsPrivate(t *testing.T) {
+	r, _, statePath := newTestRegistry(t)
+	r.Add(t.TempDir())
+	info, err := os.Stat(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("state file mode = %o, want 600", perm)
 	}
 }
 
@@ -219,7 +260,7 @@ func TestResolveConfinement(t *testing.T) {
 	os.Symlink(filepath.Join(root, "sub"), filepath.Join(root, "inside"))
 	os.Symlink("..", filepath.Join(root, "up"))
 
-	r, err := New(root, filepath.Join(t.TempDir(), "s.json"))
+	r, err := New(root, filepath.Join(t.TempDir(), "s.json"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

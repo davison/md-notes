@@ -24,7 +24,7 @@ import (
 func startDaemon(t *testing.T) int {
 	t.Helper()
 	notes := t.TempDir()
-	reg, err := roots.New(notes, filepath.Join(t.TempDir(), "roots.json"))
+	reg, err := roots.New(notes, filepath.Join(t.TempDir(), "roots.json"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

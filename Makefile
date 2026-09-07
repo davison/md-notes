@@ -37,4 +37,5 @@ install: build
 
 clean:
 	rm -f mdn
+	mkdir -p ui/dist
 	find ui/dist -mindepth 1 ! -name .gitkeep -delete

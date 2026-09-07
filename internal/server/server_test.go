@@ -27,7 +27,7 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	os.WriteFile(filepath.Join(base, "secret"), []byte("s"), 0o644)
 	os.Symlink(filepath.Join(base, "secret"), filepath.Join(notes, "escape"))
 
-	reg, err := roots.New(notes, filepath.Join(t.TempDir(), "roots.json"))
+	reg, err := roots.New(notes, filepath.Join(t.TempDir(), "roots.json"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
