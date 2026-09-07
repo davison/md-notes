@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/tree"
 )
@@ -29,6 +30,7 @@ type Server struct {
 	ui   fs.FS
 	mux  *http.ServeMux
 	log  *log.Logger
+	md   *render.Renderer
 }
 
 // New builds a Server. ui is the built single-page app; every path that is
@@ -38,11 +40,12 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger) *Server {
 	if logger == nil {
 		logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
-	s := &Server{reg: reg, port: port, ui: ui, mux: http.NewServeMux(), log: logger}
+	s := &Server{reg: reg, port: port, ui: ui, mux: http.NewServeMux(), log: logger, md: render.New()}
 	s.mux.HandleFunc("GET /api/roots", s.listRoots)
 	s.mux.HandleFunc("POST /api/roots", s.addRoot)
 	s.mux.HandleFunc("GET /api/r/{slug}/raw/{path...}", s.rawFile)
 	s.mux.HandleFunc("GET /api/r/{slug}/tree", s.treeHandler)
+	s.mux.HandleFunc("GET /api/r/{slug}/note/{path...}", s.noteHandler)
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})
@@ -163,6 +166,38 @@ func (s *Server) treeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, tree.Build(files))
+}
+
+// noteHandler renders one markdown file. Paths that are not markdown are
+// 404 here; the raw endpoint serves them.
+func (s *Server) noteHandler(w http.ResponseWriter, r *http.Request) {
+	slug, rel := r.PathValue("slug"), r.PathValue("path")
+	if !tree.IsMarkdown(rel) {
+		writeError(w, http.StatusNotFound, "not a markdown file")
+		return
+	}
+	real, err := s.reg.Resolve(slug, rel)
+	switch {
+	case errors.Is(err, roots.ErrOutside):
+		writeError(w, http.StatusForbidden, "path is outside the root")
+		return
+	case err != nil:
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	src, err := os.ReadFile(real)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	note, err := s.md.Render(slug, path.Clean(rel), src)
+	if err != nil {
+		s.log.Printf("render %s/%s: %v", slug, rel, err)
+		writeError(w, http.StatusInternalServerError, "could not render note")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-cache")
+	writeJSON(w, http.StatusOK, note)
 }
 
 func (s *Server) rawFile(w http.ResponseWriter, r *http.Request) {
