@@ -150,7 +150,9 @@ func (s *Server) treeHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "unknown root")
 		return
 	}
-	files, err := tree.List(root.Path)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	files, err := tree.List(ctx, root.Path)
 	if err != nil {
 		s.log.Printf("tree %s: %v", root.Slug, err)
 		if errors.Is(err, tree.ErrNoRipgrep) {

@@ -4,6 +4,7 @@ package tree
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -25,47 +26,57 @@ type Node struct {
 // ErrNoRipgrep is returned when the rg binary cannot be found.
 var ErrNoRipgrep = errors.New("ripgrep (rg) is not installed or not on PATH")
 
-// Globs are the file patterns that count as markdown.
-var Globs = []string{"*.md", "*.markdown"}
-
-// rgPath is looked up once per call so tests can point it elsewhere.
+// lookPath is replaced in tests.
 var lookPath = exec.LookPath
 
+// IsMarkdown reports whether a file name has a markdown extension,
+// case-insensitively.
+func IsMarkdown(name string) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".md", ".markdown":
+		return true
+	}
+	return false
+}
+
 // List returns the markdown files under root, relative to it, sorted by
-// path. ripgrep's defaults apply: gitignore inside repositories, .ignore
-// and .rgignore anywhere, and hidden files and directories skipped.
-func List(root string) ([]string, error) {
+// path. ripgrep lists every file it would search, so its defaults apply:
+// gitignore inside repositories, .ignore and .rgignore anywhere, and hidden
+// files and directories skipped. The extension filter is applied here
+// rather than with rg's include globs, because an include glob overrides
+// ignore rules for the files it matches.
+//
+// If rg reports errors for parts of the tree it could not read, the files
+// it did list are returned; only a total failure is an error.
+func List(ctx context.Context, root string) ([]string, error) {
 	rg, err := lookPath("rg")
 	if err != nil {
 		return nil, ErrNoRipgrep
 	}
-	args := []string{"--files", "--sort", "path"}
-	for _, g := range Globs {
-		args = append(args, "-g", g)
-	}
-	// An explicit include glob makes rg list hidden files that match it,
-	// so hidden entries are excluded again. The last matching glob wins,
-	// which is why this one comes after the includes.
-	args = append(args, "-g", "!.*")
-	cmd := exec.Command(rg, args...)
+	cmd := exec.CommandContext(ctx, rg, "--files", "--sort", "path", "--null")
 	cmd.Dir = root
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	runErr := cmd.Run()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if runErr != nil {
 		var exit *exec.ExitError
-		// rg exits 1 when nothing matched, which is an empty root, not a failure.
-		if errors.As(err, &exit) && exit.ExitCode() == 1 && stderr.Len() == 0 {
-			return nil, nil
+		partial := errors.As(runErr, &exit) && exit.ExitCode() == 2 && stdout.Len() > 0
+		// Exit 1 is "no files", an empty root rather than a failure.
+		noFiles := errors.As(runErr, &exit) && exit.ExitCode() == 1 && stderr.Len() == 0
+		if !partial && !noFiles {
+			return nil, fmt.Errorf("rg: %w: %s", runErr, strings.TrimSpace(stderr.String()))
 		}
-		return nil, fmt.Errorf("rg: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	var files []string
-	for _, line := range strings.Split(stdout.String(), "\n") {
-		if line == "" {
+	for _, name := range bytes.Split(stdout.Bytes(), []byte{0}) {
+		if len(name) == 0 || !IsMarkdown(string(name)) {
 			continue
 		}
-		files = append(files, path.Clean(strings.TrimPrefix(strings.ReplaceAll(line, "\\", "/"), "./")))
+		files = append(files, path.Clean(strings.TrimPrefix(string(name), "./")))
 	}
 	return files, nil
 }
