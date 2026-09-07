@@ -31,6 +31,8 @@ describe("fragmentTarget", () => {
     expect(fragmentTarget(scope, "#fn%3A1")?.textContent).toBe("f");
     expect(fragmentTarget(scope, "#app")).toBeNull();
     expect(fragmentTarget(scope, "#")).toBeNull();
+    expect(fragmentTarget(scope, '#a%0Ab"]')).toBeNull();
+    expect(fragmentTarget(scope, "#%ZZ")).toBeNull();
     document.body.innerHTML = "";
   });
 });
