@@ -128,6 +128,7 @@ func (w *Watcher) loop() {
 		if len(pending) == 0 {
 			return
 		}
+		w.reconcile(pending)
 		b := Batch{Paths: make([]string, 0, len(pending))}
 		for p := range pending {
 			b.Paths = append(b.Paths, p)
@@ -188,6 +189,37 @@ func (w *Watcher) loop() {
 			}
 			w.warnf("watch %s: %v", w.root, err)
 		}
+	}
+}
+
+// reconcile brings the watch set in line with the paths of a batch. A path
+// that no longer exists loses its watches, and a directory that exists is
+// re-added, which resets the path fsnotify reports for a moved directory
+// whatever order the rename and create events arrived in.
+//
+// Removals run before additions. After a rename the old and new names of
+// a subdirectory share one inode, and inotify one watch, so removing the
+// old name after the new one was added would silence the new one.
+func (w *Watcher) reconcile(paths map[string]struct{}) {
+	var dirs []string
+	for p := range paths {
+		abs := filepath.Join(w.root, filepath.FromSlash(p))
+		info, err := os.Lstat(abs)
+		if err != nil {
+			for _, watched := range w.fsw.WatchList() {
+				if watched == abs || strings.HasPrefix(watched, abs+string(filepath.Separator)) {
+					w.fsw.Remove(watched)
+				}
+			}
+			continue
+		}
+		if info.IsDir() {
+			dirs = append(dirs, p)
+		}
+	}
+	for _, p := range dirs {
+		w.fsw.Remove(filepath.Join(w.root, filepath.FromSlash(p)))
+		w.addTree(p)
 	}
 }
 

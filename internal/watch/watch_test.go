@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -95,7 +96,7 @@ func TestNewSubdirectoryIsWatched(t *testing.T) {
 }
 
 func TestDirectoryRenameReportsDirectory(t *testing.T) {
-	w, root := newTestWatcher(t, []string{"old"})
+	w, root := newTestWatcher(t, []string{"old", "old/sub"})
 	os.WriteFile(filepath.Join(root, "old", "x.md"), nil, 0o644)
 	next(t, w)
 	os.Rename(filepath.Join(root, "old"), filepath.Join(root, "renamed"))
@@ -103,10 +104,30 @@ func TestDirectoryRenameReportsDirectory(t *testing.T) {
 	if !reflect.DeepEqual(b.Paths, []string{"old", "renamed"}) {
 		t.Fatalf("dir rename: %v", b.Paths)
 	}
-	// The renamed directory is watched under its new name.
+	// The renamed directory and its subdirectory are watched under the
+	// new name, and nothing reports under the old one.
 	os.WriteFile(filepath.Join(root, "renamed", "y.md"), nil, 0o644)
 	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"renamed/y.md"}) {
 		t.Fatalf("after rename: %v", b.Paths)
+	}
+	os.WriteFile(filepath.Join(root, "renamed", "sub", "z.md"), nil, 0o644)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"renamed/sub/z.md"}) {
+		t.Fatalf("after rename, nested: %v", b.Paths)
+	}
+	for _, p := range w.fsw.WatchList() {
+		if strings.Contains(p, "old") {
+			t.Fatalf("stale watch %s", p)
+		}
+	}
+}
+
+func TestDeletedDirectoryDropsWatches(t *testing.T) {
+	w, root := newTestWatcher(t, []string{"gone", "gone/sub"})
+	before := len(w.fsw.WatchList())
+	os.RemoveAll(filepath.Join(root, "gone"))
+	next(t, w)
+	if after := len(w.fsw.WatchList()); after != before-2 {
+		t.Fatalf("watches before %d, after %d; want two fewer", before, after)
 	}
 }
 
