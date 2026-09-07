@@ -79,6 +79,14 @@ That registers the folder with the running daemon, remembers it under
 "Recent" on the home page, and opens the browser at it. `--no-browser`
 prints the URL instead. The daemon must already be running.
 
+Changes on disk show up in the browser without a refresh: the daemon watches
+every registered root and streams change events to the page. Only
+directories the navigator would show are watched, so ignored and hidden
+trees cost nothing. A very large root can still exceed the kernel's
+inotify watch limit; the daemon logs that and serves the root without live
+update for the unwatched parts. Raise the limit with
+`sysctl fs.inotify.max_user_watches=524288` if it happens.
+
 The daemon listens on the loopback address only, refuses requests whose
 Host or Origin is not its own, and never serves a path that resolves
 outside a registered root, symlinks included. It has no authentication of
@@ -88,7 +96,7 @@ already runs as the user who owns the notes.
 ## Status
 
 Milestone one in progress: the daemon skeleton, roots, confinement, the
-navigator, and rendering are in place; live update, search, and tags follow. Progress is tracked in
+navigator, rendering, and live update are in place; search and tags follow. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
 is run as a [CodeCrew](https://github.com/radiusred/gh-codecrew) project.
 
