@@ -249,6 +249,32 @@ func (r *Registry) Resolve(slug, rel string) (string, error) {
 	return root.Resolve(rel)
 }
 
+// OpenParent resolves an existing path and opens its parent through a confined
+// directory handle. Callers own the returned handle; subsequent operations must
+// use it, rather than reopen the absolute path (which can race with symlinks).
+// Canonical is suitable for grouping aliases for concurrency control.
+func (r *Registry) OpenParent(slug, rel string) (parent *os.Root, name, canonical string, err error) {
+	root, ok := r.Get(slug)
+	if !ok {
+		return nil, "", "", os.ErrNotExist
+	}
+	canonical, err = root.Resolve(rel)
+	if err != nil {
+		return nil, "", "", err
+	}
+	base, err := os.OpenRoot(root.real)
+	if err != nil {
+		return nil, "", "", err
+	}
+	defer base.Close()
+	relative, err := filepath.Rel(root.real, filepath.Dir(canonical))
+	if err != nil {
+		return nil, "", "", err
+	}
+	parent, err = base.OpenRoot(relative)
+	return parent, filepath.Base(canonical), canonical, err
+}
+
 // Resolve confines rel to the root. The path is first cleaned lexically so
 // that ".." cannot climb above the root, then symlinks are evaluated and
 // the real path must still lie within the root's real path. The result is
