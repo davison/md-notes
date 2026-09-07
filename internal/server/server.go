@@ -21,6 +21,7 @@ import (
 
 	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
+	"github.com/davison/md-notes/internal/search"
 	"github.com/davison/md-notes/internal/tree"
 	"github.com/davison/md-notes/internal/watch"
 )
@@ -73,6 +74,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger) *Server {
 	s.mux.HandleFunc("GET /api/r/{slug}/tree", s.treeHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/note/{path...}", s.noteHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/events", s.eventsHandler)
+	s.mux.HandleFunc("GET /api/r/{slug}/search", s.searchHandler)
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})
@@ -360,6 +362,36 @@ func (s *Server) treeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, tree.Build(files))
+}
+
+// searchHandler runs a literal, case-insensitive search over a root.
+func (s *Server) searchHandler(w http.ResponseWriter, r *http.Request) {
+	root, ok := s.reg.Get(r.PathValue("slug"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "unknown root")
+		return
+	}
+	q := r.URL.Query().Get("q")
+	if strings.TrimSpace(q) == "" {
+		writeError(w, http.StatusBadRequest, "q is required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	hits, err := search.Search(ctx, root.Path, q, s.log.Printf)
+	if err != nil {
+		s.log.Printf("search %s %q: %v", root.Slug, q, err)
+		if errors.Is(err, search.ErrNoRipgrep) {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "search failed")
+		return
+	}
+	if hits == nil {
+		hits = []search.Hit{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"hits": hits, "truncated": len(hits) >= search.MaxHits})
 }
 
 // noteHandler renders one markdown file. Paths that are not markdown are

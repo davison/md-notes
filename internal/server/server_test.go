@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/davison/md-notes/internal/roots"
+	"github.com/davison/md-notes/internal/search"
 	"github.com/davison/md-notes/internal/tree"
 )
 
@@ -420,6 +421,40 @@ func TestCloseEndsOpenStreamsQuickly(t *testing.T) {
 	}
 	if d := time.Since(start); d > time.Second {
 		t.Fatalf("stream took %v to end after Close", d)
+	}
+}
+
+func TestSearch(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed; CI installs it")
+	}
+	ts, _ := newTestServer(t)
+	resp := do(t, ts, "GET", "/api/r/notes/search?q=hi", "", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d: %s", resp.StatusCode, readAll(t, resp.Body))
+	}
+	var body struct {
+		Hits      []search.Hit
+		Truncated bool
+	}
+	json.NewDecoder(resp.Body).Decode(&body)
+	if len(body.Hits) != 1 || body.Hits[0].Path != "hello.md" || body.Hits[0].Line != 1 || body.Truncated {
+		t.Fatalf("hits = %+v", body)
+	}
+	for path, want := range map[string]int{
+		"/api/r/notes/search":            400,
+		"/api/r/notes/search?q=%20":      400,
+		"/api/r/nope/search?q=x":         404,
+		"/api/r/notes/search?q=zzz-none": 200,
+	} {
+		resp := do(t, ts, "GET", path, "", nil)
+		if resp.StatusCode != want {
+			t.Errorf("%s: status %d, want %d", path, resp.StatusCode, want)
+		}
+	}
+	resp = do(t, ts, "GET", "/api/r/notes/search?q=zzz-none", "", nil)
+	if b := readAll(t, resp.Body); !strings.Contains(b, `"hits":[]`) {
+		t.Errorf("no-match body = %s, want an empty array", b)
 	}
 }
 
