@@ -58,7 +58,7 @@ Footnote here[^1].
 	}
 	wantMissing(t, n.HTML, "<h1")
 	wantContains(t, n.HTML,
-		`<table>`, `align="left"`, `align="right"`,
+		`<table data-line="3">`, `align="left"`, `align="right"`,
 		`type="checkbox"`, `checked=""`, `disabled=""`,
 		`<del>gone</del>`,
 		`<a href="https://example.com/x"`, `target="_blank"`, `rel="nofollow noopener"`,
@@ -91,7 +91,7 @@ func TestEmptyFrontmatter(t *testing.T) {
 	if n.Frontmatter == nil || len(n.Frontmatter) != 0 {
 		t.Errorf("frontmatter = %#v, want empty map", n.Frontmatter)
 	}
-	wantContains(t, n.HTML, "<p>Body</p>")
+	wantContains(t, n.HTML, `<p data-line="3">Body</p>`)
 	wantMissing(t, n.HTML, "<hr")
 }
 
@@ -126,7 +126,7 @@ func TestTitleSources(t *testing.T) {
 	}
 	// The heading that supplied the title is removed; a later H1 stays.
 	wantMissing(t, n.HTML, "real")
-	wantContains(t, n.HTML, "<h2 id=\"two\">Two</h2>", "<h1 id=\"second\">Second</h1>")
+	wantContains(t, n.HTML, `<h2 id="two" data-line="1">Two</h2>`, `<h1 id="second" data-line="5">Second</h1>`)
 	if n = render(t, "x.md", "---\ntitle: FM\n---\n# Kept\n"); !strings.Contains(n.HTML, "Kept") {
 		t.Errorf("frontmatter title must not remove the H1: %s", n.HTML)
 	}
@@ -233,6 +233,50 @@ func TestChromaClassesPassSanitiser(t *testing.T) {
 		if !seen[c] {
 			t.Errorf("stylesheet lacks %q; the check is weaker than intended", c)
 		}
+	}
+}
+
+func TestLineMarkers(t *testing.T) {
+	n := render(t, "x.md", `---
+title: T
+tags: [a]
+---
+# Heading
+
+Paragraph one
+continues.
+
+- item one
+- item two
+
+> quoted
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+`+"```go\nx := 1\n```\n")
+	// Frontmatter occupies lines 1-4, so the body starts at file line 5.
+	wantContains(t, n.HTML,
+		`<h1 id="heading" data-line="5">`,
+		`<p data-line="7">`,
+		`<ul data-line="10">`,
+		`<li data-line="10">`,
+		`<li data-line="11">`,
+		`<blockquote data-line="13">`,
+		`<table data-line="15">`,
+	)
+}
+
+func TestLineMarkersWithoutFrontmatter(t *testing.T) {
+	n := render(t, "x.md", "para\n\n## Two\n")
+	wantContains(t, n.HTML, `<p data-line="1">`, `<h2 id="two" data-line="3">`)
+}
+
+func TestLineMarkerSanitised(t *testing.T) {
+	out := r.policy.Sanitize(`<p data-line="12">a</p><p data-line="x">b</p><span data-line="3">c</span>`)
+	if out != `<p data-line="12">a</p><p>b</p><span>c</span>` {
+		t.Fatalf("sanitised = %s", out)
 	}
 }
 
