@@ -15,6 +15,7 @@ const usage = `usage: mdn <command> [flags]
 commands:
   serve     run the daemon against the configured notes root
   open DIR  register DIR with the running daemon and open it in the browser
+            (--no-browser prints the URL instead)
   version   print the version
 `
 
@@ -42,9 +43,4 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "mdn: unknown command %q\n%s", args[0], usage)
 		return 2
 	}
-}
-
-func runOpen(args []string, stdout, stderr io.Writer) int {
-	fmt.Fprintln(stderr, "mdn open: not implemented")
-	return 1
 }
