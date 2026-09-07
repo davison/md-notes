@@ -79,6 +79,13 @@ That registers the folder with the running daemon, remembers it under
 "Recent" on the home page, and opens the browser at it. `--no-browser`
 prints the URL instead. The daemon must already be running.
 
+Search is a literal, case-insensitive phrase over the current root, run by
+ripgrep, so gitignored and hidden files never match. Results show the
+matching line with a line of context on either side, and selecting one
+opens the note scrolled to the match. Tags come from a frontmatter list
+(`tags: [a, b]`) or inline hashtags such as `#project/x`; the tag panel
+lists them with counts and filters the navigator to the notes carrying one.
+
 Changes on disk show up in the browser without a refresh: the daemon watches
 every registered root and streams change events to the page. Only
 directories the navigator would show are watched, so ignored and hidden
@@ -100,8 +107,9 @@ already runs as the user who owns the notes.
 
 ## Status
 
-Milestone one in progress: the daemon skeleton, roots, confinement, the
-navigator, rendering, and live update are in place; search and tags follow. Progress is tracked in
+Milestone one, the daemon and rendered viewer, is feature complete: roots,
+confinement, navigator, rendering, live update, search, and tags. The
+editor, the browser clipper, and the inbox follow in later milestones. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
 is run as a [CodeCrew](https://github.com/radiusred/gh-codecrew) project.
 
