@@ -38,15 +38,15 @@ describe("Editor", () => {
     expect(s.state.status).toBe("pending");
   });
 
-  it(":w flushes the session", async () => {
+  it(":w, :q, :x and :wq all flush the session", () => {
     const s = session();
     const flush = vi.spyOn(s, "flush").mockResolvedValue();
     const { container } = render(<Editor session={s} />);
     const cm = getCM(viewOf(container)) as Parameters<typeof Vim.handleEx>[0];
-    Vim.handleEx(cm, "w");
-    expect(flush).toHaveBeenCalledTimes(1);
-    Vim.handleEx(cm, "wq");
-    expect(flush).toHaveBeenCalledTimes(2);
+    for (const ex of ["w", "q", "x", "wq"]) {
+      Vim.handleEx(cm, ex);
+    }
+    expect(flush).toHaveBeenCalledTimes(4);
   });
 
   it("parks its state on the session between mounts and restores it", () => {
