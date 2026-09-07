@@ -3,6 +3,7 @@
 package watch
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -13,11 +14,15 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
+	"github.com/davison/md-notes/internal/tree"
 )
 
 // Batch is one debounced set of changed paths, relative to the root with
 // forward slashes, sorted and unique. A renamed directory appears as the
-// directory path, so consumers refresh anything beneath it.
+// directory path, so consumers refresh anything beneath it. An empty
+// Paths means "anything may have changed": a batch was lost and the
+// consumer should refresh everything.
 type Batch struct {
 	Paths []string `json:"paths"`
 }
@@ -32,6 +37,7 @@ type Watcher struct {
 	maxWait  time.Duration
 	done     chan struct{}
 	once     sync.Once
+	lost     bool
 }
 
 // Option adjusts a Watcher.
@@ -67,14 +73,53 @@ func New(root string, dirs []string, warnf func(string, ...any), opts ...Option)
 	for _, o := range opts {
 		o(w)
 	}
-	w.add("")
-	for _, d := range dirs {
-		if d != "" && d != "." {
-			w.add(d)
-		}
-	}
+	failed := w.addAll(dirs)
+	failed.report(w, "")
 	go w.loop()
 	return w, nil
+}
+
+// failures aggregates watch errors so a root with hundreds of unwatchable
+// directories logs one line, not hundreds.
+type failures struct {
+	n     int
+	first error
+}
+
+func (f *failures) note(err error) {
+	if f.first == nil {
+		f.first = err
+	}
+	f.n++
+}
+
+func (f failures) report(w *Watcher, under string) {
+	if f.n == 0 {
+		return
+	}
+	where := w.root
+	if under != "" {
+		where = filepath.Join(w.root, filepath.FromSlash(under))
+	}
+	w.warnf("watch %s: %d director%s could not be watched (first error: %v); changes there will not be seen",
+		where, f.n, map[bool]string{true: "y", false: "ies"}[f.n == 1], f.first)
+}
+
+// addAll watches the root and each relative directory in dirs.
+func (w *Watcher) addAll(dirs []string) failures {
+	var f failures
+	if err := w.add(""); err != nil {
+		f.note(err)
+	}
+	for _, d := range dirs {
+		if d == "" || d == "." {
+			continue
+		}
+		if err := w.add(d); err != nil {
+			f.note(err)
+		}
+	}
+	return f
 }
 
 // Events delivers batches until Close.
@@ -90,30 +135,45 @@ func (w *Watcher) Close() error {
 	return err
 }
 
-func (w *Watcher) add(rel string) {
+// add watches one relative directory. A directory that vanished before
+// the watch was placed is not an error.
+func (w *Watcher) add(rel string) error {
 	abs := filepath.Join(w.root, filepath.FromSlash(rel))
-	if err := w.fsw.Add(abs); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return
-		}
-		w.warnf("watch %s: %v", abs, err)
+	if err := w.fsw.Add(abs); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
 	}
+	return nil
 }
 
-// addTree watches rel and every non-hidden directory beneath it.
-func (w *Watcher) addTree(rel string) {
-	base := filepath.Join(w.root, filepath.FromSlash(rel))
-	filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || !d.IsDir() {
-			return nil
+// addMissing recomputes the directories the root's listing would cover
+// and watches any that are not watched yet. Runs when a batch shows a
+// directory appeared or moved. Listing the whole root is what the
+// navigator does for the same batch, so the cost is already being paid;
+// listing only the new directory would not work, because ripgrep never
+// applies ignore rules to a directory it is pointed at, so an ignored tree
+// created at runtime would be watched in full.
+func (w *Watcher) addMissing() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	dirs, err := tree.Dirs(ctx, w.root, nil)
+	if err != nil {
+		dirs = Walk(w.root)
+	}
+	watched := map[string]struct{}{}
+	for _, p := range w.fsw.WatchList() {
+		watched[p] = struct{}{}
+	}
+	var f failures
+	for _, d := range dirs {
+		abs := filepath.Join(w.root, filepath.FromSlash(d))
+		if _, ok := watched[abs]; ok {
+			continue
 		}
-		if p != base && strings.HasPrefix(d.Name(), ".") {
-			return filepath.SkipDir
+		if err := w.add(d); err != nil {
+			f.note(err)
 		}
-		r, _ := filepath.Rel(w.root, p)
-		w.add(filepath.ToSlash(r))
-		return nil
-	})
+	}
+	f.report(w, "")
 }
 
 func (w *Watcher) loop() {
@@ -124,8 +184,19 @@ func (w *Watcher) loop() {
 	var timerC <-chan time.Time
 	var first time.Time
 
+	arm := func(d time.Duration) {
+		if timer == nil {
+			timer = time.NewTimer(d)
+		} else {
+			timer.Stop()
+			timer.Reset(d)
+		}
+		timerC = timer.C
+	}
+
 	flush := func() {
-		if len(pending) == 0 {
+		timerC = nil
+		if len(pending) == 0 && !w.lost {
 			return
 		}
 		w.reconcile(pending)
@@ -135,13 +206,20 @@ func (w *Watcher) loop() {
 		}
 		sort.Strings(b.Paths)
 		pending = map[string]struct{}{}
-		timerC = nil
+		if w.lost {
+			// Something was dropped earlier: tell the consumer to refresh
+			// everything rather than trust this batch alone.
+			b.Paths = []string{}
+		}
 		select {
 		case w.out <- b:
+			w.lost = false
 		default:
-			// A consumer that is not reading loses this batch; the next one
-			// will bring it up to date.
-			w.warnf("watch %s: dropping change batch, consumer not reading", w.root)
+			if !w.lost {
+				w.warnf("watch %s: consumer not reading; it will be asked for a full refresh", w.root)
+			}
+			w.lost = true
+			arm(w.debounce)
 		}
 	}
 
@@ -160,11 +238,6 @@ func (w *Watcher) loop() {
 				continue
 			}
 			rel = filepath.ToSlash(rel)
-			if ev.Has(fsnotify.Create) {
-				if info, err := os.Lstat(ev.Name); err == nil && info.IsDir() {
-					w.addTree(rel)
-				}
-			}
 			if len(pending) == 0 {
 				first = time.Now()
 			}
@@ -173,13 +246,7 @@ func (w *Watcher) loop() {
 			if remaining := w.maxWait - time.Since(first); remaining < wait {
 				wait = max(remaining, 0)
 			}
-			if timer == nil {
-				timer = time.NewTimer(wait)
-			} else {
-				timer.Stop()
-				timer.Reset(wait)
-			}
-			timerC = timer.C
+			arm(wait)
 		case <-timerC:
 			flush()
 		case err, ok := <-w.fsw.Errors:
@@ -201,7 +268,7 @@ func (w *Watcher) loop() {
 // a subdirectory share one inode, and inotify one watch, so removing the
 // old name after the new one was added would silence the new one.
 func (w *Watcher) reconcile(paths map[string]struct{}) {
-	var dirs []string
+	newDir := false
 	for p := range paths {
 		abs := filepath.Join(w.root, filepath.FromSlash(p))
 		info, err := os.Lstat(abs)
@@ -214,12 +281,14 @@ func (w *Watcher) reconcile(paths map[string]struct{}) {
 			continue
 		}
 		if info.IsDir() {
-			dirs = append(dirs, p)
+			// Drop any watch under a stale name for this inode before the
+			// listing re-adds it under the current one.
+			w.fsw.Remove(abs)
+			newDir = true
 		}
 	}
-	for _, p := range dirs {
-		w.fsw.Remove(filepath.Join(w.root, filepath.FromSlash(p)))
-		w.addTree(p)
+	if newDir {
+		w.addMissing()
 	}
 }
 

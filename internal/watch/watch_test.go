@@ -1,7 +1,9 @@
 package watch
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -128,6 +130,65 @@ func TestDeletedDirectoryDropsWatches(t *testing.T) {
 	next(t, w)
 	if after := len(w.fsw.WatchList()); after != before-2 {
 		t.Fatalf("watches before %d, after %d; want two fewer", before, after)
+	}
+}
+
+func TestNewDirectoryHonoursIgnores(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed; CI installs it")
+	}
+	w, root := newTestWatcher(t, nil)
+	os.WriteFile(filepath.Join(root, ".ignore"), []byte("node_modules/\n"), 0o644)
+	// Created after the watcher started, as npm install would.
+	os.MkdirAll(filepath.Join(root, "node_modules", "dep", "lib"), 0o755)
+	os.WriteFile(filepath.Join(root, "node_modules", "dep", "README.md"), nil, 0o644)
+	os.MkdirAll(filepath.Join(root, "src", "notes"), 0o755)
+	time.Sleep(400 * time.Millisecond)
+	for _, p := range w.fsw.WatchList() {
+		if strings.Contains(p, "node_modules") {
+			t.Fatalf("watching an ignored tree: %s", p)
+		}
+	}
+	// Drain whatever the creations produced, then prove src/notes is live.
+	for {
+		select {
+		case <-w.Events():
+			continue
+		case <-time.After(100 * time.Millisecond):
+		}
+		break
+	}
+	os.WriteFile(filepath.Join(root, "src", "notes", "a.md"), nil, 0o644)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"src/notes/a.md"}) {
+		t.Fatalf("new nested dir: %v", b.Paths)
+	}
+}
+
+func TestLostBatchAsksForFullRefresh(t *testing.T) {
+	root := t.TempDir()
+	w, err := New(root, nil, nil, WithDebounce(10*time.Millisecond, 50*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	time.Sleep(20 * time.Millisecond)
+	// Fill the output buffer without reading, so a batch is dropped.
+	for i := 0; i < 40; i++ {
+		os.WriteFile(filepath.Join(root, fmt.Sprintf("f%d.md", i)), nil, 0o644)
+		time.Sleep(25 * time.Millisecond)
+	}
+	var sawEmpty bool
+	for i := 0; i < 20; i++ {
+		select {
+		case b := <-w.Events():
+			if len(b.Paths) == 0 {
+				sawEmpty = true
+			}
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	if !sawEmpty {
+		t.Fatal("no full-refresh batch after drops")
 	}
 }
 
