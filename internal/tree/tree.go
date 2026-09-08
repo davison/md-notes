@@ -172,13 +172,16 @@ func sorted(sets ...map[string]struct{}) []string {
 // directory is as empty as one holding nothing, and the first note created
 // in it must be seen.
 //
-// Below abs, a hidden file counts like any other. Ignore rules are
-// invisible here, so exempting dotfiles at every depth would let an
-// ignored tree whose files happen to be hidden — a cache of .lock files,
-// say — read as empty and enter the watch set in full, which is the class
-// of bug dd961f3 fixed on #9. Exempting them only at the top costs a nest
-// of placeholder directories, which is watched no further than its first
-// level, and keeps ignored trees out.
+// Below abs, a hidden file counts like any other, and one file that counts
+// disqualifies the whole candidate. Ignore rules are invisible here, so
+// exempting dotfiles at every depth would let an ignored tree whose files
+// happen to be hidden — a cache of .lock files, say — read as empty and
+// enter the watch set in full, which is the class of bug dd961f3 fixed on
+// #9. Exempting them only at the top keeps ignored trees out, at this cost:
+// a placeholder directory that has a placeholder-holding subdirectory is
+// not watched at all, not even at its top level, because the deeper
+// .gitkeep is a file abs is judged by. A .gitkeep beside an entirely empty
+// subdirectory is fine; a nest of them is not covered.
 //
 // The walk stops at the first file that counts, so an ignored tree full of
 // files costs the directory reads down to its first file and no more.

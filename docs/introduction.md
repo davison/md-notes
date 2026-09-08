@@ -217,11 +217,24 @@ list. Two things qualify: a subtree with no files at all, and one whose only fil
 are hidden ones lying *directly* in it — the `.gitkeep` that keeps an otherwise
 empty directory in a git repository. The first note created in either is seen live.
 
-Deeper down, a hidden file counts like any other. Ignore rules are invisible to that
-walk, so exempting dotfiles at every depth would let an ignored tree whose files
-happen to be hidden — a cache of `.lock` files, say — read as empty and enter the
-watch set in full. The cost of exempting them only at the top is a *nest* of
-placeholder directories, watched no further than its first level.
+Deeper down, a hidden file counts like any other, and one file that counts
+disqualifies the whole candidate. Ignore rules are invisible to that walk, so
+exempting dotfiles at every depth would let an ignored tree whose files happen to be
+hidden — a cache of `.lock` files, say — read as empty and enter the watch set in
+full.
+
+Exempting them only at the top has a cost, and it is larger than a first reading
+suggests: a placeholder directory that has a *placeholder-holding subdirectory* is
+not watched at all, not even at its own level, because the deeper `.gitkeep` is a
+file the candidate is judged by. `nest/.gitkeep` alone is watched; `nest/.gitkeep`
+together with `nest/deep/.gitkeep` is not, at either level, and a note created there
+is seen when the directory next appears in a batch or when the daemon restarts —
+exactly as for the ignored-only case below. A `.gitkeep` beside an entirely empty
+subdirectory is unaffected, because an empty subdirectory holds no file at all.
+Nothing here regresses against milestone one, which watched none of these shapes,
+but M2-R4's sentence about "a directory containing only hidden placeholder files"
+holds only for the single-level shape. Whether to close that gap is
+[#20](https://github.com/davison/md-notes/issues/20)'s open decision gate.
 
 Ignored files count as files for the same reason: reading one as absent would make
 `node_modules` look empty and put a whole ignored tree under watch. So a directory

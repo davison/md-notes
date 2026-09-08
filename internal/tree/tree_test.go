@@ -343,6 +343,43 @@ func TestDirsLeavesAnIgnoredHiddenFileTreeUnwatched(t *testing.T) {
 	}
 }
 
+// What the narrowed guard costs, pinned so the record and the code cannot
+// drift apart again: a placeholder directory whose subdirectory also holds
+// a placeholder is not in the set at all — not even at its own level —
+// because the deeper .gitkeep is a file the candidate is judged by. An
+// entirely empty subdirectory holds no file and is unaffected.
+func TestDirsNestedPlaceholderTreeIsNotWatchedAtAnyLevel(t *testing.T) {
+	requireRg(t)
+	cases := []struct {
+		name   string
+		layout map[string]bool // path -> is a file
+		want   []string
+	}{
+		{"a placeholder alone", map[string]bool{"A/.gitkeep": true}, []string{"", "A"}},
+		{"a placeholder one level down", map[string]bool{"B/deep/.gitkeep": true}, []string{""}},
+		{"placeholders at two levels", map[string]bool{"C/.gitkeep": true, "C/sub/.gitkeep": true}, []string{""}},
+		{"a placeholder beside an empty directory", map[string]bool{"D/.gitkeep": true, "D/emptysub": false}, []string{"", "D", "D/emptysub"}},
+		{"an entirely empty nest", map[string]bool{"E/x/y": false}, []string{"", "E", "E/x", "E/x/y"}},
+	}
+	for _, c := range cases {
+		root := t.TempDir()
+		for p, isFile := range c.layout {
+			if isFile {
+				write(t, filepath.Join(root, filepath.FromSlash(p)), "")
+			} else {
+				os.MkdirAll(filepath.Join(root, filepath.FromSlash(p)), 0o755)
+			}
+		}
+		got, err := Dirs(context.Background(), root, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if !reflect.DeepEqual(paths(got), c.want) {
+			t.Errorf("%s: Dirs() = %v, want %v", c.name, paths(got), c.want)
+		}
+	}
+}
+
 func TestListMissingRipgrep(t *testing.T) {
 	orig := lookPath
 	lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
