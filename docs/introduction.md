@@ -233,15 +233,19 @@ cannot create, rename or delete one, and the save API has no create-on-missing p
 
 Line endings survive too, with one qualification. CodeMirror splits a document on
 any of the three endings and joins with LF, so the editor rejoins its text with the
-ending the note itself uses most — CRLF, a lone CR, or LF, a tie going to LF. A note
-that uses one ending throughout therefore keeps every byte through an edit; a note
-that already *mixes* endings comes back uniform in its dominant one the first time
-it is edited.
+ending the note itself uses most — CRLF, a lone CR, or LF, a tie going to LF, or to
+CRLF when LF is not in the tie. A note that uses one ending throughout therefore
+keeps every byte through an edit; a note that already *mixes* endings comes back
+uniform in its dominant one the first time it is edited.
 
-The editor and its language parsers are part of the UI bundle embedded in the
-binary. About 400 KB of it — 140 KB gzipped — loads with the page; the per-language
-parsers for fenced code are separate chunks, fetched over loopback the first time a
-block of that language is edited.
+The editor is part of the UI bundle embedded in the binary, and most of it loads
+whether or not you open it. The page pulls two JavaScript chunks — about 710 KB
+together, being CodeMirror itself and the table of languages it can highlight — plus
+11 KB of CSS, all of it before `Ctrl+E` is ever pressed. The daemon sets no
+`Content-Encoding`, so that is what crosses loopback rather than a compressed third
+of it; it is paid once per page load and then cached. The per-language parsers for
+fenced code are separate chunks, one per language, fetched when a note containing
+such a block is opened in the editor — not when the block is typed in.
 
 ### Autosave and the save states
 
