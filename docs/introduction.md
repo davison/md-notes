@@ -249,22 +249,28 @@ trade-off recorded in the
 The set grows with the tree, not with the notes in it, because a directory holding
 files but no note can gain one later and is watched too. On a notes folder that
 costs nothing; on a large ad-hoc root it is the dominant cost. Measured on one
-machine before the budget existed, with the directories counted three ways:
+machine with the budget removed, counting each directory by the group the listing
+puts it in — the three groups below:
 
-| root | watched | holds a note, plus ancestors | nothing to list | files but no note |
+| root | watched | 1: holds a note, plus ancestors | 2: nothing to list | 3: files but no note |
 | --- | --- | --- | --- | --- |
-| a notes folder | 21 | 3 | 3 | 15 |
-| `~/projects` | 1,590 | 642 | 55 | 893 |
-| `/usr/share` | 5,790 | 311 | 1,503 | 3,976 |
-| `/usr/lib` | 12,690 | 303 | 1,318 | 11,069 |
-| `~/.cache` | 82,684 | 13,616 | 11,673 | 57,395 |
+| a notes folder | 21 | 3 | 1 | 17 |
+| `~/projects` | 1,613 | 642 | 27 | 944 |
+| `/usr/share` | 5,814 | 311 | 706 | 4,797 |
+| `/usr/lib` | 12,690 | 303 | 23 | 12,364 |
+| `~/.cache` | 82,849 | 13,616 | 535 | 68,698 |
 
-Watching hidden-only directories adds a few dozen to each of those: `/usr/share` is
-5,814 with the budget removed today. An inotify watch costs about a kilobyte of
+Group two is small because a directory that holds no file of its own but has
+file-holding descendants is an ancestor, and ancestors go in the group of what they
+lead to. QA measured `/usr/share` at 5,790 against 310 navigator directories before
+this task ([#13](https://github.com/davison/md-notes/issues/13)); watching
+hidden-only directories accounts for the difference.
+
+An inotify watch costs about a kilobyte of
 unswappable kernel memory and comes from
 a per-user pool — `fs.inotify.max_user_watches`, commonly 524,288 — shared with
 every editor, IDE and file manager the user is running. `~/.cache` alone would take
-16% of that pool, some 87 MB, for one registered root.
+16% of that pool, some 83 MB, for one registered root.
 
 So each root has a budget of `max_watches` directories, 8192 by default: enough to
 cover `/usr/share` whole, a sixty-fourth of a typical desktop's pool, and equal to
@@ -278,8 +284,8 @@ budget keeps the ones worth most:
    appear that nothing else would report;
 3. everything else — directories holding files but no note.
 
-The third group is 69–87% of the watch set on every large root above, so it is what
-a spent budget gives up first.
+The third group is 83–97% of the watch set on every large root above — 59% on
+`~/projects`, which is mostly notes — so it is what a spent budget gives up first.
 
 The order holds after startup too. When a directory appears — or gains its first
 note — on a root whose budget is already spent, the least valuable watch is released
