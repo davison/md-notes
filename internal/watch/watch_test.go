@@ -540,3 +540,88 @@ func TestNestedPlaceholderTreeIsUnwatchedAndUnreported(t *testing.T) {
 		t.Fatalf("control note at the root: %v", b.Paths)
 	}
 }
+
+// A deleted subtree hands its budget back: the directories that were
+// refused for want of it get watched, and the reported coverage stops
+// describing a tree that is gone.
+func TestDeletionReturnsBudgetToRefusedDirectories(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed; CI installs it")
+	}
+	root := t.TempDir()
+	for _, d := range []string{"a", "b", "c"} {
+		os.MkdirAll(filepath.Join(root, d), 0o755)
+		os.WriteFile(filepath.Join(root, d, "n.md"), []byte("# n"), 0o644)
+	}
+	dirs, err := tree.Dirs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := New(root, dirs, t.Logf, WithDebounce(50*time.Millisecond, 300*time.Millisecond), WithBudget(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	time.Sleep(20 * time.Millisecond)
+	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "a", "b"}) {
+		t.Fatalf("watched = %v", got)
+	}
+	if cov := w.Coverage(); cov.Watched != 3 || cov.Unwatched != 1 {
+		t.Fatalf("Coverage() = %+v, want c refused", cov)
+	}
+
+	os.RemoveAll(filepath.Join(root, "a"))
+	next(t, w)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if reflect.DeepEqual(watchedRel(t, w, root), []string{".", "b", "c"}) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "b", "c"}) {
+		t.Fatalf("watched = %v, want c to have taken the budget a gave back", got)
+	}
+	if cov := w.Coverage(); cov.Limited || cov.Watched != 3 || cov.Unwatched != 0 {
+		t.Fatalf("Coverage() = %+v, want a complete coverage of what is left", cov)
+	}
+	for {
+		select {
+		case <-w.Events():
+			continue
+		case <-time.After(100 * time.Millisecond):
+		}
+		break
+	}
+	os.WriteFile(filepath.Join(root, "c", "second.md"), []byte("# s"), 0o644)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"c/second.md"}) {
+		t.Fatalf("the directory that took the freed budget: %v", b.Paths)
+	}
+}
+
+// A watch left over from a directory the set no longer names is not part of
+// the root's coverage: watched plus unwatched is the size of the set.
+func TestCoverageCountsOnlyTheCurrentSet(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"a", "gone"} {
+		os.MkdirAll(filepath.Join(root, d), 0o755)
+	}
+	w, err := New(root, group(tree.GroupNotes, "a", "gone"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if cov := w.Coverage(); cov.Watched != 3 {
+		t.Fatalf("Coverage() = %+v, want three watched", cov)
+	}
+	// "gone" drops out of the listing — an ignore rule now covers it — but
+	// keeps its kernel watch until something needs the room.
+	w.place(group(tree.GroupNotes, "a"))
+	cov := w.Coverage()
+	if cov.Watched != 2 || cov.Unwatched != 0 || cov.Limited {
+		t.Fatalf("Coverage() = %+v, want two watched of a two-directory set", cov)
+	}
+	if held := len(w.fsw.WatchList()); held != 3 {
+		t.Fatalf("%d kernel watches, want the stale one still held and reclaimable", held)
+	}
+}
