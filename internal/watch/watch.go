@@ -89,7 +89,7 @@ func WithBudget(n int) Option {
 // A spent budget and a kernel out of inotify watches are both reported
 // through warnf and through Coverage, leaving the rest unwatched rather
 // than failing.
-func New(root string, dirs []string, warnf func(string, ...any), opts ...Option) (*Watcher, error) {
+func New(root string, dirs []tree.Dir, warnf func(string, ...any), opts ...Option) (*Watcher, error) {
 	if warnf == nil {
 		warnf = func(string, ...any) {}
 	}
@@ -114,20 +114,59 @@ func New(root string, dirs []string, warnf func(string, ...any), opts ...Option)
 	return w, nil
 }
 
-// place watches every directory in dirs that has no watch yet, in order,
-// until the budget is spent, and records the coverage that results. dirs is
-// the root's whole directory set, most valuable first; the root itself is
-// watched first whether or not dirs names it.
-func (w *Watcher) place(dirs []string) {
+// place brings the watch set in line with dirs, the root's whole directory
+// set ordered most valuable first, and records the coverage that results.
+// The root is watched first whether or not dirs names it, and is never
+// given up.
+//
+// Within the budget it simply watches what is not watched yet. Once the
+// budget is spent, a directory that outranks a watched one takes its watch:
+// the lowest-priority watch is released to make room. Without that the
+// order would hold at startup only, and every notes directory created
+// afterwards on a full root would stay dark until the daemon restarted,
+// losing to directories the policy ranks below it.
+func (w *Watcher) place(dirs []tree.Dir) {
+	all := append([]tree.Dir{{Path: "", Group: tree.GroupNotes}}, dirs...)
 	watched := map[string]struct{}{}
 	for _, p := range w.fsw.WatchList() {
 		watched[p] = struct{}{}
 	}
+	root := filepath.Clean(w.root)
+
+	// Rank every directory of the set, so a watch already in place can be
+	// compared with one asking for room. A watched directory the set no
+	// longer names — one that became ignored, say — ranks below them all.
+	rank := make(map[string]tree.Group, len(all))
+	for _, d := range all {
+		rank[filepath.Join(w.root, filepath.FromSlash(d.Path))] = d.Group
+	}
+	givable := make([]string, 0, len(watched))
+	for p := range watched {
+		if p != root {
+			givable = append(givable, p)
+		}
+	}
+	// Least valuable first, and deterministic, so the same watch is the
+	// first to go every time the set is recomputed: a directory the set no
+	// longer names, then the lowest group, then the last path within it.
+	sort.Slice(givable, func(i, j int) bool {
+		gi, oki := rank[givable[i]]
+		gj, okj := rank[givable[j]]
+		if oki != okj {
+			return okj
+		}
+		if gi != gj {
+			return gi > gj
+		}
+		return givable[i] > givable[j]
+	})
+
 	// One error stands for all of them: a root with hundreds of
 	// unwatchable directories logs one line, not hundreds.
 	var first error
-	cov := Coverage{Budget: w.budget}
-	for _, rel := range append([]string{""}, dirs...) {
+	cov := Coverage{Budget: max(w.budget, 0)}
+	for _, d := range all {
+		rel := d.Path
 		if rel == "." {
 			rel = ""
 		}
@@ -136,9 +175,32 @@ func (w *Watcher) place(dirs []string) {
 			continue
 		}
 		if w.budget > 0 && len(watched) >= w.budget {
-			cov.OverBudget = true
-			cov.Unwatched++
-			continue
+			// Reclaim a watch from a directory this one outranks. Equal
+			// groups never displace each other, so a stable set never
+			// churns its watches between recomputations.
+			victim := ""
+			for len(givable) > 0 {
+				cand := givable[0]
+				if _, still := watched[cand]; !still {
+					givable = givable[1:]
+					continue
+				}
+				if g, ok := rank[cand]; ok && g <= d.Group {
+					// The least valuable watch left is worth as much as
+					// this directory, so nothing here gives way.
+					break
+				}
+				givable = givable[1:]
+				victim = cand
+				break
+			}
+			if victim == "" {
+				cov.OverBudget = true
+				cov.Unwatched++
+				continue
+			}
+			w.fsw.Remove(victim)
+			delete(watched, victim)
 		}
 		placed, err := w.add(abs)
 		if err != nil {
@@ -379,10 +441,12 @@ func hidden(rel string) bool {
 	return false
 }
 
-// Walk returns every non-hidden directory under root, relative to it,
-// for use when no ignore-aware listing is available.
-func Walk(root string) []string {
-	var dirs []string
+// Walk returns every non-hidden directory under root, relative to it, for
+// use when no ignore-aware listing is available. Without ripgrep there is
+// nothing to rank them by, so they all share one group and none displaces
+// another; a budget is then spent in the order the walk finds them.
+func Walk(root string) []tree.Dir {
+	var dirs []tree.Dir
 	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || !d.IsDir() {
 			return nil
@@ -394,7 +458,7 @@ func Walk(root string) []string {
 		if r == "." {
 			r = ""
 		}
-		dirs = append(dirs, filepath.ToSlash(r))
+		dirs = append(dirs, tree.Dir{Path: filepath.ToSlash(r), Group: tree.GroupOther})
 		return nil
 	})
 	return dirs

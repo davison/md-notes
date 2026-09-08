@@ -68,6 +68,16 @@ func dump(n *Node, depth int) string {
 	return s
 }
 
+// paths flattens a directory set for comparison; the group is asserted
+// separately where it matters.
+func paths(dirs []Dir) []string {
+	out := make([]string, 0, len(dirs))
+	for _, d := range dirs {
+		out = append(out, d.Path)
+	}
+	return out
+}
+
 func requireRg(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("rg"); err != nil {
@@ -252,8 +262,8 @@ func TestDirs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("run %d: Dirs() = %v, want %v", i, got, want)
+		if !reflect.DeepEqual(paths(got), want) {
+			t.Fatalf("run %d: Dirs() = %v, want %v", i, paths(got), want)
 		}
 	}
 }
@@ -273,9 +283,9 @@ func TestDirsLeavesIgnoredOnlyDirectoriesUnwatched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, d := range got {
+	for _, d := range paths(got) {
 		if strings.HasPrefix(d, "build") || strings.HasPrefix(d, "logs") {
-			t.Fatalf("Dirs() = %v, want no ignored-only directory", got)
+			t.Fatalf("Dirs() = %v, want no ignored-only directory", paths(got))
 		}
 	}
 }
@@ -293,7 +303,12 @@ func TestDirsOrdersByPriority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"", "zz-notes", "mm-placeholder", "aa-assets"}
+	want := []Dir{
+		{Path: "", Group: GroupNotes},
+		{Path: "zz-notes", Group: GroupNotes},
+		{Path: "mm-placeholder", Group: GroupEmpty},
+		{Path: "aa-assets", Group: GroupOther},
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Dirs() = %v, want %v", got, want)
 	}
@@ -323,8 +338,8 @@ func TestDirsLeavesAnIgnoredHiddenFileTreeUnwatched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(got, []string{""}) {
-		t.Fatalf("Dirs() covered %d directories, want just the root: %v", len(got), got)
+	if !reflect.DeepEqual(paths(got), []string{""}) {
+		t.Fatalf("Dirs() covered %d directories, want just the root: %v", len(got), paths(got))
 	}
 }
 

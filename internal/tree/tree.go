@@ -58,22 +58,39 @@ func List(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 	return list(ctx, root, warnf, IsMarkdown)
 }
 
-// Dirs returns the directories a watcher should cover, relative to root
-// and including the root itself (""), ordered so that the watches worth
-// most are placed first when a budget cannot cover them all:
-//
-//  1. the root, every directory holding a markdown file, and their
-//     ancestors — the set the navigator lists, where notes change;
-//  2. directories holding nothing the navigator would list — empty ones,
-//     and ones holding only hidden files such as a .gitkeep placeholder —
-//     where a first note can appear that nothing else would report;
-//  3. every other directory holding a file ripgrep lists, which can gain a
-//     markdown file later.
+// Group ranks a watchable directory by what a watch on it is worth, so a
+// budget too small for a root can be spent on the directories that matter
+// and a directory that outranks a watched one can take its place.
+type Group int
+
+const (
+	// GroupNotes is the root, every directory holding a markdown file, and
+	// their ancestors — the set the navigator lists, where notes change.
+	GroupNotes Group = iota
+	// GroupEmpty is directories holding nothing the navigator would list:
+	// empty ones, and ones holding only hidden files such as a .gitkeep
+	// placeholder, where a first note can appear that nothing else reports.
+	GroupEmpty
+	// GroupOther is every remaining directory holding a file ripgrep
+	// lists, which can gain a markdown file later.
+	GroupOther
+)
+
+// Dir is one directory a watcher should cover, relative to the root, with
+// the group that decides which watch gives way when the two compete.
+type Dir struct {
+	Path  string
+	Group Group
+}
+
+// Dirs returns the directories a watcher should cover, including the root
+// itself (""), ordered by group and then by path, so the watches worth most
+// come first when a budget cannot cover them all.
 //
 // Paths are sorted within each group, so the whole result is stable. A
 // subtree that has files ripgrep does not list is ignored or hidden and is
 // left unwatched.
-func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]string, error) {
+func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]Dir, error) {
 	files, err := list(ctx, root, warnf, func(string) bool { return true })
 	if err != nil {
 		return nil, err
@@ -119,10 +136,15 @@ func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 			}
 		}
 	}
-	out := make([]string, 0, len(notes)+len(empty)+len(others))
-	out = append(out, sorted(notes)...)
-	out = append(out, sorted(empty)...)
-	out = append(out, sorted(others)...)
+	out := make([]Dir, 0, len(notes)+len(empty)+len(others))
+	for _, g := range []struct {
+		group Group
+		set   map[string]struct{}
+	}{{GroupNotes, notes}, {GroupEmpty, empty}, {GroupOther, others}} {
+		for _, d := range sorted(g.set) {
+			out = append(out, Dir{Path: d, Group: g.group})
+		}
+	}
 	return out, nil
 }
 
