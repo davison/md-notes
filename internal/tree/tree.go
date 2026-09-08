@@ -58,6 +58,13 @@ func List(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 	return list(ctx, root, warnf, IsMarkdown)
 }
 
+// isHidden reports whether a relative path's own name starts with a dot.
+// Every directory above it is non-hidden by construction: the only listing
+// that produces hidden paths excludes hidden directories.
+func isHidden(rel string) bool {
+	return strings.HasPrefix(path.Base(rel), ".")
+}
+
 // Group ranks a watchable directory by what a watch on it is worth, so a
 // budget too small for a root can be spent on the directories that matter
 // and a directory that outranks a watched one can take its place.
@@ -68,8 +75,8 @@ const (
 	// their ancestors — the set the navigator lists, where notes change.
 	GroupNotes Group = iota
 	// GroupEmpty is directories holding nothing the navigator would list:
-	// empty ones, and ones holding only hidden files such as a .gitkeep
-	// placeholder, where a first note can appear that nothing else reports.
+	// empty ones, and ones holding or leading to a .gitkeep placeholder,
+	// where a first note can appear that nothing else reports.
 	GroupEmpty
 	// GroupOther is every remaining directory holding a file ripgrep
 	// lists, which can gain a markdown file later.
@@ -85,19 +92,39 @@ type Dir struct {
 
 // Dirs returns the directories a watcher should cover, including the root
 // itself (""), ordered by group and then by path, so the watches worth most
-// come first when a budget cannot cover them all.
+// come first when a budget cannot cover them all. It covers, at every
+// depth: every directory holding a file ripgrep lists and their ancestors;
+// every directory holding a hidden file ripgrep lists — a .gitkeep
+// placeholder no ignore rule covers — and their ancestors; and every
+// subtree holding no files at all.
 //
 // Paths are sorted within each group, so the whole result is stable. A
-// subtree that has files ripgrep does not list is ignored or hidden and is
-// left unwatched.
+// subtree whose files ripgrep does not list is ignored or hidden, and is
+// left unwatched: a note created there is seen when the directory next
+// appears in a batch, or when the daemon restarts.
 func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]Dir, error) {
-	files, err := list(ctx, root, warnf, func(string) bool { return true })
+	// One listing, asked for hidden files and refused hidden directories,
+	// answers both questions a watcher has. Its non-hidden paths are what
+	// the navigator lists, exactly as a plain listing would give them. Its
+	// hidden paths are the dotfiles no ignore rule covers — ripgrep applies
+	// the root's rules whether or not hidden files are asked for — so a
+	// .gitkeep is named and the .lock files of an ignored cache are not,
+	// which is the difference a directory walk cannot see. Hidden
+	// directories are refused because they are never watched, and that also
+	// keeps the walk out of .git and .cache, where the cost would be.
+	files, err := list(ctx, root, warnf, func(string) bool { return true }, "--hidden", "--glob", "!.*/")
 	if err != nil {
 		return nil, err
 	}
+
 	notes := map[string]struct{}{"": {}}
 	others := map[string]struct{}{}
+	var placeholders []string
 	for _, f := range files {
+		if isHidden(f) {
+			placeholders = append(placeholders, f)
+			continue
+		}
 		set := others
 		if IsMarkdown(f) {
 			set = notes
@@ -109,8 +136,27 @@ func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]Dir, 
 	for d := range notes {
 		delete(others, d)
 	}
+
+	// A placeholder counts like a listed file for the shape of the set —
+	// its directory and their ancestors are watchable at every level — but
+	// it is nothing the navigator would list, so those directories go in
+	// the group whose watches exist for a first note.
 	empty := map[string]struct{}{}
-	for _, d := range sorted(notes, others) {
+	for _, f := range placeholders {
+		for d := path.Dir(f); d != "." && d != "/" && d != ""; d = path.Dir(d) {
+			if _, ok := notes[d]; ok {
+				continue
+			}
+			if _, ok := others[d]; ok {
+				continue
+			}
+			empty[d] = struct{}{}
+		}
+	}
+
+	// Then the directories that hold no files at all, which no listing can
+	// name because there is nothing in them to list.
+	for _, d := range sorted(notes, others, empty) {
 		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(d)))
 		if err != nil {
 			continue
@@ -136,6 +182,7 @@ func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]Dir, 
 			}
 		}
 	}
+
 	out := make([]Dir, 0, len(notes)+len(empty)+len(others))
 	for _, g := range []struct {
 		group Group
@@ -165,26 +212,16 @@ func sorted(sets ...map[string]struct{}) []string {
 }
 
 // emptySubtree walks abs and reports its non-hidden directories (relative
-// to abs, "" for abs itself) if the subtree holds nothing the navigator
-// would list. Two things qualify: a subtree with no files at all, and one
-// whose only files are hidden ones lying directly in abs — the .gitkeep
-// that keeps an otherwise empty directory in a git repository. Such a
-// directory is as empty as one holding nothing, and the first note created
-// in it must be seen.
+// to abs, "" for abs itself) if the subtree holds no files at all. Such a
+// directory has nothing for an ignore rule to have matched and nothing any
+// listing could name, so watching it cannot pull in an ignored tree, and
+// the first note created there must be seen.
 //
-// Below abs, a hidden file counts like any other, and one file that counts
-// disqualifies the whole candidate. Ignore rules are invisible here, so
-// exempting dotfiles at every depth would let an ignored tree whose files
-// happen to be hidden — a cache of .lock files, say — read as empty and
-// enter the watch set in full, which is the class of bug dd961f3 fixed on
-// #9. Exempting them only at the top keeps ignored trees out, at this cost:
-// a placeholder directory that has a placeholder-holding subdirectory is
-// not watched at all, not even at its top level, because the deeper
-// .gitkeep is a file abs is judged by. A .gitkeep beside an entirely empty
-// subdirectory is fine; a nest of them is not covered.
-//
-// The walk stops at the first file that counts, so an ignored tree full of
-// files costs the directory reads down to its first file and no more.
+// A file of any kind disqualifies the subtree, hidden ones included: a
+// dotfile that is a placeholder rather than the contents of an ignored tree
+// is known from the listing in Dirs, which is ignore-aware, and needs no
+// guess here. The walk stops at the first file, so an ignored tree full of
+// files costs one directory read.
 func emptySubtree(abs string) ([]string, bool) {
 	var dirs []string
 	empty := true
@@ -193,9 +230,6 @@ func emptySubtree(abs string) ([]string, bool) {
 			return nil
 		}
 		if !d.IsDir() {
-			if filepath.Dir(p) == abs && strings.HasPrefix(d.Name(), ".") {
-				return nil
-			}
 			empty = false
 			return fs.SkipAll
 		}
@@ -212,7 +246,7 @@ func emptySubtree(abs string) ([]string, bool) {
 	return dirs, empty
 }
 
-func list(ctx context.Context, root string, warnf func(string, ...any), keep func(string) bool) ([]string, error) {
+func list(ctx context.Context, root string, warnf func(string, ...any), keep func(string) bool, extra ...string) ([]string, error) {
 	if warnf == nil {
 		warnf = func(string, ...any) {}
 	}
@@ -220,7 +254,8 @@ func list(ctx context.Context, root string, warnf func(string, ...any), keep fun
 	if err != nil {
 		return nil, ErrNoRipgrep
 	}
-	cmd := exec.CommandContext(ctx, rg, "--files", "--sort", "path", "--null")
+	args := append([]string{"--files", "--sort", "path", "--null"}, extra...)
+	cmd := exec.CommandContext(ctx, rg, args...)
 	cmd.Dir = root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
