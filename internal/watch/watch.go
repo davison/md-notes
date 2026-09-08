@@ -44,6 +44,9 @@ type Watcher struct {
 
 	cmu sync.Mutex
 	cov Coverage
+	// held is how many watches were in place when the set was last
+	// computed, so a shrinking watch list shows a directory went away.
+	held int
 }
 
 // Coverage says how much of a root the watcher covers. An unwatched
@@ -51,7 +54,9 @@ type Watcher struct {
 // directory above it reports them, and when the daemon restarts. It simply
 // does not report changes of its own.
 type Coverage struct {
-	// Watched is the number of directories carrying a watch.
+	// Watched is how many of the root's directories carry a watch. A watch
+	// left over from a directory the listing no longer names is not
+	// counted: Watched plus Unwatched is the size of the current set.
 	Watched int `json:"watched"`
 	// Unwatched is how many directories of the root's set carry none.
 	Unwatched int `json:"unwatched"`
@@ -217,12 +222,22 @@ func (w *Watcher) place(dirs []tree.Dir) {
 			watched[abs] = struct{}{}
 		}
 	}
-	cov.Watched = len(watched)
+	// Count only the directories the set still names. A watch left over
+	// from a directory that has dropped out — one that became ignored,
+	// say — is real, and is first in line to be reclaimed, but it is not
+	// part of this root's coverage, and counting it made watched plus
+	// unwatched exceed the set the page reports against.
+	cov.Watched = 0
+	for abs := range watched {
+		if _, ok := rank[abs]; ok {
+			cov.Watched++
+		}
+	}
 	cov.Limited = cov.Unwatched > 0
 
 	w.cmu.Lock()
 	changed := cov != w.cov
-	w.cov = cov
+	w.cov, w.held = cov, len(watched)
 	w.cmu.Unlock()
 	if changed {
 		w.report(cov, first)
@@ -429,6 +444,43 @@ func (w *Watcher) reconcile(paths map[string]struct{}) {
 	}
 	if newDir {
 		w.addMissing()
+		return
+	}
+	// A deleted directory takes its watch with it: inotify drops the watch
+	// on a vanished inode itself, so the count of watches held is the
+	// signal that something went away, not the removals made above.
+	w.cmu.Lock()
+	shrank := len(w.fsw.WatchList()) < w.held
+	limited := w.cov.Limited
+	w.cmu.Unlock()
+	switch {
+	case shrank && limited:
+		// The deleted subtree hands its budget back. Relist so the freed
+		// watches are spent on the directories that were refused it.
+		w.addMissing()
+	case shrank:
+		// Nothing was waiting for the budget, so a relisting would buy
+		// nothing; the numbers still have to stop describing a tree that
+		// is gone.
+		w.refresh()
+	}
+}
+
+// refresh brings the reported coverage in line with the watches actually
+// held, without relisting the root. Used when a deletion changed the count
+// but freed nothing that anything was waiting for.
+func (w *Watcher) refresh() {
+	held := len(w.fsw.WatchList())
+	w.cmu.Lock()
+	cov := w.cov
+	if cov.Watched > held {
+		cov.Watched = held
+	}
+	changed := cov != w.cov
+	w.cov, w.held = cov, held
+	w.cmu.Unlock()
+	if changed {
+		w.report(cov, nil)
 	}
 }
 
