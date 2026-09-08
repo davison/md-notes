@@ -7,6 +7,7 @@ import { getSession, resetSessions } from "./session";
 class FakeEventSource {
   static last: FakeEventSource | null = null;
   private listeners: Record<string, ((e: MessageEvent) => void)[]> = {};
+  readyState = 1;
   onerror: (() => void) | null = null;
   onopen: (() => void) | null = null;
   constructor(public url: string) {
@@ -164,6 +165,45 @@ describe("watch coverage", () => {
     await screen.findByText("docs");
     FakeEventSource.last!.emitStatus(complete);
     await waitFor(() => expect(screen.queryByText(/Live update covers/)).toBeNull());
+  });
+
+  it("names both remedies when the budget is spent and the kernel refused watches", async () => {
+    render(
+      <LocationProvider>
+        <RootView slug="n" />
+      </LocationProvider>,
+    );
+    await screen.findByText("docs");
+    FakeEventSource.last!.emitStatus({ ...limited, failed: 12, unwatched: 4510 });
+    const notice = await screen.findByText(/Live update covers/);
+    expect(notice.textContent).toContain("raise max_watches above 8,192");
+    expect(notice.textContent).toContain("fs.inotify.max_user_watches");
+  });
+
+  it("says when the root has no live update at all", async () => {
+    render(
+      <LocationProvider>
+        <RootView slug="n" />
+      </LocationProvider>,
+    );
+    await screen.findByText("docs");
+    const es = FakeEventSource.last!;
+    es.readyState = 2;
+    es.onerror!();
+    expect((await screen.findByText(/Live update is not available/)).textContent).toContain("reload");
+  });
+
+  it("stays quiet while a dropped stream is still reconnecting", async () => {
+    render(
+      <LocationProvider>
+        <RootView slug="n" />
+      </LocationProvider>,
+    );
+    await screen.findByText("docs");
+    const es = FakeEventSource.last!;
+    es.readyState = 0;
+    es.onerror!();
+    await waitFor(() => expect(screen.queryByText(/Live update is not available/)).toBeNull());
   });
 
   it("says how much of the root is watched, and how to cover the rest", async () => {
