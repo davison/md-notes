@@ -498,3 +498,45 @@ func TestNotesDirectoryCreatedLaterTakesAWatch(t *testing.T) {
 		t.Fatalf("second note in the new directory: %v", b.Paths)
 	}
 }
+
+// The nested-placeholder gap is silent: the directory is not watched, and
+// because nothing was refused the coverage is complete, so neither the log,
+// the stream nor the page says anything. Pinned so the gap cannot be
+// mistaken for a reporting bug, and so the record stays honest about it
+// while the decision on closing it is open.
+func TestNestedPlaceholderTreeIsUnwatchedAndUnreported(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed; CI installs it")
+	}
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "control.md"), []byte("# c"), 0o644)
+	os.MkdirAll(filepath.Join(root, "nest", "deep"), 0o755)
+	os.WriteFile(filepath.Join(root, "nest", ".gitkeep"), nil, 0o644)
+	os.WriteFile(filepath.Join(root, "nest", "deep", ".gitkeep"), nil, 0o644)
+
+	dirs, err := tree.Dirs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := New(root, dirs, t.Logf, WithDebounce(50*time.Millisecond, 300*time.Millisecond), WithBudget(8192))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	time.Sleep(20 * time.Millisecond)
+
+	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{"."}) {
+		t.Fatalf("watched = %v, want the root alone: a nest of placeholders is not watched", got)
+	}
+	cov := w.Coverage()
+	if cov.Limited || cov.Unwatched != 0 {
+		t.Fatalf("Coverage() = %+v, want a complete one: nothing was refused, the nest was never a candidate", cov)
+	}
+	// The first note in the nest is not seen; a note at the root still is.
+	os.WriteFile(filepath.Join(root, "nest", "first.md"), []byte("# f"), 0o644)
+	noBatch(t, w)
+	os.WriteFile(filepath.Join(root, "second.md"), []byte("# s"), 0o644)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"second.md"}) {
+		t.Fatalf("control note at the root: %v", b.Paths)
+	}
+}
