@@ -21,7 +21,8 @@ do a few things well and nothing else:
 ## Shape
 
 The design as a whole. Milestone one built the daemon and the reading half of
-the web UI; the editor, the extension and the inbox are still ahead.
+the web UI, milestone two the editor; the extension and the inbox are still
+ahead.
 
 - **Daemon.** One static Go binary. Serves the web UI, watches one or more
   root folders, renders markdown server-side, shells out to ripgrep for
@@ -90,6 +91,17 @@ opens the note scrolled to the match. Tags come from a frontmatter list
 (`tags: [a, b]`) or inline hashtags such as `#project/x`; the tag panel
 lists them with counts and filters the navigator to the notes carrying one.
 
+`Ctrl+E` flips the open note between the rendered view and a CodeMirror 6
+editor with vim keybindings, and back. Edits save to the original file
+automatically, one second after typing stops and immediately when you
+switch view, move to another note, leave the window or type `:w` — the
+note bar says whether the draft is saved, saving, failed or in conflict.
+A refused save keeps the draft and offers a retry; a note changed or
+deleted on disk under an unsaved draft raises a banner that keeps the
+draft until you say what to do with it. Notes are edited in place:
+creating, renaming and deleting them is still a job for other tools.
+[docs/introduction.md](docs/introduction.md#editing) has the detail.
+
 Changes on disk show up in the browser without a refresh: the daemon watches
 every registered root and streams change events to the page. The watched
 directories are the ones holding a file ripgrep lists, the ones holding a
@@ -125,12 +137,15 @@ already runs as the user who owns the notes.
 ## Status
 
 Milestone one, the daemon and rendered viewer, is done: roots, confinement,
-navigator, rendering, live update, search, and tags.
+navigator, rendering, live update, search, and tags. Milestone two is done
+too: the editor, autosave with explicit conflict handling, and the two
+live-update and rendering follow-ups milestone one's QA left open.
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
-today, and
-[docs/milestones/1-daemon-and-rendered-viewer.md](docs/milestones/1-daemon-and-rendered-viewer.md)
-records the decisions behind it. The editor, the browser clipper, and the
-inbox follow in later milestones. Progress is tracked in
+today, and the milestone records
+([one](docs/milestones/1-daemon-and-rendered-viewer.md),
+[two](docs/milestones/2-editor-autosave-and-live-update.md))
+record the decisions behind it. The browser clipper and the inbox follow in
+later milestones. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
 is run as a [CodeCrew](https://github.com/radiusred/gh-codecrew) project.
 
