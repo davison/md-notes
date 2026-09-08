@@ -499,12 +499,10 @@ func TestNotesDirectoryCreatedLaterTakesAWatch(t *testing.T) {
 	}
 }
 
-// The nested-placeholder gap is silent: the directory is not watched, and
-// because nothing was refused the coverage is complete, so neither the log,
-// the stream nor the page says anything. Pinned so the gap cannot be
-// mistaken for a reporting bug, and so the record stays honest about it
-// while the decision on closing it is open.
-func TestNestedPlaceholderTreeIsUnwatchedAndUnreported(t *testing.T) {
+// A placeholder tree is watched at every level, and the first note in each
+// of its directories is reported live. This is M2-R4's sentence for the
+// nested shape, end to end from the listing through the watcher.
+func TestFirstNoteInANestOfPlaceholderDirectories(t *testing.T) {
 	if _, err := exec.LookPath("rg"); err != nil {
 		t.Skip("ripgrep not installed; CI installs it")
 	}
@@ -518,26 +516,61 @@ func TestNestedPlaceholderTreeIsUnwatchedAndUnreported(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w, err := New(root, dirs, t.Logf, WithDebounce(50*time.Millisecond, 300*time.Millisecond), WithBudget(8192))
+	w, err := New(root, dirs, t.Logf, WithDebounce(50*time.Millisecond, 300*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer w.Close()
 	time.Sleep(20 * time.Millisecond)
 
-	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{"."}) {
-		t.Fatalf("watched = %v, want the root alone: a nest of placeholders is not watched", got)
+	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "nest", "nest/deep"}) {
+		t.Fatalf("watched = %v, want the nest at both levels", got)
 	}
-	cov := w.Coverage()
-	if cov.Limited || cov.Unwatched != 0 {
-		t.Fatalf("Coverage() = %+v, want a complete one: nothing was refused, the nest was never a candidate", cov)
+	if cov := w.Coverage(); cov.Limited || cov.Watched != 3 {
+		t.Fatalf("Coverage() = %+v, want three directories covered", cov)
 	}
-	// The first note in the nest is not seen; a note at the root still is.
 	os.WriteFile(filepath.Join(root, "nest", "first.md"), []byte("# f"), 0o644)
-	noBatch(t, w)
-	os.WriteFile(filepath.Join(root, "second.md"), []byte("# s"), 0o644)
-	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"second.md"}) {
-		t.Fatalf("control note at the root: %v", b.Paths)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"nest/first.md"}) {
+		t.Fatalf("first note in the placeholder directory: %v", b.Paths)
+	}
+	os.WriteFile(filepath.Join(root, "nest", "deep", "first.md"), []byte("# d"), 0o644)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"nest/deep/first.md"}) {
+		t.Fatalf("first note one level down: %v", b.Paths)
+	}
+}
+
+// The ignored tree the narrowed guard was written for stays out, now
+// because ripgrep never lists its dotfiles rather than because the walker
+// refuses to look at them.
+func TestIgnoredDotfileTreeStillCostsOneWatch(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed; CI installs it")
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	os.WriteFile(filepath.Join(root, ".gitignore"), []byte("cache/\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "note.md"), []byte("# n"), 0o644)
+	for i := 1; i <= 200; i++ {
+		d := filepath.Join(root, "cache", fmt.Sprintf("d%d", i))
+		os.MkdirAll(d, 0o755)
+		os.WriteFile(filepath.Join(d, ".lock"), nil, 0o644)
+	}
+	dirs, err := tree.Dirs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := New(root, dirs, t.Logf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{"."}) {
+		t.Fatalf("watched = %v, want the root alone", got)
 	}
 }
 

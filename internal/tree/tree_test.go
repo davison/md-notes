@@ -244,16 +244,15 @@ func TestDirs(t *testing.T) {
 	// vendor is ignored and holds files, so it is not watched. onlyhidden
 	// has nothing but a hidden cache, which the navigator would skip, so a
 	// note created there would be listed and it is watched; placeholder
-	// holds nothing but a .gitkeep and is watched for the same reason.
-	// nest is not: the exemption for hidden files covers only the ones
-	// lying directly in the candidate directory, so nest/deep/.gitkeep
-	// counts as a file and the whole nest stays out. Empty nests, which
-	// hold no files at any depth, are watched throughout. The order is
-	// markdown-holding directories, then the empty ones, then images, which
-	// holds a file but no note.
+	// holds nothing but a .gitkeep, which ripgrep lists once hidden files
+	// are asked for, so it is watched too — and so is the nest, at both
+	// levels, because a placeholder counts wherever it lies. Empty nests,
+	// which hold no files at any depth, are watched throughout. The order
+	// is markdown-holding directories, then the empty ones, then images,
+	// which holds a file but no note.
 	want := []string{
 		"", "a", "a/b",
-		"a/emptychild", "empty", "empty/nested", "empty/nested/deeper",
+		"a/emptychild", "empty", "empty/nested", "empty/nested/deeper", "nest", "nest/deep",
 		"onlyhidden", "placeholder",
 		"images",
 	}
@@ -343,12 +342,10 @@ func TestDirsLeavesAnIgnoredHiddenFileTreeUnwatched(t *testing.T) {
 	}
 }
 
-// What the narrowed guard costs, pinned so the record and the code cannot
-// drift apart again: a placeholder directory whose subdirectory also holds
-// a placeholder is not in the set at all — not even at its own level —
-// because the deeper .gitkeep is a file the candidate is judged by. An
-// entirely empty subdirectory holds no file and is unaffected.
-func TestDirsNestedPlaceholderTreeIsNotWatchedAtAnyLevel(t *testing.T) {
+// A placeholder makes its directory watchable wherever it lies, because the
+// listing that finds it applies the root's ignore rules. The layouts are the
+// ones the model review of #26 measured, with the answers M2-R4 asks for.
+func TestDirsWatchesPlaceholderTreesAtEveryLevel(t *testing.T) {
 	requireRg(t)
 	cases := []struct {
 		name   string
@@ -356,8 +353,8 @@ func TestDirsNestedPlaceholderTreeIsNotWatchedAtAnyLevel(t *testing.T) {
 		want   []string
 	}{
 		{"a placeholder alone", map[string]bool{"A/.gitkeep": true}, []string{"", "A"}},
-		{"a placeholder one level down", map[string]bool{"B/deep/.gitkeep": true}, []string{""}},
-		{"placeholders at two levels", map[string]bool{"C/.gitkeep": true, "C/sub/.gitkeep": true}, []string{""}},
+		{"a placeholder one level down", map[string]bool{"B/deep/.gitkeep": true}, []string{"", "B", "B/deep"}},
+		{"placeholders at two levels", map[string]bool{"C/.gitkeep": true, "C/sub/.gitkeep": true}, []string{"", "C", "C/sub"}},
 		{"a placeholder beside an empty directory", map[string]bool{"D/.gitkeep": true, "D/emptysub": false}, []string{"", "D", "D/emptysub"}},
 		{"an entirely empty nest", map[string]bool{"E/x/y": false}, []string{"", "E", "E/x", "E/x/y"}},
 	}
@@ -377,6 +374,31 @@ func TestDirsNestedPlaceholderTreeIsNotWatchedAtAnyLevel(t *testing.T) {
 		if !reflect.DeepEqual(paths(got), c.want) {
 			t.Errorf("%s: Dirs() = %v, want %v", c.name, paths(got), c.want)
 		}
+		for _, d := range got {
+			if d.Path != "" && d.Group != GroupEmpty {
+				t.Errorf("%s: %q is in group %d, want the group whose watches exist for a first note", c.name, d.Path, d.Group)
+			}
+		}
+	}
+}
+
+// A hidden directory is never watched, whatever it holds: the navigator
+// does not list it, and the listing that finds placeholders excludes it.
+func TestDirsNeverWatchesHiddenDirectories(t *testing.T) {
+	requireRg(t)
+	root := t.TempDir()
+	write(t, filepath.Join(root, "note.md"), "")
+	write(t, filepath.Join(root, ".config", "keep.md"), "")
+	write(t, filepath.Join(root, ".config", "nested", ".gitkeep"), "")
+	os.MkdirAll(filepath.Join(root, ".empty"), 0o755)
+	write(t, filepath.Join(root, "visible", ".gitkeep"), "")
+
+	got, err := Dirs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(paths(got), []string{"", "visible"}) {
+		t.Fatalf("Dirs() = %v, want the root and the one non-hidden placeholder directory", paths(got))
 	}
 }
 

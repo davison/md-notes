@@ -415,6 +415,52 @@ func TestEventsStreamReportsLimitedCoverage(t *testing.T) {
 	}
 }
 
+// M2-R4 over the wire: the first note in a directory whose only file is a
+// hidden placeholder reaches the browser, at every level of a nest of them.
+func TestEventsStreamReportsFirstNoteInPlaceholderDirectories(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed; CI installs it")
+	}
+	notes := t.TempDir()
+	os.WriteFile(filepath.Join(notes, "hello.md"), []byte("# hi"), 0o644)
+	os.MkdirAll(filepath.Join(notes, "nest", "deep"), 0o755)
+	os.WriteFile(filepath.Join(notes, "nest", ".gitkeep"), nil, 0o644)
+	os.WriteFile(filepath.Join(notes, "nest", "deep", ".gitkeep"), nil, 0o644)
+
+	reg, err := roots.New(notes, filepath.Join(t.TempDir(), "roots.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(reg, port, fstest.MapFS{}, log.New(io.Discard, "", 0))
+	s.keepalive = 100 * time.Millisecond
+	t.Cleanup(s.Close)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/r/"+reg.List()[0].Slug+"/events", nil)
+	req.Host = "localhost:7337"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	next := sseReader(t, resp.Body)
+	next(func(l string) bool { return l == ": connected" })
+	status := next(func(l string) bool { return strings.HasPrefix(l, "data: ") })
+	var cov watch.Coverage
+	json.Unmarshal([]byte(strings.TrimPrefix(status, "data: ")), &cov)
+	if cov.Watched != 3 || cov.Limited {
+		t.Fatalf("coverage = %+v, want the root and both placeholder directories", cov)
+	}
+
+	os.WriteFile(filepath.Join(notes, "nest", "first.md"), []byte("# f"), 0o644)
+	next(func(l string) bool { return strings.Contains(l, `"nest/first.md"`) })
+	os.WriteFile(filepath.Join(notes, "nest", "deep", "first.md"), []byte("# d"), 0o644)
+	next(func(l string) bool { return strings.Contains(l, `"nest/deep/first.md"`) })
+}
+
 func TestAddedRootIsWatched(t *testing.T) {
 	ts, base := newTestServer(t)
 	proj := filepath.Join(base, "proj")
