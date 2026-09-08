@@ -228,7 +228,7 @@ rules, and that is the whole point — a `.gitkeep` no rule covers is named, whi
 `.lock` files of a gitignored cache are not, so an ignored tree of dotfiles cannot
 enter the set by looking empty. Refusing hidden directories costs nothing, because
 they are never watched, and keeps the walk out of `.git` and `.cache`, which is
-where the time would go: computing the watched set costs 5–7% more than the rule
+where the time would go: computing the watched set costs 6–9% more than the rule
 this replaced, which asked ripgrep for no hidden files at all.
 
 Ignored files are the limit of it. A directory whose only files are *ignored* holds

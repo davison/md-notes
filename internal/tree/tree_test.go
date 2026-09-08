@@ -402,6 +402,47 @@ func TestDirsNeverWatchesHiddenDirectories(t *testing.T) {
 	}
 }
 
+// A hidden file an explicit ! rule un-ignores is a note the navigator
+// lists, so its directory belongs with the note-holding ones and not with
+// the placeholders. Reported in the model review of #26, whose root this is.
+func TestDirsRanksAnUnignoredHiddenNoteAsANoteDirectory(t *testing.T) {
+	requireRg(t)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	write(t, filepath.Join(root, ".gitignore"), "!/hid/.secret.md\n")
+	write(t, filepath.Join(root, "hid", ".secret.md"), "# secret")
+	write(t, filepath.Join(root, "plain", "f.txt"), "")
+
+	// The premise: a plain listing names the un-ignored dotfile, so the
+	// navigator shows it. If ripgrep ever stops doing that, this test has
+	// nothing left to pin.
+	listed, err := List(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(listed, []string{"hid/.secret.md"}) {
+		t.Skipf("ripgrep no longer names an un-ignored hidden file: %v", listed)
+	}
+
+	got, err := Dirs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Dir{
+		{Path: "", Group: GroupNotes},
+		{Path: "hid", Group: GroupNotes},
+		{Path: "plain", Group: GroupOther},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Dirs() = %v, want %v", got, want)
+	}
+}
+
 func TestListMissingRipgrep(t *testing.T) {
 	orig := lookPath
 	lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
