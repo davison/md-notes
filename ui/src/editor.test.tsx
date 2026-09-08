@@ -3,7 +3,7 @@ import { cleanup, render } from "@testing-library/preact";
 import { EditorState } from "@codemirror/state";
 import { Vim, getCM } from "@replit/codemirror-vim";
 import { EditorView } from "@codemirror/view";
-import { Editor } from "./editor";
+import { Editor, lineEnding, withLineEnding } from "./editor";
 import { Session, resetSessions } from "./session";
 
 function session(draft = "# hi\n"): Session {
@@ -18,6 +18,22 @@ function viewOf(container: Element): EditorView {
 
 beforeEach(() => resetSessions());
 afterEach(() => cleanup());
+
+describe("line endings", () => {
+  it("detects CRLF, lone CR, and LF", () => {
+    expect(lineEnding("a\r\nb\r\n")).toBe("\r\n");
+    expect(lineEnding("a\rb\r")).toBe("\r");
+    expect(lineEnding("a\nb\n")).toBe("\n");
+    expect(lineEnding("a\r\nb\nc\r")).toBe("\r\n");
+    expect(lineEnding("")).toBe("\n");
+  });
+
+  it("rejoins the editor's LF text with the note's ending", () => {
+    expect(withLineEnding("a\nb\n", "\r\n")).toBe("a\r\nb\r\n");
+    expect(withLineEnding("a\nb\n", "\r")).toBe("a\rb\r");
+    expect(withLineEnding("a\nb\n", "\n")).toBe("a\nb\n");
+  });
+});
 
 describe("Editor", () => {
   it("shows the draft with vim in normal mode", () => {
@@ -36,6 +52,40 @@ describe("Editor", () => {
     view.dispatch({ changes: { from: view.state.doc.length, insert: "more" } });
     expect(edit).toHaveBeenCalledWith("# hi\nmore");
     expect(s.state.status).toBe("pending");
+  });
+
+  it.each([
+    ["CRLF", "---\r\ntitle: A\r\n---\r\n\r\n# A\r\n\r\nbody\r\n", "---\r\ntitle: A\r\n---\r\n\r\n# A\r\n\r\nbody!\r\n"],
+    ["lone CR", "one\rtwo\rthree\r", "one\rtwo\rthree!\r"],
+    ["LF", "one\ntwo\n", "one\ntwo!\n"],
+  ])("keeps a note's %s line endings through an edit", (_, source, expected) => {
+    const s = session(source);
+    const { container } = render(<Editor session={s} />);
+    const view = viewOf(container);
+    // Type "!" at the end of the last line.
+    const at = view.state.doc.length - 1;
+    view.dispatch({ changes: { from: at, insert: "!" } });
+    expect(s.state.draft).toBe(expected);
+    expect(s.state.status).toBe("pending");
+    // Typing Enter inserts the note's own ending too.
+    view.dispatch({ changes: { from: at + 1, insert: view.state.lineBreak } });
+    expect(s.state.draft.split(lineEnding(source)).length).toBe(source.split(lineEnding(source)).length + 1);
+  });
+
+  it("makes a note with mixed endings uniform in its dominant one", () => {
+    const s = session("a\r\nb\nc\r\n");
+    const { container } = render(<Editor session={s} />);
+    const view = viewOf(container);
+    view.dispatch({ changes: { from: 0, insert: "!" } });
+    expect(s.state.draft).toBe("!a\r\nb\r\nc\r\n");
+  });
+
+  it("opening without typing changes nothing", () => {
+    const s = session("a\r\nb\r\n");
+    const edit = vi.spyOn(s, "edit");
+    render(<Editor session={s} />);
+    expect(edit).not.toHaveBeenCalled();
+    expect(s.state.draft).toBe("a\r\nb\r\n");
   });
 
   it(":w, :q, :x and :wq all flush the session", () => {
