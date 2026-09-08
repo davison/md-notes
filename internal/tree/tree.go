@@ -61,9 +61,9 @@ func List(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 // Dirs returns the directories a watcher should cover, relative to root
 // and including the root itself (""): every directory holding a file
 // ripgrep would list, their ancestors, and any subtree beneath those that
-// contains no files at all, so a directory created empty (or a nest of
-// them) still reports its first note. A subtree that has files but none
-// ripgrep lists is ignored or hidden and is left unwatched.
+// holds nothing the navigator would list, so a directory created empty (or
+// a nest of them) still reports its first note. A subtree that has files
+// ripgrep does not list is ignored or hidden and is left unwatched.
 func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]string, error) {
 	files, err := list(ctx, root, warnf, func(string) bool { return true })
 	if err != nil {
@@ -93,7 +93,7 @@ func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 			if _, ok := set[child]; ok {
 				continue
 			}
-			if dirs, fileless := filelessSubtree(filepath.Join(root, filepath.FromSlash(child))); fileless {
+			if dirs, empty := emptySubtree(filepath.Join(root, filepath.FromSlash(child))); empty {
 				for _, sub := range dirs {
 					set[path.Join(child, sub)] = struct{}{}
 				}
@@ -108,19 +108,29 @@ func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 	return out, nil
 }
 
-// filelessSubtree walks abs and reports its non-hidden directories
-// (relative to abs, "" for abs itself) if the subtree holds no files at
-// all. It stops at the first file, so an ignored tree full of files costs
-// one directory read.
-func filelessSubtree(abs string) ([]string, bool) {
+// emptySubtree walks abs and reports its non-hidden directories (relative
+// to abs, "" for abs itself) if the subtree holds nothing the navigator
+// would list: no files at all, or only hidden ones such as the .gitkeep
+// placeholder that keeps an otherwise empty directory in a git repository.
+// Such a directory is as empty as one holding nothing, and the first note
+// created in it must be seen.
+//
+// Ignored files still count as files. Reading them as absent would make
+// node_modules look empty and pull whole ignored trees into the watch set,
+// so the walk stops at the first non-hidden file and an ignored tree full
+// of files costs one directory read.
+func emptySubtree(abs string) ([]string, bool) {
 	var dirs []string
-	fileless := true
+	empty := true
 	filepath.WalkDir(abs, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if !d.IsDir() {
-			fileless = false
+			if strings.HasPrefix(d.Name(), ".") {
+				return nil
+			}
+			empty = false
 			return fs.SkipAll
 		}
 		if p != abs && strings.HasPrefix(d.Name(), ".") {
@@ -133,7 +143,7 @@ func filelessSubtree(abs string) ([]string, bool) {
 		dirs = append(dirs, filepath.ToSlash(rel))
 		return nil
 	})
-	return dirs, fileless
+	return dirs, empty
 }
 
 func list(ctx context.Context, root string, warnf func(string, ...any), keep func(string) bool) ([]string, error) {
