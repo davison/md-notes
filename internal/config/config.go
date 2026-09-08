@@ -15,12 +15,34 @@ import (
 // DefaultPort is the port the daemon listens on when none is configured.
 const DefaultPort = 7337
 
+// DefaultMaxWatches is how many directories the daemon watches per root
+// when none is configured. A notes folder costs tens of watches; a large
+// ad-hoc root can cost tens of thousands, so the budget stops one root
+// exhausting fs.inotify.max_user_watches for the whole login session. The
+// value covers /usr/share whole (5,790 directories when measured), is a
+// sixty-fourth of the 524,288 watches a typical Linux desktop allows, and
+// matches the smallest limit still shipped, so one root cannot exhaust an
+// unraised system on its own.
+const DefaultMaxWatches = 8192
+
 // Config is the on-disk configuration, with any flag overrides applied.
 type Config struct {
 	// NotesRoot is the permanent notes folder. Required.
 	NotesRoot string `yaml:"notes_root"`
 	// Port is the loopback port the daemon listens on.
 	Port int `yaml:"port"`
+	// MaxWatches caps the directories watched per root for live update.
+	// Zero asks for DefaultMaxWatches; a negative value removes the cap.
+	// Resolve never leaves it zero.
+	MaxWatches int `yaml:"max_watches"`
+}
+
+// Overrides are the values a command line supplies, each taking precedence
+// over the configuration file when it is not the zero value.
+type Overrides struct {
+	NotesRoot  string
+	Port       int
+	MaxWatches int
 }
 
 // Path returns the configuration file location:
@@ -64,17 +86,24 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-// Resolve applies defaults and validates. root and port override the
-// file's values when non-zero. The returned NotesRoot is absolute.
-func (c Config) Resolve(configPath, root string, port int) (Config, error) {
-	if root != "" {
-		c.NotesRoot = root
+// Resolve applies defaults and validates, with over taking precedence over
+// the file. The returned NotesRoot is absolute and MaxWatches is settled:
+// positive is the per-root watch budget, negative is no budget at all.
+func (c Config) Resolve(configPath string, over Overrides) (Config, error) {
+	if over.NotesRoot != "" {
+		c.NotesRoot = over.NotesRoot
 	}
-	if port != 0 {
-		c.Port = port
+	if over.Port != 0 {
+		c.Port = over.Port
+	}
+	if over.MaxWatches != 0 {
+		c.MaxWatches = over.MaxWatches
 	}
 	if c.Port == 0 {
 		c.Port = DefaultPort
+	}
+	if c.MaxWatches == 0 {
+		c.MaxWatches = DefaultMaxWatches
 	}
 	if c.Port < 1 || c.Port > 65535 {
 		return c, fmt.Errorf("port %d out of range", c.Port)

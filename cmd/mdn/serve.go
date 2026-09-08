@@ -23,6 +23,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	root := fs.String("root", "", "notes root (overrides notes_root in the config file)")
 	port := fs.Int("port", 0, "loopback port (overrides port in the config file)")
 	statePath := fs.String("state", config.StatePath(), "file that remembers roots added with mdn open")
+	maxWatches := fs.Int("max-watches", 0, "directories watched per root for live update; -1 for no limit (overrides max_watches in the config file)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -36,7 +37,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "mdn serve:", err)
 		return 1
 	}
-	cfg, err = cfg.Resolve(*configPath, *root, *port)
+	cfg, err = cfg.Resolve(*configPath, config.Overrides{NotesRoot: *root, Port: *port, MaxWatches: *maxWatches})
 	if err != nil {
 		fmt.Fprintln(stderr, "mdn serve:", err)
 		return 1
@@ -48,7 +49,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	srv := server.New(reg, cfg.Port, ui.FS(), logger)
+	srv := server.New(reg, cfg.Port, ui.FS(), logger, server.WithWatchBudget(cfg.MaxWatches))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

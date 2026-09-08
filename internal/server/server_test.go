@@ -20,6 +20,7 @@ import (
 	"github.com/davison/md-notes/internal/search"
 	"github.com/davison/md-notes/internal/tags"
 	"github.com/davison/md-notes/internal/tree"
+	"github.com/davison/md-notes/internal/watch"
 )
 
 const port = 7337
@@ -343,6 +344,14 @@ func TestEventsStream(t *testing.T) {
 	}
 	next := sseReader(t, resp.Body)
 	next(func(l string) bool { return l == ": connected" })
+	// The coverage of a small root is complete and says so.
+	next(func(l string) bool { return l == "event: status" })
+	status := next(func(l string) bool { return strings.HasPrefix(l, "data: ") })
+	var cov watch.Coverage
+	json.Unmarshal([]byte(strings.TrimPrefix(status, "data: ")), &cov)
+	if cov.Limited || cov.Unwatched != 0 || cov.Watched == 0 {
+		t.Fatalf("coverage = %+v, want a complete one", cov)
+	}
 	next(func(l string) bool { return l == ": keepalive" })
 
 	os.WriteFile(filepath.Join(base, "notes", "new.md"), []byte("# new"), 0o644)
@@ -363,6 +372,46 @@ func TestEventsStream(t *testing.T) {
 	resp2 := do(t, ts, "GET", "/api/r/nope/events", "", nil)
 	if resp2.StatusCode != 404 {
 		t.Errorf("unknown root: status %d", resp2.StatusCode)
+	}
+}
+
+// A root too large for its watch budget says so on its event stream, so the
+// limit is visible in the browser and not only in the daemon's log.
+func TestEventsStreamReportsLimitedCoverage(t *testing.T) {
+	notes := t.TempDir()
+	for _, d := range []string{"a", "b", "c"} {
+		os.MkdirAll(filepath.Join(notes, d), 0o755)
+		os.WriteFile(filepath.Join(notes, d, "n.md"), []byte("x"), 0o644)
+	}
+	reg, err := roots.New(notes, filepath.Join(t.TempDir(), "roots.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(reg, port, fstest.MapFS{}, log.New(io.Discard, "", 0), WithWatchBudget(2))
+	s.keepalive = 100 * time.Millisecond
+	t.Cleanup(s.Close)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/r/"+reg.List()[0].Slug+"/events", nil)
+	req.Host = "localhost:7337"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	next := sseReader(t, resp.Body)
+	next(func(l string) bool { return l == "event: status" })
+	data := next(func(l string) bool { return strings.HasPrefix(l, "data: ") })
+	var cov watch.Coverage
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(data, "data: ")), &cov); err != nil {
+		t.Fatal(err)
+	}
+	want := watch.Coverage{Watched: 2, Unwatched: 2, Budget: 2, OverBudget: true, Limited: true}
+	if cov != want {
+		t.Fatalf("coverage = %+v, want %+v", cov, want)
 	}
 }
 
