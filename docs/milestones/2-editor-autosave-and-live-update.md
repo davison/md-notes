@@ -694,7 +694,8 @@ rather than by reading, in both directions.
   the fix detected the ending by the first form present rather than the most
   frequent, so a mostly-LF note containing one CRLF — or one stray CR — would have
   been converted wholesale. The reviewer measured both cases; the rule became
-  dominance by count, ties to LF, and both cases are now tests. The same review found
+  dominance by count — a CRLF/LF tie to LF, a CR/CRLF tie to CRLF — and both cases
+  are now tests. The same review found
   the PR body claiming no deviations when there were two, and the decision citing
   user documentation that did not exist. Approved on round two
   ([#29](https://github.com/davison/md-notes/pull/29#issuecomment-5589936438)).
