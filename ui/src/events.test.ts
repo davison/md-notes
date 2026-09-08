@@ -66,6 +66,15 @@ describe("useEvents", () => {
     expect(seen).toEqual([["x.md"], []]);
   });
 
+  it("passes the watch coverage through and survives one it cannot read", () => {
+    const seen: unknown[] = [];
+    renderHook(() => useEvents("n", () => {}, (c) => seen.push(c)));
+    const es = FakeEventSource.instances[0];
+    es.emit("status", JSON.stringify({ watched: 2, unwatched: 1, limited: true }));
+    es.emit("status", "garbage");
+    expect(seen).toEqual([{ watched: 2, unwatched: 1, limited: true }]);
+  });
+
   it("signals a full refresh after a reconnect, not on first open", () => {
     const seen: string[][] = [];
     renderHook(() => useEvents("n", (p) => seen.push(p)));

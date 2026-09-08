@@ -6,17 +6,20 @@ import { getSession, resetSessions } from "./session";
 
 class FakeEventSource {
   static last: FakeEventSource | null = null;
-  private listeners: ((e: MessageEvent) => void)[] = [];
+  private listeners: Record<string, ((e: MessageEvent) => void)[]> = {};
   onerror: (() => void) | null = null;
   onopen: (() => void) | null = null;
   constructor(public url: string) {
     FakeEventSource.last = this;
   }
-  addEventListener(_: string, fn: (e: MessageEvent) => void) {
-    this.listeners.push(fn);
+  addEventListener(type: string, fn: (e: MessageEvent) => void) {
+    (this.listeners[type] ??= []).push(fn);
   }
   emit(paths: string[]) {
-    for (const fn of this.listeners) fn({ data: JSON.stringify({ paths }) } as MessageEvent);
+    for (const fn of this.listeners.change ?? []) fn({ data: JSON.stringify({ paths }) } as MessageEvent);
+  }
+  emitStatus(coverage: unknown) {
+    for (const fn of this.listeners.status ?? []) fn({ data: JSON.stringify(coverage) } as MessageEvent);
   }
   close() {}
 }
@@ -145,5 +148,34 @@ describe("RootView tag filter", () => {
     await waitFor(() => expect(screen.getByText("body")).toBeTruthy());
     // No marker at or before line 7 in the fixture body, so nothing to scroll; the view still renders.
     expect(screen.getByText("A")).toBeTruthy();
+  });
+});
+
+describe("watch coverage", () => {
+  const complete = { watched: 4, unwatched: 0, budget: 8192, overBudget: false, failed: 0, limited: false };
+  const limited = { watched: 8192, unwatched: 4498, budget: 8192, overBudget: true, failed: 0, limited: true };
+
+  it("says nothing while the whole root is watched", async () => {
+    render(
+      <LocationProvider>
+        <RootView slug="n" />
+      </LocationProvider>,
+    );
+    await screen.findByText("docs");
+    FakeEventSource.last!.emitStatus(complete);
+    await waitFor(() => expect(screen.queryByText(/Live update covers/)).toBeNull());
+  });
+
+  it("says how much of the root is watched, and how to cover the rest", async () => {
+    render(
+      <LocationProvider>
+        <RootView slug="n" />
+      </LocationProvider>,
+    );
+    await screen.findByText("docs");
+    FakeEventSource.last!.emitStatus(limited);
+    const notice = await screen.findByText(/Live update covers/);
+    expect(notice.textContent).toContain("8,192 of 12,690 directories");
+    expect(notice.textContent).toContain("raise max_watches above 8,192");
   });
 });
