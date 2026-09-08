@@ -59,16 +59,21 @@ against the binary `make build` produced from merged `main` at
 temporary configs, state files and roots, direct exercise of the source API, and the
 UI driven headlessly in Chromium with two browser contexts for the two-session case.
 It raised four findings; the operator's disposition of them is at
-[#17](https://github.com/davison/md-notes/issues/17#issuecomment-5591886325).
+[#17](https://github.com/davison/md-notes/issues/17#issuecomment-5591886325). One
+was blocking, and M2-R2's row below comes instead from the re-verification run
+against `main` at [`619de06`](https://github.com/davison/md-notes/commit/619de06)
+once it was fixed
+([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5592034687)),
+which supersedes that row of the first verdict and no other.
 
 | ID | Requirement | Status |
 |----|-------------|--------|
 | M2-R1 | CodeMirror editor with vim keybindings, one view/edit shortcut that does not steal typing | [Satisfied](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) |
-| M2-R2 | Autosave to the original file preserving frontmatter and source text, states shown, failed saves retained and retryable, writes confined and guarded | [Not satisfied at `4c12d24`](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) on finding 1; fixed by [#28](https://github.com/davison/md-notes/issues/28) through [#29](https://github.com/davison/md-notes/pull/29) at [`619de06`](https://github.com/davison/md-notes/commit/619de06) — _re-verification pending_ |
+| M2-R2 | Autosave to the original file preserving frontmatter and source text, states shown, failed saves retained and retryable, writes confined and guarded | [Not satisfied at `4c12d24`](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) on finding 1; [satisfied at `619de06`](https://github.com/davison/md-notes/issues/17#issuecomment-5592034687) after [#28](https://github.com/davison/md-notes/issues/28) / [#29](https://github.com/davison/md-notes/pull/29) |
 | M2-R3 | Serialized saves, stale revisions refused, drafts never discarded by a conflict, visible conflict states | [Satisfied](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) — one low finding filed ([#30](https://github.com/davison/md-notes/issues/30)) |
 | M2-R4 | First note in a hidden-only directory seen live; documented, justified watch policy and clear reporting | [Satisfied](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) |
 | M2-R5 | Note content cannot apply the application's layout classes; highlighting still works | [Satisfied](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) — one low finding filed ([#31](https://github.com/davison/md-notes/issues/31)) |
-| M2-R6 | Documentation explains editing, autosave, conflicts and watch limitations; roadmap and this record | [Provisional](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484), on the state of `main` before this document's PR — _re-verification pending_ |
+| M2-R6 | Documentation explains editing, autosave, conflicts and watch limitations; roadmap and this record | [Provisional](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) on the state of `main` before this task, and satisfied on the merge of [#27](https://github.com/davison/md-notes/pull/27) under the milestone's closure gate ([#17](https://github.com/davison/md-notes/issues/17)) |
 
 M2-R2's verdict is the one the milestone turned on. QA found that the editor rewrote
 a note's CRLF or lone-CR line endings to LF on the first keystroke — 48 bytes and
@@ -80,15 +85,24 @@ identical md5, so the loss was entirely in the editor, and both sides' suites pa
 because neither contained a carriage return. The operator ruled it blocking and it
 was fixed as [#28](https://github.com/davison/md-notes/issues/28); see
 [Line endings are restored at the editor's boundary](#line-endings-are-restored-at-the-editors-boundary).
+The re-verification byte-compared fifteen fixtures through the editor: every
+pure-ending note — CRLF with frontmatter, lone CR, LF, a BOM, hard tabs, trailing
+spaces, no final newline, Unicode and an empty file — came back as its original bytes
+with exactly the typed character added, opening the editor and toggling back without
+typing left all fifteen md5-identical, and the five mixed fixtures came back uniform
+in the ending the rule picks, both tie directions included
+([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5592034687)).
 
-QA's other three findings were dispositioned without blocking the milestone
-([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5591886325)):
+Every finding across the two QA passes, and what was done with it
+([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5591886325) for the
+first four):
 
 | Finding | Disposition |
 |---------|-------------|
 | 1 — the editor rewrites CRLF and lone-CR line endings on the first keystroke | Blocking; fixed by [#28](https://github.com/davison/md-notes/issues/28) / [#29](https://github.com/davison/md-notes/pull/29) |
 | 2 — a *clean* session enters a deleted-note conflict claiming unsaved edits | Backlog, captured as [#30](https://github.com/davison/md-notes/issues/30) |
 | 3 — statements on `main` the merged work made false | Folded into [#22](https://github.com/davison/md-notes/issues/22), this document's task |
+| A (re-verification) — the mixed-endings normalisation was still undocumented on `main` | Confirmed as landing in [#22](https://github.com/davison/md-notes/issues/22), not a separate issue: it is the line-endings paragraph in [Editing](../introduction.md#editing), added by [#27](https://github.com/davison/md-notes/pull/27) and recorded as a deviation from this task's plan ([#22](https://github.com/davison/md-notes/issues/22#issuecomment-5589950252)) |
 | 4 — note content can forge `line-anchor` and redirect a search hit's scroll target | Backlog, captured as [#31](https://github.com/davison/md-notes/issues/31), with the same observation from the [#21](https://github.com/davison/md-notes/issues/21) review |
 
 - **Trade-off, as recorded:** findings 2 and 4 put no data at risk and neither falls
@@ -741,6 +755,13 @@ is still waiting on the authentication path the browser extension will need.
   "Review round three" section is the author's reply to the round-two review. The
   counting drifted between author and reviewer part-way through; no review appears to
   be missing from the thread.
+- **Two suite judgements were accepted rather than closed.** The re-verification
+  records that no UI test carries a carriage return all the way through the save path
+  onto disk, and that the generation-rebuild test uses LF only, so re-detection of a
+  note's ending after `Load the file` or an external rewrite is pinned by no test —
+  both behaviours were verified in the browser instead, and QA recommended accepting
+  them on the record rather than opening an issue
+  ([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5592034687)).
 - **Nothing asked for a test across the daemon/UI seam.** Milestone one recorded the
   decision that tests ride each PR rather than forming a requirement of their own
   ([#1](https://github.com/davison/md-notes/issues/1#issuecomment-5572364167)), and
