@@ -1,13 +1,35 @@
 import { useEffect, useRef } from "preact/hooks";
 
 /**
+ * How much of a root the daemon watches. An unwatched directory is not
+ * invisible: its changes still arrive when a watched directory above it
+ * reports them, or when the daemon restarts.
+ */
+export type Coverage = {
+  watched: number;
+  unwatched: number;
+  budget: number;
+  overBudget: boolean;
+  failed: number;
+  limited: boolean;
+};
+
+/**
  * Subscribes to a root's change stream. onChange receives the relative
  * paths of a batch; after the stream reconnects it receives an empty list,
  * meaning "anything may have changed", so the caller refetches everything.
+ * onCoverage, if given, receives the root's watch coverage when the stream
+ * opens and whenever it changes.
  */
-export function useEvents(slug: string, onChange: (paths: string[]) => void) {
+export function useEvents(
+  slug: string,
+  onChange: (paths: string[]) => void,
+  onCoverage?: (coverage: Coverage) => void,
+) {
   const handler = useRef(onChange);
   handler.current = onChange;
+  const status = useRef(onCoverage);
+  status.current = onCoverage;
 
   useEffect(() => {
     if (typeof EventSource === "undefined") return;
@@ -19,6 +41,13 @@ export function useEvents(slug: string, onChange: (paths: string[]) => void) {
         handler.current(batch.paths ?? []);
       } catch {
         handler.current([]);
+      }
+    });
+    es.addEventListener("status", (e) => {
+      try {
+        status.current?.(JSON.parse((e as MessageEvent).data) as Coverage);
+      } catch {
+        // A status we cannot read tells us nothing; the stream carries on.
       }
     });
     es.onerror = () => {

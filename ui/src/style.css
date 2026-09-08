@@ -69,6 +69,16 @@ code {
   color: var(--error);
 }
 
+.notice {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
 .roots {
   list-style: none;
   padding: 0;

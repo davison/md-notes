@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { fetchTags, fetchTree, listRoots, type Root, type Tag, type TreeNode } from "./api";
-import { affects, affectsTree, useEvents } from "./events";
+import { affects, affectsTree, type Coverage, useEvents } from "./events";
 import { Navigator } from "./navigator";
 import { NotePane, UnsavedDrafts, useUnsavedGuard } from "./note-pane";
 import { SearchPane } from "./search-pane";
@@ -21,6 +21,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
   // Bumped when the tree may have changed, so search results and tags refresh.
   const [treeVersion, setTreeVersion] = useState(0);
   const [tags, setTags] = useState<Tag[] | null>(null);
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
   const current = note ?? "";
   const { query } = useLocation();
   const line = query.l && /^\d+$/.test(query.l) ? Number(query.l) : null;
@@ -74,13 +75,17 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
 
   useUnsavedGuard();
 
-  useEvents(slug, (paths) => {
-    if (affectsTree(paths)) {
-      loadTree();
-      setTreeVersion((v) => v + 1);
-    }
-    if (current && affects(paths, current)) setNoteVersion((v) => v + 1);
-  });
+  useEvents(
+    slug,
+    (paths) => {
+      if (affectsTree(paths)) {
+        loadTree();
+        setTreeVersion((v) => v + 1);
+      }
+      if (current && affects(paths, current)) setNoteVersion((v) => v + 1);
+    },
+    setCoverage,
+  );
 
   if (root === undefined) return <main class="page muted">Loading…</main>;
   if (root === null) {
@@ -103,6 +108,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
         <UnsavedDrafts slug={slug} current={current} />
       </header>
       <aside class="nav">
+        <CoverageNotice coverage={coverage} />
         {treeError && <p class="error">{treeError}</p>}
         {!tree && !treeError && <p class="muted">Loading…</p>}
         {tree && (
@@ -129,5 +135,26 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
         <TagPanel slug={slug} tags={tags} active={activeTag} current={current} />
       </aside>
     </div>
+  );
+}
+
+/**
+ * Says so when the daemon watches only part of the root, because the watch
+ * budget is spent or the kernel refused watches. Changes in an unwatched
+ * directory still arrive when a watched directory reports them or the
+ * daemon restarts, so this is a caveat rather than an error.
+ */
+function CoverageNotice({ coverage }: { coverage: Coverage | null }) {
+  if (!coverage || !coverage.limited) return null;
+  const fix = coverage.overBudget
+    ? `raise max_watches above ${coverage.budget.toLocaleString()}`
+    : "raise fs.inotify.max_user_watches";
+  return (
+    <p class="notice">
+      Live update covers {coverage.watched.toLocaleString()} of{" "}
+      {(coverage.watched + coverage.unwatched).toLocaleString()} directories in this root.
+      A change in one of the other {coverage.unwatched.toLocaleString()} shows up when a
+      watched directory reports it or the daemon restarts — to cover them all, {fix}.
+    </p>
   );
 }
