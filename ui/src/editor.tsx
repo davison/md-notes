@@ -44,8 +44,25 @@ const theme = EditorView.theme({
   ".cm-panels": { background: "var(--bg)", color: "var(--fg)", borderColor: "var(--line)" },
 });
 
+/** The line ending a note uses: CRLF, a lone CR, or LF. */
+export function lineEnding(text: string): "\r\n" | "\r" | "\n" {
+  if (text.includes("\r\n")) return "\r\n";
+  if (text.includes("\r")) return "\r";
+  return "\n";
+}
+
+/**
+ * CodeMirror splits a document on any line ending and joins with LF, so
+ * the text it hands back is rejoined with the ending the note had. A note
+ * with mixed endings comes back uniform in its dominant one.
+ */
+export function withLineEnding(text: string, ending: string): string {
+  return ending === "\n" ? text : text.replaceAll("\n", ending);
+}
+
 /** Builds the editor state for a draft; exported so tests can drive the keymap. */
 export function createState(doc: string, session: Session): EditorState {
+  const ending = lineEnding(doc);
   return EditorState.create({
     doc,
     extensions: [
@@ -60,7 +77,7 @@ export function createState(doc: string, session: Session): EditorState {
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       theme,
       EditorView.updateListener.of((u) => {
-        if (u.docChanged) session.edit(u.state.doc.toString());
+        if (u.docChanged) session.edit(withLineEnding(u.state.doc.toString(), ending));
       }),
     ],
   });
