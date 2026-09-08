@@ -96,26 +96,30 @@ func TestPathsHonourXDG(t *testing.T) {
 
 func TestResolveMaxWatches(t *testing.T) {
 	dir := t.TempDir()
-	cfg, err := Config{}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
-	if err != nil {
-		t.Fatal(err)
+	n := func(v int) *int { return &v }
+	cases := []struct {
+		name string
+		file *int
+		flag *int
+		want int
+	}{
+		{"absent everywhere is the default", nil, nil, DefaultMaxWatches},
+		{"the file's value stands", n(100), nil, 100},
+		{"the flag beats the file", n(100), n(7), 7},
+		{"zero in the file is no budget", n(0), nil, 0},
+		{"zero on the flag is no budget", n(100), n(0), 0},
 	}
-	if cfg.MaxWatches != DefaultMaxWatches {
-		t.Fatalf("max_watches = %d, want default %d", cfg.MaxWatches, DefaultMaxWatches)
+	for _, c := range cases {
+		cfg, err := Config{MaxWatches: c.file}.Resolve("cfg.yml", Overrides{NotesRoot: dir, MaxWatches: c.flag})
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if cfg.MaxWatches == nil || *cfg.MaxWatches != c.want {
+			t.Fatalf("%s: max_watches = %v, want %d", c.name, cfg.MaxWatches, c.want)
+		}
 	}
-	cfg, err = Config{MaxWatches: 100}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.MaxWatches != 100 {
-		t.Fatalf("max_watches = %d, want the file's 100", cfg.MaxWatches)
-	}
-	cfg, err = Config{MaxWatches: 100}.Resolve("cfg.yml", Overrides{NotesRoot: dir, MaxWatches: -1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.MaxWatches != -1 {
-		t.Fatalf("max_watches = %d, want the flag's -1 (no limit)", cfg.MaxWatches)
+	if _, err := (Config{MaxWatches: n(-1)}).Resolve("cfg.yml", Overrides{NotesRoot: dir}); err == nil {
+		t.Fatal("a negative max_watches should be refused, not read as no limit")
 	}
 }
 
@@ -126,7 +130,15 @@ func TestLoadParsesMaxWatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.MaxWatches != 42 {
+	if cfg.MaxWatches == nil || *cfg.MaxWatches != 42 {
 		t.Fatalf("cfg = %+v", cfg)
+	}
+	os.WriteFile(p, []byte("notes_root: /tmp/notes\n"), 0o644)
+	cfg, err = Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxWatches != nil {
+		t.Fatalf("max_watches = %v, want nil when the key is absent", *cfg.MaxWatches)
 	}
 }

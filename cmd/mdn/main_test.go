@@ -2,8 +2,12 @@ package main
 
 import (
 	"bytes"
+	"flag"
+	"io"
 	"strings"
 	"testing"
+
+	"github.com/davison/md-notes/internal/config"
 )
 
 func TestRunNoArgsPrintsUsage(t *testing.T) {
@@ -33,5 +37,30 @@ func TestRunVersion(t *testing.T) {
 	}
 	if strings.TrimSpace(out.String()) != version {
 		t.Fatalf("stdout = %q, want %q", out.String(), version)
+	}
+}
+
+func TestServeOverrides(t *testing.T) {
+	build := func(args []string) config.Overrides {
+		t.Helper()
+		fs := flag.NewFlagSet("mdn serve", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		root := fs.String("root", "", "")
+		port := fs.Int("port", 0, "")
+		maxWatches := fs.Int("max-watches", config.DefaultMaxWatches, "")
+		if err := fs.Parse(args); err != nil {
+			t.Fatal(err)
+		}
+		return overrides(fs, *root, *port, maxWatches)
+	}
+	if over := build(nil); over.MaxWatches != nil {
+		t.Fatalf("max-watches = %d without the flag, want nothing to override the file", *over.MaxWatches)
+	}
+	if over := build([]string{"--max-watches", "0"}); over.MaxWatches == nil || *over.MaxWatches != 0 {
+		t.Fatalf("--max-watches 0 = %v, want a request for no budget", over.MaxWatches)
+	}
+	if over := build([]string{"--max-watches", "500", "--root", "/n", "--port", "9"}); over.MaxWatches == nil ||
+		*over.MaxWatches != 500 || over.NotesRoot != "/n" || over.Port != 9 {
+		t.Fatalf("overrides = %+v", over)
 	}
 }

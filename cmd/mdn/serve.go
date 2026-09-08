@@ -23,7 +23,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	root := fs.String("root", "", "notes root (overrides notes_root in the config file)")
 	port := fs.Int("port", 0, "loopback port (overrides port in the config file)")
 	statePath := fs.String("state", config.StatePath(), "file that remembers roots added with mdn open")
-	maxWatches := fs.Int("max-watches", 0, "directories watched per root for live update; -1 for no limit (overrides max_watches in the config file)")
+	maxWatches := fs.Int("max-watches", config.DefaultMaxWatches, "directories watched per root for live update; 0 for no limit (overrides max_watches in the config file)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -37,7 +37,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "mdn serve:", err)
 		return 1
 	}
-	cfg, err = cfg.Resolve(*configPath, config.Overrides{NotesRoot: *root, Port: *port, MaxWatches: *maxWatches})
+	cfg, err = cfg.Resolve(*configPath, overrides(fs, *root, *port, maxWatches))
 	if err != nil {
 		fmt.Fprintln(stderr, "mdn serve:", err)
 		return 1
@@ -49,7 +49,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	srv := server.New(reg, cfg.Port, ui.FS(), logger, server.WithWatchBudget(cfg.MaxWatches))
+	srv := server.New(reg, cfg.Port, ui.FS(), logger, server.WithWatchBudget(*cfg.MaxWatches))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -58,4 +58,18 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// overrides collects the command-line values that beat the configuration
+// file. A flag's zero value is a real request — --max-watches 0 asks for no
+// watch budget — so what counts is whether the flag was given at all, which
+// only the flag set knows.
+func overrides(fs *flag.FlagSet, root string, port int, maxWatches *int) config.Overrides {
+	over := config.Overrides{NotesRoot: root, Port: port}
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "max-watches" {
+			over.MaxWatches = maxWatches
+		}
+	})
+	return over
 }

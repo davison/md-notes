@@ -55,7 +55,8 @@ type Coverage struct {
 	Watched int `json:"watched"`
 	// Unwatched is how many directories of the root's set carry none.
 	Unwatched int `json:"unwatched"`
-	// Budget is the per-root maximum, or zero when there is none.
+	// Budget is the per-root maximum directories, or zero when there is
+	// no budget. Never negative.
 	Budget int `json:"budget"`
 	// OverBudget reports that the budget, rather than an error, is what
 	// left directories unwatched.
@@ -78,9 +79,10 @@ func WithDebounce(quiet, maxWait time.Duration) Option {
 
 // WithBudget caps the directories watched for this root. Watches are placed
 // in the order dirs arrives in, so a budget too small for the root covers
-// its most valuable directories; zero or less removes the cap.
+// its most valuable directories. Zero is no budget, and a negative value is
+// clamped to zero so Coverage.Budget never carries one.
 func WithBudget(n int) Option {
-	return func(w *Watcher) { w.budget = n }
+	return func(w *Watcher) { w.budget = max(n, 0) }
 }
 
 // New watches root and the relative directories in dirs, most valuable
@@ -164,7 +166,7 @@ func (w *Watcher) place(dirs []tree.Dir) {
 	// One error stands for all of them: a root with hundreds of
 	// unwatchable directories logs one line, not hundreds.
 	var first error
-	cov := Coverage{Budget: max(w.budget, 0)}
+	cov := Coverage{Budget: w.budget}
 	for _, d := range all {
 		rel := d.Path
 		if rel == "." {

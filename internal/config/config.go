@@ -32,17 +32,19 @@ type Config struct {
 	// Port is the loopback port the daemon listens on.
 	Port int `yaml:"port"`
 	// MaxWatches caps the directories watched per root for live update.
-	// Zero asks for DefaultMaxWatches; a negative value removes the cap.
-	// Resolve never leaves it zero.
-	MaxWatches int `yaml:"max_watches"`
+	// Zero is no budget at all; absent from the file asks for
+	// DefaultMaxWatches. Resolve settles it to a non-nil value.
+	MaxWatches *int `yaml:"max_watches"`
 }
 
 // Overrides are the values a command line supplies, each taking precedence
 // over the configuration file when it is not the zero value.
 type Overrides struct {
-	NotesRoot  string
-	Port       int
-	MaxWatches int
+	NotesRoot string
+	Port      int
+	// MaxWatches is nil when the flag was not given; zero is a request for
+	// no budget, the same as the file's own zero.
+	MaxWatches *int
 }
 
 // Path returns the configuration file location:
@@ -87,8 +89,9 @@ func Load(path string) (Config, error) {
 }
 
 // Resolve applies defaults and validates, with over taking precedence over
-// the file. The returned NotesRoot is absolute and MaxWatches is settled:
-// positive is the per-root watch budget, negative is no budget at all.
+// the file. The returned NotesRoot is absolute and MaxWatches is settled to
+// a non-nil value: positive is the per-root watch budget, zero is no budget
+// at all.
 func (c Config) Resolve(configPath string, over Overrides) (Config, error) {
 	if over.NotesRoot != "" {
 		c.NotesRoot = over.NotesRoot
@@ -96,14 +99,18 @@ func (c Config) Resolve(configPath string, over Overrides) (Config, error) {
 	if over.Port != 0 {
 		c.Port = over.Port
 	}
-	if over.MaxWatches != 0 {
+	if over.MaxWatches != nil {
 		c.MaxWatches = over.MaxWatches
 	}
 	if c.Port == 0 {
 		c.Port = DefaultPort
 	}
-	if c.MaxWatches == 0 {
-		c.MaxWatches = DefaultMaxWatches
+	if c.MaxWatches == nil {
+		n := DefaultMaxWatches
+		c.MaxWatches = &n
+	}
+	if *c.MaxWatches < 0 {
+		return c, fmt.Errorf("max_watches %d is negative; use 0 for no limit", *c.MaxWatches)
 	}
 	if c.Port < 1 || c.Port > 65535 {
 		return c, fmt.Errorf("port %d out of range", c.Port)
