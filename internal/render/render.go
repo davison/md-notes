@@ -53,7 +53,10 @@ func New() *Renderer {
 			extension.TaskList,
 			extension.Footnote,
 			highlighting.NewHighlighting(
-				highlighting.WithFormatOptions(chromahtml.WithClasses(true)),
+				highlighting.WithFormatOptions(
+					chromahtml.WithClasses(true),
+					chromahtml.ClassPrefix(ClassPrefix),
+				),
 			),
 		),
 		goldmark.WithParserOptions(
@@ -409,17 +412,33 @@ func firstSegment(n ast.Node) (int, bool) {
 
 // Sanitisation -----------------------------------------------------------
 
+// ClassPrefix is the namespace reserved for classes that rendered note
+// content may carry. Chroma emits its token classes under it, and the
+// sanitiser admits nothing else on a note's code elements, so what a note
+// can apply to itself does not depend on what the application calls its
+// own classes. The one rule the app's stylesheets must keep is never to
+// use the prefix themselves; TestAppClassesAreUnreachable enforces it.
+const ClassPrefix = "mdn-"
+
 var (
 	// Heading IDs from goldmark, plus the footnote IDs it generates.
 	idPattern = regexp.MustCompile(`^(fn|fnref):\d+$|^[\pL\pN_\-]+$`)
-	// Only the classes goldmark and chroma emit, so a note cannot borrow
-	// the app's own layout classes.
-	// Chroma token classes are one to three letters, some with a digit
-	// (c1, s1, s2). TestChromaClassesPassSanitiser ties this to the
-	// generated stylesheet.
-	codeClassPattern = regexp.MustCompile(`^(chroma|line|cl|hl|ln|lnt|lntd|lntable|language-[\w+#.\-]+|[a-z]{1,3}[0-9]?)( (chroma|line|cl|hl|ln|lnt|lntd|lntable|[a-z]{1,3}[0-9]?))*$`)
+	// Chroma's token classes, emitted under ClassPrefix, and goldmark's
+	// language- class for a fenced block it could not tokenise — which
+	// nothing styles, but which is the markup convention for one.
+	// TestChromaClassesPassSanitiser ties this to the generated stylesheet.
+	codeClassPattern = classList(regexp.QuoteMeta(ClassPrefix)+`[a-z0-9]+`, `language-[\w+#.\-]+`)
+	// The classes the note's own structure carries: goldmark's footnotes,
+	// and this package's own two. They are named in full, and the app
+	// styles them only inside the rendered note.
 	noteClassPattern = regexp.MustCompile(`^(footnotes|footnote-ref|footnote-backref|outside-root|line-anchor)$`)
 )
+
+// classList matches a class attribute whose every entry is one of alts.
+func classList(alts ...string) *regexp.Regexp {
+	one := `(?:` + strings.Join(alts, "|") + `)`
+	return regexp.MustCompile(`^` + one + `( ` + one + `)*$`)
+}
 
 // newPolicy is bluemonday's user-generated-content element set, without
 // its global id allowance (whose pattern is unanchored), extended with

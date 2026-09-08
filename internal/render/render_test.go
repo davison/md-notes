@@ -63,7 +63,7 @@ Footnote here[^1].
 		`<del>gone</del>`,
 		`<a href="https://example.com/x"`, `target="_blank"`, `rel="nofollow noopener"`,
 		`class="footnote-ref"`, `id="fn:1"`, `class="footnote-backref"`,
-		`<pre class="chroma">`, `<span class="kd">func</span>`,
+		`<pre class="mdn-chroma">`, `<span class="mdn-kd">func</span>`,
 	)
 }
 
@@ -197,12 +197,103 @@ func TestIDsAndClassesAreScoped(t *testing.T) {
 
 <p class="side pane note-title">z</p>
 
-<span class="kd">w</span>
+<span class="mdn-kd">w</span>
 
 <a class="footnote-ref" href="#fn:1">f</a>
 `)
-	wantContains(t, n.HTML, `<h2 id="app">x</h2>`, `<span class="kd">w</span>`, `class="footnote-ref"`)
+	wantContains(t, n.HTML, `<h2 id="app">x</h2>`, `<span class="mdn-kd">w</span>`, `class="footnote-ref"`)
 	wantMissing(t, n.HTML, `javascript:alert`, `class="side pane note-title"`)
+}
+
+// TestNoteCannotBorrowAppClasses renders a note that tries to dress
+// itself in the application's own classes, short ones included, next to a
+// code block that must still come out highlighted.
+func TestNoteCannotBorrowAppClasses(t *testing.T) {
+	n := render(t, "x.md", `<div class="shell">
+
+<p class="error">boom</p>
+
+<span class="nav">a</span> <span class="hit">b</span> <span class="ln">c</span>
+<span class="tag">d</span> <span class="ctx">e</span> <code class="cm-editor">f</code>
+
+</div>
+
+`+"```go\nfunc main() {}\n```\n")
+	wantMissing(t, n.HTML,
+		`class="shell"`, `class="error"`, `class="nav"`, `class="hit"`,
+		`class="ln"`, `class="tag"`, `class="ctx"`, `class="cm-editor"`)
+	wantContains(t, n.HTML, "boom", `<pre class="mdn-chroma">`, `<span class="mdn-kd">func</span>`)
+}
+
+// TestAppClassesAreUnreachable reads the application stylesheet and
+// checks that every class it styles is stripped from note content, on
+// every element the policy allows a class on. The note's own classes are
+// the deliberate exception; anything else the app adds later — including
+// the editor's CodeMirror classes, which share the document with a
+// rendered note — fails this test the moment it becomes reachable.
+func TestAppClassesAreUnreachable(t *testing.T) {
+	css, err := os.ReadFile("../../ui/src/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	classes := cssClasses(string(css))
+	// The stylesheet is the input to the check, so a parse that found
+	// nothing must not pass silently.
+	for _, want := range []string{"shell", "nav", "hit", "ln", "ctx", "tag", "error", "cm-editor", "markdown"} {
+		if !classes[want] {
+			t.Fatalf("class %q not found in style.css; the selector scan is broken", want)
+		}
+	}
+	elements := []string{"span", "code", "pre", "div", "section", "a", "img", "p", "h2", "li"}
+	for c := range classes {
+		if noteClassPattern.MatchString(c) {
+			continue
+		}
+		if strings.HasPrefix(c, ClassPrefix) {
+			t.Errorf("app class %q uses the prefix reserved for note content (%q)", c, ClassPrefix)
+			continue
+		}
+		for _, el := range elements {
+			out := r.policy.Sanitize(`<` + el + ` class="` + c + `">x</` + el + `>`)
+			if strings.Contains(out, "class=") {
+				t.Errorf("app class %q survives on <%s>: %s", c, el, out)
+			}
+		}
+	}
+}
+
+// cssClasses returns the class names named in the selectors of a
+// stylesheet. Comments are dropped, and the text between a brace and the
+// next opening brace is a selector, so rules nested in an at-rule are
+// scanned and declarations are not.
+func cssClasses(css string) map[string]bool {
+	for {
+		i := strings.Index(css, "/*")
+		if i < 0 {
+			break
+		}
+		j := strings.Index(css[i+2:], "*/")
+		if j < 0 {
+			css = css[:i]
+			break
+		}
+		css = css[:i] + " " + css[i+2+j+2:]
+	}
+	name := regexp.MustCompile(`\.(-?[A-Za-z_][A-Za-z0-9_-]*)`)
+	out := map[string]bool{}
+	start := 0
+	for i, ch := range css {
+		switch ch {
+		case '{':
+			for _, m := range name.FindAllStringSubmatch(css[start:i], -1) {
+				out[m[1]] = true
+			}
+			start = i + 1
+		case '}':
+			start = i + 1
+		}
+	}
+	return out
 }
 
 // TestChromaClassesPassSanitiser reads the generated stylesheet and checks
@@ -213,7 +304,8 @@ func TestChromaClassesPassSanitiser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	classes := regexp.MustCompile(`\.chroma \.([A-Za-z0-9]+)`).FindAllStringSubmatch(string(css), -1)
+	sel := regexp.MustCompile(`\.` + ClassPrefix + `chroma \.(` + ClassPrefix + `[A-Za-z0-9]+)`)
+	classes := sel.FindAllStringSubmatch(string(css), -1)
 	if len(classes) < 20 {
 		t.Fatalf("found only %d chroma classes; is the stylesheet generated?", len(classes))
 	}
@@ -229,7 +321,7 @@ func TestChromaClassesPassSanitiser(t *testing.T) {
 			t.Errorf("chroma class %q is stripped by the sanitiser", c)
 		}
 	}
-	for _, c := range []string{"c1", "s1", "s2"} {
+	for _, c := range []string{ClassPrefix + "c1", ClassPrefix + "s1", ClassPrefix + "s2"} {
 		if !seen[c] {
 			t.Errorf("stylesheet lacks %q; the check is weaker than intended", c)
 		}
