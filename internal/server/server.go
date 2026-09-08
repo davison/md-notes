@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/davison/md-notes/internal/config"
 	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/search"
@@ -40,6 +41,9 @@ type Server struct {
 
 	// keepalive is how often an idle event stream sends a comment.
 	keepalive time.Duration
+	// watchBudget caps the directories watched per root; see
+	// config.DefaultMaxWatches. Zero or less places no cap.
+	watchBudget int
 
 	wmu      sync.Mutex
 	hubs     map[string]*watch.Hub
@@ -51,21 +55,34 @@ type Server struct {
 	closing chan struct{}
 }
 
+// Option adjusts a Server before it starts watching its roots.
+type Option func(*Server)
+
+// WithWatchBudget caps the directories watched per root for live update.
+// Zero or less places no cap.
+func WithWatchBudget(n int) Option {
+	return func(s *Server) { s.watchBudget = n }
+}
+
 // New builds a Server. ui is the built single-page app; every path that is
 // not an API route and not a file in ui serves its index.html so the app
 // can route client-side.
-func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger) *Server {
+func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Option) *Server {
 	if logger == nil {
 		logger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 	s := &Server{
 		reg: reg, port: port, ui: ui, mux: http.NewServeMux(), log: logger, md: render.New(),
-		source:    source.New(reg),
-		keepalive: 30 * time.Second,
-		hubs:      map[string]*watch.Hub{},
-		watchers:  map[string]*watch.Watcher{},
-		starting:  map[string]chan struct{}{},
-		closing:   make(chan struct{}),
+		source:      source.New(reg),
+		keepalive:   30 * time.Second,
+		hubs:        map[string]*watch.Hub{},
+		watchers:    map[string]*watch.Watcher{},
+		starting:    map[string]chan struct{}{},
+		closing:     make(chan struct{}),
+		watchBudget: config.DefaultMaxWatches,
+	}
+	for _, o := range opts {
+		o(s)
 	}
 	// Watchers are set up in the background so a large root does not
 	// delay binding the port; the events endpoint waits for its root.
@@ -201,7 +218,7 @@ func (s *Server) watchRoot(root roots.Root) {
 			s.log.Printf("watch %s: %v; watching every non-hidden directory", root.Slug, err)
 			dirs = watch.Walk(root.Path)
 		}
-		w, err := watch.New(root.Path, dirs, s.log.Printf)
+		w, err := watch.New(root.Path, dirs, s.log.Printf, watch.WithBudget(s.watchBudget))
 		if err != nil {
 			s.log.Printf("watch %s: %v; live update disabled for this root", root.Slug, err)
 			return
@@ -244,7 +261,22 @@ func (s *Server) hub(ctx context.Context, slug string) (*watch.Hub, bool) {
 	}
 }
 
-// eventsHandler streams a root's change batches as Server-Sent Events.
+// coverage reports how much of a root's directory set its watcher covers.
+// The second result is false when the root has no watcher.
+func (s *Server) coverage(slug string) (watch.Coverage, bool) {
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	w, ok := s.watchers[slug]
+	if !ok {
+		return watch.Coverage{}, false
+	}
+	return w.Coverage(), true
+}
+
+// eventsHandler streams a root's change batches as Server-Sent Events. A
+// status event carries the root's watch coverage on connect, and again
+// whenever it changes, so a page can say that live update covers part of
+// the root rather than leaving the limit in the daemon's log.
 func (s *Server) eventsHandler(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if _, ok := s.reg.Get(slug); !ok {
@@ -272,6 +304,19 @@ func (s *Server) eventsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ": connected\n\n")
 	flusher.Flush()
 
+	sendStatus := func(cov watch.Coverage) {
+		data, err := json.Marshal(cov)
+		if err != nil {
+			return
+		}
+		fmt.Fprintf(w, "event: status\ndata: %s\n\n", data)
+		flusher.Flush()
+	}
+	last, haveCoverage := s.coverage(slug)
+	if haveCoverage {
+		sendStatus(last)
+	}
+
 	ticker := time.NewTicker(s.keepalive)
 	defer ticker.Stop()
 	for {
@@ -291,6 +336,12 @@ func (s *Server) eventsHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "event: change\ndata: %s\n\n", data)
 			flusher.Flush()
 		case <-ticker.C:
+			// A directory appearing at runtime can spend the budget, so
+			// the coverage is re-sent when it moves.
+			if cov, ok := s.coverage(slug); ok && cov != last {
+				last = cov
+				sendStatus(cov)
+			}
 			fmt.Fprint(w, ": keepalive\n\n")
 			flusher.Flush()
 		}
