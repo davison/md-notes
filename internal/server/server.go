@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/davison/md-notes/internal/config"
 	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/search"
@@ -41,8 +40,8 @@ type Server struct {
 
 	// keepalive is how often an idle event stream sends a comment.
 	keepalive time.Duration
-	// watchBudget caps the directories watched per root; see
-	// config.DefaultMaxWatches. Zero or less places no cap.
+	// watchBudget caps the directories watched per root. Zero is no
+	// budget; the daemon's default lives with the configuration.
 	watchBudget int
 
 	wmu      sync.Mutex
@@ -59,7 +58,7 @@ type Server struct {
 type Option func(*Server)
 
 // WithWatchBudget caps the directories watched per root for live update.
-// Zero or less places no cap.
+// Zero, the default, is no budget at all.
 func WithWatchBudget(n int) Option {
 	return func(s *Server) { s.watchBudget = n }
 }
@@ -73,13 +72,12 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 	}
 	s := &Server{
 		reg: reg, port: port, ui: ui, mux: http.NewServeMux(), log: logger, md: render.New(),
-		source:      source.New(reg),
-		keepalive:   30 * time.Second,
-		hubs:        map[string]*watch.Hub{},
-		watchers:    map[string]*watch.Watcher{},
-		starting:    map[string]chan struct{}{},
-		closing:     make(chan struct{}),
-		watchBudget: config.DefaultMaxWatches,
+		source:    source.New(reg),
+		keepalive: 30 * time.Second,
+		hubs:      map[string]*watch.Hub{},
+		watchers:  map[string]*watch.Watcher{},
+		starting:  map[string]chan struct{}{},
+		closing:   make(chan struct{}),
 	}
 	for _, o := range opts {
 		o(s)
