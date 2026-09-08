@@ -1,16 +1,20 @@
 package watch
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
+	"github.com/davison/md-notes/internal/tree"
 )
 
 func newTestWatcher(t *testing.T, dirs []string) (*Watcher, string) {
@@ -262,5 +266,111 @@ func TestHidden(t *testing.T) {
 		if got := hidden(p); got != want {
 			t.Errorf("hidden(%q) = %v", p, got)
 		}
+	}
+}
+
+func TestBudgetWatchesThePriorityPrefix(t *testing.T) {
+	root := t.TempDir()
+	dirs := []string{"notes", "placeholder", "assets", "more"}
+	for _, d := range dirs {
+		os.MkdirAll(filepath.Join(root, d), 0o755)
+	}
+	var logged []string
+	w, err := New(root, dirs, func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) },
+		WithDebounce(50*time.Millisecond, 300*time.Millisecond), WithBudget(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+
+	cov := w.Coverage()
+	want := Coverage{Watched: 3, Unwatched: 2, Budget: 3, OverBudget: true, Limited: true}
+	if cov != want {
+		t.Fatalf("Coverage() = %+v, want %+v", cov, want)
+	}
+	// The budget bought the root and the two directories offered first.
+	var got []string
+	for _, p := range w.fsw.WatchList() {
+		r, _ := filepath.Rel(root, p)
+		got = append(got, r)
+	}
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, []string{".", "notes", "placeholder"}) {
+		t.Fatalf("watched = %v", got)
+	}
+	// A change in a watched directory is still reported.
+	os.WriteFile(filepath.Join(root, "notes", "a.md"), nil, 0o644)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"notes/a.md"}) {
+		t.Fatalf("watched directory: %v", b.Paths)
+	}
+	// One line says the coverage is limited, why, and what it costs.
+	if len(logged) != 1 || !strings.Contains(logged[0], "2 unwatched") ||
+		!strings.Contains(logged[0], "budget of 3") || !strings.Contains(logged[0], "max_watches") {
+		t.Fatalf("log = %q", logged)
+	}
+}
+
+func TestNoBudgetCoversEverything(t *testing.T) {
+	root := t.TempDir()
+	dirs := []string{"a", "b"}
+	for _, d := range dirs {
+		os.MkdirAll(filepath.Join(root, d), 0o755)
+	}
+	var logged int
+	w, err := New(root, dirs, func(string, ...any) { logged++ }, WithBudget(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	cov := w.Coverage()
+	if cov.Limited || cov.Watched != 3 || cov.Unwatched != 0 || cov.Budget != 0 {
+		t.Fatalf("Coverage() = %+v, want complete coverage of three directories", cov)
+	}
+	if logged != 0 {
+		t.Fatalf("%d log lines for a fully covered root", logged)
+	}
+}
+
+func TestBudgetStillCoversTheRoot(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "sub"), 0o755)
+	w, err := New(root, []string{"sub"}, nil, WithDebounce(50*time.Millisecond, 300*time.Millisecond), WithBudget(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	time.Sleep(20 * time.Millisecond)
+	if cov := w.Coverage(); cov.Watched != 1 || cov.Unwatched != 1 {
+		t.Fatalf("Coverage() = %+v, want the root watched and sub not", cov)
+	}
+	os.WriteFile(filepath.Join(root, "top.md"), nil, 0o644)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"top.md"}) {
+		t.Fatalf("root batch = %v", b.Paths)
+	}
+}
+
+// The first note in a directory whose only file is a hidden placeholder is
+// reported live, from the same listing the daemon watches with.
+func TestFirstNoteInHiddenOnlyDirectory(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed; CI installs it")
+	}
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "inbox"), 0o755)
+	os.WriteFile(filepath.Join(root, "inbox", ".gitkeep"), nil, 0o644)
+	dirs, err := tree.Dirs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := New(root, dirs, t.Logf, WithDebounce(50*time.Millisecond, 300*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	time.Sleep(20 * time.Millisecond)
+
+	os.WriteFile(filepath.Join(root, "inbox", "first.md"), []byte("# first"), 0o644)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"inbox/first.md"}) {
+		t.Fatalf("first note in a hidden-only directory: %v", b.Paths)
 	}
 }
