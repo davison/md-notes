@@ -59,28 +59,41 @@ func List(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 }
 
 // Dirs returns the directories a watcher should cover, relative to root
-// and including the root itself (""): every directory holding a file
-// ripgrep would list, their ancestors, and any subtree beneath those that
-// holds nothing the navigator would list, so a directory created empty (or
-// a nest of them) still reports its first note. A subtree that has files
-// ripgrep does not list is ignored or hidden and is left unwatched.
+// and including the root itself (""), ordered so that the watches worth
+// most are placed first when a budget cannot cover them all:
+//
+//  1. the root, every directory holding a markdown file, and their
+//     ancestors — the set the navigator lists, where notes change;
+//  2. directories holding nothing the navigator would list — empty ones,
+//     and ones holding only hidden files such as a .gitkeep placeholder —
+//     where a first note can appear that nothing else would report;
+//  3. every other directory holding a file ripgrep lists, which can gain a
+//     markdown file later.
+//
+// Paths are sorted within each group, so the whole result is stable. A
+// subtree that has files ripgrep does not list is ignored or hidden and is
+// left unwatched.
 func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]string, error) {
 	files, err := list(ctx, root, warnf, func(string) bool { return true })
 	if err != nil {
 		return nil, err
 	}
-	set := map[string]struct{}{"": {}}
+	notes := map[string]struct{}{"": {}}
+	others := map[string]struct{}{}
 	for _, f := range files {
+		set := others
+		if IsMarkdown(f) {
+			set = notes
+		}
 		for d := path.Dir(f); d != "." && d != "/" && d != ""; d = path.Dir(d) {
 			set[d] = struct{}{}
 		}
 	}
-	listed := make([]string, 0, len(set))
-	for d := range set {
-		listed = append(listed, d)
+	for d := range notes {
+		delete(others, d)
 	}
-	sort.Strings(listed)
-	for _, d := range listed {
+	empty := map[string]struct{}{}
+	for _, d := range sorted(notes, others) {
 		entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(d)))
 		if err != nil {
 			continue
@@ -90,22 +103,43 @@ func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]strin
 				continue
 			}
 			child := path.Join(d, e.Name())
-			if _, ok := set[child]; ok {
+			if _, ok := notes[child]; ok {
 				continue
 			}
-			if dirs, empty := emptySubtree(filepath.Join(root, filepath.FromSlash(child))); empty {
+			if _, ok := others[child]; ok {
+				continue
+			}
+			if _, ok := empty[child]; ok {
+				continue
+			}
+			if dirs, ok := emptySubtree(filepath.Join(root, filepath.FromSlash(child))); ok {
 				for _, sub := range dirs {
-					set[path.Join(child, sub)] = struct{}{}
+					empty[path.Join(child, sub)] = struct{}{}
 				}
 			}
 		}
 	}
-	out := make([]string, 0, len(set))
-	for d := range set {
-		out = append(out, d)
+	out := make([]string, 0, len(notes)+len(empty)+len(others))
+	out = append(out, sorted(notes)...)
+	out = append(out, sorted(empty)...)
+	out = append(out, sorted(others)...)
+	return out, nil
+}
+
+// sorted returns the keys of one or more sets as one sorted slice.
+func sorted(sets ...map[string]struct{}) []string {
+	n := 0
+	for _, s := range sets {
+		n += len(s)
+	}
+	out := make([]string, 0, n)
+	for _, s := range sets {
+		for k := range s {
+			out = append(out, k)
+		}
 	}
 	sort.Strings(out)
-	return out, nil
+	return out
 }
 
 // emptySubtree walks abs and reports its non-hidden directories (relative
