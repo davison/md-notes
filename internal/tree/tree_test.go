@@ -233,14 +233,17 @@ func TestDirs(t *testing.T) {
 
 	// vendor is ignored and holds files, so it is not watched. onlyhidden
 	// has nothing but a hidden cache, which the navigator would skip, so a
-	// note created there would be listed and it is watched; placeholder and
-	// the nest under it hold nothing but .gitkeep files and are watched for
-	// the same reason. Empty nests are watched throughout. The order is
+	// note created there would be listed and it is watched; placeholder
+	// holds nothing but a .gitkeep and is watched for the same reason.
+	// nest is not: the exemption for hidden files covers only the ones
+	// lying directly in the candidate directory, so nest/deep/.gitkeep
+	// counts as a file and the whole nest stays out. Empty nests, which
+	// hold no files at any depth, are watched throughout. The order is
 	// markdown-holding directories, then the empty ones, then images, which
 	// holds a file but no note.
 	want := []string{
 		"", "a", "a/b",
-		"a/emptychild", "empty", "empty/nested", "empty/nested/deeper", "nest", "nest/deep",
+		"a/emptychild", "empty", "empty/nested", "empty/nested/deeper",
 		"onlyhidden", "placeholder",
 		"images",
 	}
@@ -293,6 +296,35 @@ func TestDirsOrdersByPriority(t *testing.T) {
 	want := []string{"", "zz-notes", "mm-placeholder", "aa-assets"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Dirs() = %v, want %v", got, want)
+	}
+}
+
+// A gitignored subtree whose files all happen to be hidden must stay
+// unwatched: exempting dotfiles at every depth read it as empty and put its
+// whole directory tree in the watch set, ahead of the root's own content
+// directories. Reported in the model review of #26 with these figures — 202
+// watched directories where main watched one.
+func TestDirsLeavesAnIgnoredHiddenFileTreeUnwatched(t *testing.T) {
+	requireRg(t)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	write(t, filepath.Join(root, ".gitignore"), "cache/\n")
+	write(t, filepath.Join(root, "note.md"), "")
+	for i := 1; i <= 200; i++ {
+		write(t, filepath.Join(root, "cache", fmt.Sprintf("d%d", i), ".lock"), "")
+	}
+
+	got, err := Dirs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, []string{""}) {
+		t.Fatalf("Dirs() covered %d directories, want just the root: %v", len(got), got)
 	}
 }
 

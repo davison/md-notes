@@ -144,15 +144,22 @@ func sorted(sets ...map[string]struct{}) []string {
 
 // emptySubtree walks abs and reports its non-hidden directories (relative
 // to abs, "" for abs itself) if the subtree holds nothing the navigator
-// would list: no files at all, or only hidden ones such as the .gitkeep
-// placeholder that keeps an otherwise empty directory in a git repository.
-// Such a directory is as empty as one holding nothing, and the first note
-// created in it must be seen.
+// would list. Two things qualify: a subtree with no files at all, and one
+// whose only files are hidden ones lying directly in abs — the .gitkeep
+// that keeps an otherwise empty directory in a git repository. Such a
+// directory is as empty as one holding nothing, and the first note created
+// in it must be seen.
 //
-// Ignored files still count as files. Reading them as absent would make
-// node_modules look empty and pull whole ignored trees into the watch set,
-// so the walk stops at the first non-hidden file and an ignored tree full
-// of files costs one directory read.
+// Below abs, a hidden file counts like any other. Ignore rules are
+// invisible here, so exempting dotfiles at every depth would let an
+// ignored tree whose files happen to be hidden — a cache of .lock files,
+// say — read as empty and enter the watch set in full, which is the class
+// of bug dd961f3 fixed on #9. Exempting them only at the top costs a nest
+// of placeholder directories, which is watched no further than its first
+// level, and keeps ignored trees out.
+//
+// The walk stops at the first file that counts, so an ignored tree full of
+// files costs the directory reads down to its first file and no more.
 func emptySubtree(abs string) ([]string, bool) {
 	var dirs []string
 	empty := true
@@ -161,7 +168,7 @@ func emptySubtree(abs string) ([]string, bool) {
 			return nil
 		}
 		if !d.IsDir() {
-			if strings.HasPrefix(d.Name(), ".") {
+			if filepath.Dir(p) == abs && strings.HasPrefix(d.Name(), ".") {
 				return nil
 			}
 			empty = false
