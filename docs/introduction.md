@@ -35,9 +35,9 @@ max_watches: 8192
 ```
 
 A missing file is not an error as long as `--root` supplies the notes root. The
-default port is 7337 and the default watch budget 8192 directories per root; a
-negative `max_watches` removes the budget. The Live update section below says what
-the budget buys. `contrib/mdn.service` is a systemd user unit that runs
+default port is 7337 and the default watch budget 8192 directories per root; `0`
+removes the budget, and a negative value is refused. The Live update section below
+says what the budget buys. `contrib/mdn.service` is a systemd user unit that runs
 `mdn serve`.
 
 ripgrep (`rg`) must be on `PATH` at runtime. It builds the navigator's file listing,
@@ -150,7 +150,8 @@ batch was lost, including on a kernel event queue overflow. `EventSource` reconn
 on its own, and the UI treats a reconnect as a full refresh too.
 
 After the `: connected` comment the stream sends one `event: status` frame carrying
-the root's watch coverage, and sends it again whenever the coverage changes:
+the root's watch coverage, and sends it again when the coverage has changed — on the
+next keepalive tick, so up to thirty seconds later:
 
 ```json
 {"watched": 8192, "unwatched": 4498, "budget": 8192,
@@ -158,7 +159,10 @@ the root's watch coverage, and sends it again whenever the coverage changes:
 ```
 
 `limited` is `unwatched > 0`; `overBudget` says the budget rather than an error is
-the reason; `failed` counts directories the kernel refused.
+the reason; `failed` counts directories the kernel refused; `budget` is the per-root
+maximum and is `0` when there is none, never negative. A root with no watcher at all
+has no stream: the endpoint answers 503, which an `EventSource` reports by closing
+for good rather than reconnecting.
 
 ## The web UI
 
@@ -209,24 +213,30 @@ when the batch names its path or a directory above it.
 
 The watched set is every directory holding a file ripgrep lists, plus their
 ancestors, plus any subtree beneath those that holds nothing the navigator would
-list — one that is empty, and one whose only files are hidden, such as the
-`.gitkeep` that keeps an otherwise empty directory in a git repository. The first
-note created in any of them is seen live.
+list. Two things qualify: a subtree with no files at all, and one whose only files
+are hidden ones lying *directly* in it — the `.gitkeep` that keeps an otherwise
+empty directory in a git repository. The first note created in either is seen live.
 
-Ignored files still count as files, and the asymmetry with hidden ones is
-deliberate: reading an ignored file as absent would make `node_modules` look empty
-and put a whole ignored tree under watch. So a directory whose only files are
-*ignored* is not watched, and a note created there is seen when the directory next
-appears in a batch, or when the daemon restarts. That is the remaining hole in live
-update's coverage of an ordinary root, and it is the trade-off recorded in the
+Deeper down, a hidden file counts like any other. Ignore rules are invisible to that
+walk, so exempting dotfiles at every depth would let an ignored tree whose files
+happen to be hidden — a cache of `.lock` files, say — read as empty and enter the
+watch set in full. The cost of exempting them only at the top is a *nest* of
+placeholder directories, watched no further than its first level.
+
+Ignored files count as files for the same reason: reading one as absent would make
+`node_modules` look empty and put a whole ignored tree under watch. So a directory
+whose only files are *ignored* is not watched, and a note created there is seen when
+the directory next appears in a batch, or when the daemon restarts. That is the
+remaining hole in live update's coverage of an ordinary root, and it is the
+trade-off recorded in the
 [milestone one document](milestones/1-daemon-and-rendered-viewer.md).
 
 ### The watch budget
 
 The set grows with the tree, not with the notes in it, because a directory holding
 files but no note can gain one later and is watched too. On a notes folder that
-costs nothing; on a large ad-hoc root it is the dominant cost. Measured with the
-directories counted three ways:
+costs nothing; on a large ad-hoc root it is the dominant cost. Measured on one
+machine before the budget existed, with the directories counted three ways:
 
 | root | watched | holds a note, plus ancestors | nothing to list | files but no note |
 | --- | --- | --- | --- | --- |
@@ -236,7 +246,9 @@ directories counted three ways:
 | `/usr/lib` | 12,690 | 303 | 1,318 | 11,069 |
 | `~/.cache` | 82,684 | 13,616 | 11,673 | 57,395 |
 
-An inotify watch costs about a kilobyte of unswappable kernel memory and comes from
+Watching hidden-only directories adds a few dozen to each of those: `/usr/share` is
+5,814 with the budget removed today. An inotify watch costs about a kilobyte of
+unswappable kernel memory and comes from
 a per-user pool — `fs.inotify.max_user_watches`, commonly 524,288 — shared with
 every editor, IDE and file manager the user is running. `~/.cache` alone would take
 16% of that pool, some 87 MB, for one registered root.
@@ -254,9 +266,18 @@ budget keeps the ones worth most:
 3. everything else — directories holding files but no note.
 
 The third group is 69–87% of the watch set on every large root above, so it is what
-a spent budget gives up first. An unwatched directory hides nothing permanently: its
-changes still arrive when a watched directory reports them, when the tree is
-refetched for another reason, and when the daemon restarts.
+a spent budget gives up first.
+
+The order holds after startup too. When a directory appears — or gains its first
+note — on a root whose budget is already spent, the least valuable watch is released
+to make room for it: a directory the listing no longer names, then the lowest group,
+then the last path within that group. Directories of equal rank never displace each
+other, so a settled root does not churn its watches, and the root's own watch is
+never given up.
+
+An unwatched directory hides nothing permanently: its changes still arrive when a
+watched directory reports them, when the tree is refetched for another reason, and
+when the daemon restarts.
 
 ### When coverage is limited
 
@@ -267,12 +288,17 @@ the root is not live — so they are one report:
   naming the root, how many directories are covered, how many are not, why, and
   which limit to raise;
 - the root's event stream opens with a `status` event carrying the same numbers, and
-  sends it again when a directory appearing at runtime changes them;
-- the page shows a notice above the navigator whenever coverage is limited, so the
-  limit is visible in the browser and not only in the daemon's log.
+  sends it again on the next keepalive tick after they change;
+- the page shows a notice above the navigator whenever coverage is limited, naming
+  whichever limits are in play, so it is visible in the browser and not only in the
+  daemon's log.
 
-Neither stops the daemon, and neither disables live update for the rest of the root.
-To cover a large root completely, raise `max_watches` (or set it negative for no
+A root whose watcher never started is the same story with nothing covered: its event
+stream answers 503, and the page says live update is not available for that root and
+that changes show up on reload.
+
+None of this stops the daemon, and none of it disables live update for the rest of a
+root. To cover a large root completely, raise `max_watches` (or set it to `0` for no
 budget) and raise the kernel's own limit to match:
 
 ```
