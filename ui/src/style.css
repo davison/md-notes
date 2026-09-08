@@ -1,3 +1,11 @@
+/*
+ * Application styles. Class names beginning with "mdn-" are reserved for
+ * sanitised note content — chroma's syntax-highlighting classes, in the
+ * generated chroma.css — and nothing here may use that prefix: the
+ * renderer's sanitiser admits no other class on a note's code elements,
+ * which is what stops a note restyling the app. See internal/render.
+ */
+
 :root {
   --bg: #fbfbfa;
   --fg: #1f1f1f;
