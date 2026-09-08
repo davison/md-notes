@@ -235,10 +235,14 @@ func TestDirs(t *testing.T) {
 	// has nothing but a hidden cache, which the navigator would skip, so a
 	// note created there would be listed and it is watched; placeholder and
 	// the nest under it hold nothing but .gitkeep files and are watched for
-	// the same reason. Empty nests are watched throughout.
+	// the same reason. Empty nests are watched throughout. The order is
+	// markdown-holding directories, then the empty ones, then images, which
+	// holds a file but no note.
 	want := []string{
-		"", "a", "a/b", "a/emptychild", "empty", "empty/nested", "empty/nested/deeper",
-		"images", "nest", "nest/deep", "onlyhidden", "placeholder",
+		"", "a", "a/b",
+		"a/emptychild", "empty", "empty/nested", "empty/nested/deeper", "nest", "nest/deep",
+		"onlyhidden", "placeholder",
+		"images",
 	}
 	for i := 0; i < 50; i++ {
 		got, err := Dirs(context.Background(), root, nil)
@@ -270,6 +274,25 @@ func TestDirsLeavesIgnoredOnlyDirectoriesUnwatched(t *testing.T) {
 		if strings.HasPrefix(d, "build") || strings.HasPrefix(d, "logs") {
 			t.Fatalf("Dirs() = %v, want no ignored-only directory", got)
 		}
+	}
+}
+
+// The order is the watch budget's priority: a truncated set keeps the
+// directories where notes live and where a first note can appear unseen.
+func TestDirsOrdersByPriority(t *testing.T) {
+	requireRg(t)
+	root := t.TempDir()
+	write(t, filepath.Join(root, "zz-notes", "n.md"), "")
+	write(t, filepath.Join(root, "aa-assets", "pic.png"), "")
+	write(t, filepath.Join(root, "mm-placeholder", ".gitkeep"), "")
+
+	got, err := Dirs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"", "zz-notes", "mm-placeholder", "aa-assets"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Dirs() = %v, want %v", got, want)
 	}
 }
 
