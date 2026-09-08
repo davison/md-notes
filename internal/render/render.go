@@ -432,6 +432,13 @@ var (
 	// and this package's own two. They are named in full, and the app
 	// styles them only inside the rendered note.
 	noteClassPattern = regexp.MustCompile(`^(footnotes|footnote-ref|footnote-backref|outside-root|line-anchor)$`)
+
+	// The only elements the policy allows a class attribute on. Named
+	// here rather than at the call site so that the sanitiser and
+	// TestAppClassesAreUnreachable, which proves no app class survives on
+	// any of them, cannot come to disagree about which those are.
+	codeClassElements = []string{"pre", "code", "span"}
+	noteClassElements = []string{"a", "img", "div", "section"}
 )
 
 // classList matches a class attribute whose every entry is one of alts.
@@ -465,8 +472,8 @@ func newPolicy() *bluemonday.Policy {
 	p.AllowAttrs("id").Matching(idPattern).OnElements("h1", "h2", "h3", "h4", "h5", "h6", "sup", "li")
 	p.AllowAttrs("data-line").Matching(regexp.MustCompile(`^[0-9]{1,9}$`)).OnElements(
 		"p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "table", "pre", "hr", "div")
-	p.AllowAttrs("class").Matching(codeClassPattern).OnElements("pre", "code", "span")
-	p.AllowAttrs("class").Matching(noteClassPattern).OnElements("a", "img", "div", "section")
+	p.AllowAttrs("class").Matching(codeClassPattern).OnElements(codeClassElements...)
+	p.AllowAttrs("class").Matching(noteClassPattern).OnElements(noteClassElements...)
 	p.AllowAttrs("role").Matching(regexp.MustCompile(`^doc-(noteref|endnotes|backlink)$`)).OnElements("a", "div", "section")
 	p.AllowAttrs("type").Matching(regexp.MustCompile(`^checkbox$`)).OnElements("input")
 	p.AllowAttrs("checked", "disabled").OnElements("input")

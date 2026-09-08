@@ -1,7 +1,9 @@
 package render
 
 import (
+	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -225,41 +227,80 @@ func TestNoteCannotBorrowAppClasses(t *testing.T) {
 	wantContains(t, n.HTML, "boom", `<pre class="mdn-chroma">`, `<span class="mdn-kd">func</span>`)
 }
 
-// TestAppClassesAreUnreachable reads the application stylesheet and
-// checks that every class it styles is stripped from note content, on
-// every element the policy allows a class on. The note's own classes are
-// the deliberate exception; anything else the app adds later — including
-// the editor's CodeMirror classes, which share the document with a
-// rendered note — fails this test the moment it becomes reachable.
+// generatedStylesheet is the one stylesheet under ui/src that the app
+// does not write: gencss emits it, in the reserved namespace, so it is
+// the single exception to the naming rule the test below enforces.
+const generatedStylesheet = "chroma.css"
+
+// TestAppClassesAreUnreachable reads every stylesheet the application
+// writes and checks that each class they style is stripped from note
+// content, on every element the policy allows a class on, and that none
+// of them takes a name in the reserved namespace. The note's own classes
+// are the deliberate exception; anything else the app adds later —
+// including the editor's CodeMirror classes, which share the document
+// with a rendered note — fails this test the moment it becomes
+// reachable. Stylesheets are found rather than named, so adding one puts
+// it under the same rule instead of quietly outside it.
 func TestAppClassesAreUnreachable(t *testing.T) {
-	css, err := os.ReadFile("../../ui/src/style.css")
-	if err != nil {
-		t.Fatal(err)
+	sheets := appStylesheets(t)
+	if len(sheets) == 0 {
+		t.Fatal("no application stylesheets found under ui/src")
 	}
-	classes := cssClasses(string(css))
-	// The stylesheet is the input to the check, so a parse that found
-	// nothing must not pass silently.
-	for _, want := range []string{"shell", "nav", "hit", "ln", "ctx", "tag", "error", "cm-editor", "markdown"} {
-		if !classes[want] {
-			t.Fatalf("class %q not found in style.css; the selector scan is broken", want)
+	classes := map[string]string{}
+	for _, path := range sheets {
+		css, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for c := range cssClasses(string(css)) {
+			classes[c] = path
 		}
 	}
-	elements := []string{"span", "code", "pre", "div", "section", "a", "img", "p", "h2", "li"}
-	for c := range classes {
+	// The stylesheets are the input to the check, so a scan that found
+	// nothing must not pass silently.
+	for _, want := range []string{"shell", "nav", "hit", "ln", "ctx", "tag", "error", "cm-editor", "markdown"} {
+		if _, ok := classes[want]; !ok {
+			t.Fatalf("class %q not found in the app stylesheets; the selector scan is broken", want)
+		}
+	}
+	elements := append(append([]string{}, codeClassElements...), noteClassElements...)
+	for c, path := range classes {
 		if noteClassPattern.MatchString(c) {
 			continue
 		}
 		if strings.HasPrefix(c, ClassPrefix) {
-			t.Errorf("app class %q uses the prefix reserved for note content (%q)", c, ClassPrefix)
+			t.Errorf("%s: app class %q uses the prefix reserved for note content (%q)", path, c, ClassPrefix)
 			continue
 		}
 		for _, el := range elements {
 			out := r.policy.Sanitize(`<` + el + ` class="` + c + `">x</` + el + `>`)
 			if strings.Contains(out, "class=") {
-				t.Errorf("app class %q survives on <%s>: %s", c, el, out)
+				t.Errorf("%s: app class %q survives on <%s>: %s", path, c, el, out)
 			}
 		}
 	}
+}
+
+// appStylesheets returns every stylesheet under ui/src that the
+// application writes itself, generated ones excepted.
+func appStylesheets(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	root := filepath.Join("..", "..", "ui", "src")
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || filepath.Ext(path) != ".css" || d.Name() == generatedStylesheet {
+			return nil
+		}
+		out = append(out, path)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 // cssClasses returns the class names named in the selectors of a
@@ -304,7 +345,8 @@ func TestChromaClassesPassSanitiser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sel := regexp.MustCompile(`\.` + ClassPrefix + `chroma \.(` + ClassPrefix + `[A-Za-z0-9]+)`)
+	prefix := regexp.QuoteMeta(ClassPrefix)
+	sel := regexp.MustCompile(`\.` + prefix + `chroma \.(` + prefix + `[A-Za-z0-9]+)`)
 	classes := sel.FindAllStringSubmatch(string(css), -1)
 	if len(classes) < 20 {
 		t.Fatalf("found only %d chroma classes; is the stylesheet generated?", len(classes))
