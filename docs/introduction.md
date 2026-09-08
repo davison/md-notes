@@ -2,8 +2,11 @@
 
 md-notes is a local service that turns folders of markdown files into a notes
 application in the browser. This page describes what exists and works today, at the
-end of [milestone one](milestones/1-daemon-and-rendered-viewer.md). The editor, the
-browser clipper and the inbox are not built yet.
+end of [milestone two](milestones/2-editor-autosave-and-live-update.md): the daemon
+and the rendered viewer from
+[milestone one](milestones/1-daemon-and-rendered-viewer.md), and now an editor over
+the same notes. Notes are edited in place; creating, renaming and deleting them is
+still done with other tools. The browser clipper and the inbox are not built yet.
 
 ## The daemon
 
@@ -186,7 +189,8 @@ A Preact application, three panes per root:
   application calls its own classes. Relative links to markdown become in-app
   navigation; relative images and other assets are served from the raw endpoint; a
   link whose target escapes the root keeps its text but loses its destination and
-  says why.
+  says why. A bar above the note carries the mode, the save state, and `Ctrl+E`,
+  which flips the pane to the editor and back — see [Editing](#editing).
 - **Search and tags.** A debounced search box whose results group by file, showing
   the matching line with the match emphasised and a line of context either side.
   Selecting a hit opens the note with `?l=<line>` and scrolls to the block at that
@@ -199,6 +203,116 @@ Tags come from a frontmatter `tags` value (a list, or one string split on commas
 whitespace) and from inline hashtags: `#` at the start of a line or after whitespace,
 followed by letters, digits, `_`, `-` or `/`, containing at least one letter, outside
 fenced and inline code, lower-cased. Tags are collected per request, with no index.
+
+## Editing
+
+Any note the daemon serves can be edited in place. `Ctrl+E` flips the note pane
+between the rendered view and the editor, and back; the **Edit** / **View** button
+in the note bar does the same by mouse. The key is handled once for the whole page
+in the capture phase, so it works from the navigator and the search box as well as
+from the editor, and it reaches the editor ahead of vim's own `Ctrl+E`, whose
+scroll-one-line it shadows. Being a chord, it never fires on ordinary typing.
+
+The editor is CodeMirror 6 with vim keybindings, markdown highlighting — including
+fenced blocks in their own language — line wrapping and undo history. `Tab` indents
+rather than moving focus, so `Ctrl+E` is the way out by keyboard and the mode button
+the way out by mouse. The editor's state is parked on the note between flips, so
+switching to the rendered view and back keeps the cursor position and the undo
+history.
+
+Every vim exit command saves, and none of them closes anything: `:w`, `:q`, `:q!`,
+`:x` and `:wq` all mean "save now". There is no way to quit without saving, because
+the editor never closes and autosave would have written the draft anyway.
+
+Edits go to the original file through the [conditional save](#conditional-saves)
+endpoint, so they are subject to the same root confinement and the same Host and
+Origin guard as everything else, and the source is written back byte for byte —
+frontmatter, line endings and trailing newline included. The editor edits existing
+notes only: it cannot create, rename or delete one, and the save API has no
+create-on-missing path.
+
+The editor and its language parsers are part of the UI bundle embedded in the
+binary. About 400 KB of it — 140 KB gzipped — loads with the page; the per-language
+parsers for fenced code are separate chunks, fetched over loopback the first time a
+block of that language is edited.
+
+### Autosave and the save states
+
+A save is sent one second after typing stops. Anything that means "I am done for
+now" sends it immediately instead: switching to the rendered view, navigating to
+another note, the window losing focus, the tab being hidden, `:w` and its
+relatives, and closing the page.
+
+The note bar shows where the draft stands:
+
+| State | What it means |
+|-------|---------------|
+| `Saved` | The draft matches the file on disk |
+| `Unsaved changes` | The draft differs and a save is scheduled |
+| `Saving…` | A save is in flight |
+| `Save failed: <reason>. Draft kept.`, with a **Retry** button | The daemon refused the save; the draft is untouched |
+| `Conflict: draft kept` | The file moved on under the draft; see [Conflicts](#conflicts) |
+
+A failed save keeps the draft and shows the reason the daemon gave — a read-only
+file reports `note or directory is not readable/writable`; the rest are the codes
+in [Conditional saves](#conditional-saves). **Retry** sends it again, and so does
+the next edit; nothing is discarded in between. A save landing while the pane is in
+view mode refreshes the rendered note.
+
+### Conflicts
+
+A conflict is raised when the file's *content* differs from what the draft was made
+against, and only under a draft that is unsaved, in flight or failed. A new revision
+over identical content — a `touch`, a permission change, a same-bytes rewrite, or
+the daemon's own event for the save just made — is adopted silently, and a save the
+daemon refused for such a revision is sent again, once, against the new one. A clean
+note simply follows the file: it refreshes from disk in both the rendered view and
+the editor.
+
+A note **changed** on disk under a draft raises a banner offering three ways out:
+
+- **Keep my draft** saves the draft over the file as it now is;
+- **Load the file** drops the draft and takes the file's text;
+- **Copy draft** puts the draft on the clipboard, to reconcile by hand.
+
+Autosave stops while the conflict stands, the draft stays in the editor, and
+switching to View shows the file as it is on disk with the banner and the draft
+still there.
+
+A note **deleted** on disk under a draft raises a banner with **Copy draft** and
+**Discard draft** only. The editor cannot recreate the file, because the save API
+has no create-on-missing path; recreating it with another tool turns the conflict
+back into a changed one, where **Keep my draft** writes the draft over it. A clean
+note whose file is deleted is kept the same way rather than dropped, since the text
+on screen may be the only copy left.
+
+### Drafts that outlive the page
+
+Editing state lives outside the note pane, one session per note, so nothing is
+dropped by a mode switch or by navigating away — both flush first, and anything that
+does not land stays in its session. The top bar lists every *other* note holding
+unsaved work, as links; following one opens that note straight into the editor with
+its draft.
+
+Closing the page with unsaved work sends a final save and asks the browser's "leave
+site?" question. That last save is a `keepalive` request: the page cannot learn
+whether it landed, and browsers cap such a request at 64 KiB of body, so a larger
+draft's final save is refused outright.
+
+For both cases an unsaved draft is also mirrored to `localStorage`, and the next
+open reconciles it against the file: identical to it, the draft is dropped as
+already saved; made against the file's current revision, it is restored and saved a
+second later; made against an older one, it opens as a conflict. A note with a draft
+waiting — in memory or in storage — opens in the editor rather than the rendered
+view.
+
+The mirror is one record per note, **shared by every tab on this origin**. It is
+crash and reload recovery, not a second copy per tab: two tabs editing the same note
+overwrite each other's record, and a second tab opening a note whose first tab holds
+an unsaved draft adopts that draft from storage and saves it within a second.
+Nothing is lost — the in-memory session, the top-bar list and the leave prompt are
+the guarantee against that — and the two tabs converge on the saved text, the later
+save of the two refused as stale and kept as a conflict.
 
 ## Live update
 
