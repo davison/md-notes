@@ -44,10 +44,25 @@ const theme = EditorView.theme({
   ".cm-panels": { background: "var(--bg)", color: "var(--fg)", borderColor: "var(--line)" },
 });
 
-/** The line ending a note uses: CRLF, a lone CR, or LF. */
+/**
+ * The line ending a note uses most: CRLF, a lone CR, or LF. Ties go to
+ * LF, then CRLF, so a stray carriage return never decides the whole file.
+ */
 export function lineEnding(text: string): "\r\n" | "\r" | "\n" {
-  if (text.includes("\r\n")) return "\r\n";
-  if (text.includes("\r")) return "\r";
+  let crlf = 0;
+  let cr = 0;
+  let lf = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c === 13) {
+      if (text.charCodeAt(i + 1) === 10) {
+        crlf++;
+        i++;
+      } else cr++;
+    } else if (c === 10) lf++;
+  }
+  if (crlf > lf && crlf >= cr) return "\r\n";
+  if (cr > lf && cr > crlf) return "\r";
   return "\n";
 }
 

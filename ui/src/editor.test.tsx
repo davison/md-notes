@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/preact";
 import { EditorState } from "@codemirror/state";
+import { insertNewlineAndIndent } from "@codemirror/commands";
 import { Vim, getCM } from "@replit/codemirror-vim";
 import { EditorView } from "@codemirror/view";
 import { Editor, lineEnding, withLineEnding } from "./editor";
@@ -20,12 +21,18 @@ beforeEach(() => resetSessions());
 afterEach(() => cleanup());
 
 describe("line endings", () => {
-  it("detects CRLF, lone CR, and LF", () => {
+  it("picks the ending a note uses most, not the first it contains", () => {
     expect(lineEnding("a\r\nb\r\n")).toBe("\r\n");
     expect(lineEnding("a\rb\r")).toBe("\r");
     expect(lineEnding("a\nb\n")).toBe("\n");
-    expect(lineEnding("a\r\nb\nc\r")).toBe("\r\n");
     expect(lineEnding("")).toBe("\n");
+    // Mostly LF with one CRLF, and mostly LF with one stray CR, are LF notes.
+    expect(lineEnding("a\nb\nc\r\nd\ne\n")).toBe("\n");
+    expect(lineEnding("a\nb\rc\nd\n")).toBe("\n");
+    // Mostly CRLF with one LF is a CRLF note; ties go to LF.
+    expect(lineEnding("a\r\nb\nc\r\n")).toBe("\r\n");
+    expect(lineEnding("a\r\nb\n")).toBe("\n");
+    expect(lineEnding("a\rb\r\nc\r")).toBe("\r");
   });
 
   it("rejoins the editor's LF text with the note's ending", () => {
@@ -67,17 +74,22 @@ describe("Editor", () => {
     view.dispatch({ changes: { from: at, insert: "!" } });
     expect(s.state.draft).toBe(expected);
     expect(s.state.status).toBe("pending");
-    // Typing Enter inserts the note's own ending too.
-    view.dispatch({ changes: { from: at + 1, insert: view.state.lineBreak } });
+    // Pressing Enter inserts the note's own ending too.
+    view.dispatch({ selection: { anchor: at + 1 } });
+    insertNewlineAndIndent(view);
     expect(s.state.draft.split(lineEnding(source)).length).toBe(source.split(lineEnding(source)).length + 1);
   });
 
-  it("makes a note with mixed endings uniform in its dominant one", () => {
-    const s = session("a\r\nb\nc\r\n");
+  it.each([
+    ["CRLF dominant", "a\r\nb\nc\r\n", "!a\r\nb\r\nc\r\n"],
+    ["LF dominant with one CRLF", "a\nb\nc\r\nd\ne\n", "!a\nb\nc\nd\ne\n"],
+    ["LF dominant with a stray CR", "a\nb\rc\nd\n", "!a\nb\nc\nd\n"],
+  ])("makes a note with mixed endings uniform in its dominant one (%s)", (_, source, expected) => {
+    const s = session(source);
     const { container } = render(<Editor session={s} />);
     const view = viewOf(container);
     view.dispatch({ changes: { from: 0, insert: "!" } });
-    expect(s.state.draft).toBe("!a\r\nb\r\nc\r\n");
+    expect(s.state.draft).toBe(expected);
   });
 
   it("opening without typing changes nothing", () => {
