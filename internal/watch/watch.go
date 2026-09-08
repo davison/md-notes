@@ -1,10 +1,12 @@
 // Package watch reports file changes under a root as debounced batches of
-// relative paths, watching only the directories the navigator would list.
+// relative paths, watching the directories a note can appear in, within a
+// budget so that one large ad-hoc root cannot exhaust the kernel's watches.
 package watch
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -35,9 +37,34 @@ type Watcher struct {
 	warnf    func(string, ...any)
 	debounce time.Duration
 	maxWait  time.Duration
+	budget   int
 	done     chan struct{}
 	once     sync.Once
 	lost     bool
+
+	cmu sync.Mutex
+	cov Coverage
+}
+
+// Coverage says how much of a root the watcher covers. An unwatched
+// directory is not invisible: its changes are still seen when a watched
+// directory above it reports them, and when the daemon restarts. It simply
+// does not report changes of its own.
+type Coverage struct {
+	// Watched is the number of directories carrying a watch.
+	Watched int `json:"watched"`
+	// Unwatched is how many directories of the root's set carry none.
+	Unwatched int `json:"unwatched"`
+	// Budget is the per-root maximum, or zero when there is none.
+	Budget int `json:"budget"`
+	// OverBudget reports that the budget, rather than an error, is what
+	// left directories unwatched.
+	OverBudget bool `json:"overBudget"`
+	// Failed counts directories the kernel refused, which on Linux means
+	// fs.inotify.max_user_watches is exhausted.
+	Failed int `json:"failed"`
+	// Limited is Unwatched > 0: live update covers part of the root.
+	Limited bool `json:"limited"`
 }
 
 // Option adjusts a Watcher.
@@ -49,10 +76,19 @@ func WithDebounce(quiet, maxWait time.Duration) Option {
 	return func(w *Watcher) { w.debounce, w.maxWait = quiet, maxWait }
 }
 
-// New watches root and the relative directories in dirs (the root itself
-// is always watched). Directories created later inside a watched one are
-// added as they appear. Running out of inotify watches is reported through
-// warnf and leaves the rest unwatched rather than failing.
+// WithBudget caps the directories watched for this root. Watches are placed
+// in the order dirs arrives in, so a budget too small for the root covers
+// its most valuable directories; zero or less removes the cap.
+func WithBudget(n int) Option {
+	return func(w *Watcher) { w.budget = n }
+}
+
+// New watches root and the relative directories in dirs, most valuable
+// first (the root itself is always watched, whatever the budget).
+// Directories created later inside a watched one are added as they appear.
+// A spent budget and a kernel out of inotify watches are both reported
+// through warnf and through Coverage, leaving the rest unwatched rather
+// than failing.
 func New(root string, dirs []string, warnf func(string, ...any), opts ...Option) (*Watcher, error) {
 	if warnf == nil {
 		warnf = func(string, ...any) {}
@@ -73,53 +109,91 @@ func New(root string, dirs []string, warnf func(string, ...any), opts ...Option)
 	for _, o := range opts {
 		o(w)
 	}
-	failed := w.addAll(dirs)
-	failed.report(w, "")
+	w.place(dirs)
 	go w.loop()
 	return w, nil
 }
 
-// failures aggregates watch errors so a root with hundreds of unwatchable
-// directories logs one line, not hundreds.
-type failures struct {
-	n     int
-	first error
-}
-
-func (f *failures) note(err error) {
-	if f.first == nil {
-		f.first = err
+// place watches every directory in dirs that has no watch yet, in order,
+// until the budget is spent, and records the coverage that results. dirs is
+// the root's whole directory set, most valuable first; the root itself is
+// watched first whether or not dirs names it.
+func (w *Watcher) place(dirs []string) {
+	watched := map[string]struct{}{}
+	for _, p := range w.fsw.WatchList() {
+		watched[p] = struct{}{}
 	}
-	f.n++
-}
-
-func (f failures) report(w *Watcher, under string) {
-	if f.n == 0 {
-		return
-	}
-	where := w.root
-	if under != "" {
-		where = filepath.Join(w.root, filepath.FromSlash(under))
-	}
-	w.warnf("watch %s: %d director%s could not be watched (first error: %v); changes there will not be seen",
-		where, f.n, map[bool]string{true: "y", false: "ies"}[f.n == 1], f.first)
-}
-
-// addAll watches the root and each relative directory in dirs.
-func (w *Watcher) addAll(dirs []string) failures {
-	var f failures
-	if err := w.add(""); err != nil {
-		f.note(err)
-	}
-	for _, d := range dirs {
-		if d == "" || d == "." {
+	// One error stands for all of them: a root with hundreds of
+	// unwatchable directories logs one line, not hundreds.
+	var first error
+	cov := Coverage{Budget: w.budget}
+	for _, rel := range append([]string{""}, dirs...) {
+		if rel == "." {
+			rel = ""
+		}
+		abs := filepath.Join(w.root, filepath.FromSlash(rel))
+		if _, ok := watched[abs]; ok {
 			continue
 		}
-		if err := w.add(d); err != nil {
-			f.note(err)
+		if w.budget > 0 && len(watched) >= w.budget {
+			cov.OverBudget = true
+			cov.Unwatched++
+			continue
+		}
+		placed, err := w.add(abs)
+		if err != nil {
+			if first == nil {
+				first = err
+			}
+			cov.Failed++
+			cov.Unwatched++
+			continue
+		}
+		if placed {
+			watched[abs] = struct{}{}
 		}
 	}
-	return f
+	cov.Watched = len(watched)
+	cov.Limited = cov.Unwatched > 0
+
+	w.cmu.Lock()
+	changed := cov != w.cov
+	w.cov = cov
+	w.cmu.Unlock()
+	if changed {
+		w.report(cov, first)
+	}
+}
+
+// Coverage reports how much of the root is watched.
+func (w *Watcher) Coverage() Coverage {
+	w.cmu.Lock()
+	defer w.cmu.Unlock()
+	return w.cov
+}
+
+// report logs one line for a limited coverage, whatever the number of
+// directories behind it, saying why and what it costs.
+func (w *Watcher) report(cov Coverage, first error) {
+	if !cov.Limited {
+		return
+	}
+	var why []string
+	if cov.OverBudget {
+		why = append(why, fmt.Sprintf("the budget of %d directories is spent (raise max_watches to cover more)", cov.Budget))
+	}
+	if cov.Failed > 0 {
+		why = append(why, fmt.Sprintf("%d could not be watched: %v (raise fs.inotify.max_user_watches)", cov.Failed, first))
+	}
+	w.warnf("watch %s: live update covers %d director%s, %d unwatched — %s; a change in an unwatched directory is seen when a watched one reports it or the daemon restarts",
+		w.root, cov.Watched, plural(cov.Watched), cov.Unwatched, strings.Join(why, "; "))
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return "y"
+	}
+	return "ies"
 }
 
 // Events delivers batches until Close.
@@ -135,20 +209,25 @@ func (w *Watcher) Close() error {
 	return err
 }
 
-// add watches one relative directory. A directory that vanished before
-// the watch was placed is not an error.
-func (w *Watcher) add(rel string) error {
-	abs := filepath.Join(w.root, filepath.FromSlash(rel))
-	if err := w.fsw.Add(abs); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+// add watches one directory and reports whether a watch was placed. A
+// directory that vanished before the watch was placed is not an error, and
+// costs nothing against the budget.
+func (w *Watcher) add(abs string) (bool, error) {
+	err := w.fsw.Add(abs)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	default:
+		return false, err
 	}
-	return nil
 }
 
-// addMissing recomputes the directories the root's listing would cover
-// and watches any that are not watched yet. Runs when a batch shows a
-// directory appeared or moved. Listing the whole root is what the
-// navigator does for the same batch, so the cost is already being paid;
+// addMissing recomputes the directories the root's listing would cover and
+// watches any that are not watched yet, within the budget. Runs when a
+// batch shows a directory appeared or moved. Listing the whole root is what
+// the navigator does for the same batch, so the cost is already being paid;
 // listing only the new directory would not work, because ripgrep never
 // applies ignore rules to a directory it is pointed at, so an ignored tree
 // created at runtime would be watched in full.
@@ -160,21 +239,7 @@ func (w *Watcher) addMissing() {
 		w.warnf("watch %s: relisting failed (%v); watching every non-hidden directory", w.root, err)
 		dirs = Walk(w.root)
 	}
-	watched := map[string]struct{}{}
-	for _, p := range w.fsw.WatchList() {
-		watched[p] = struct{}{}
-	}
-	var f failures
-	for _, d := range dirs {
-		abs := filepath.Join(w.root, filepath.FromSlash(d))
-		if _, ok := watched[abs]; ok {
-			continue
-		}
-		if err := w.add(d); err != nil {
-			f.note(err)
-		}
-	}
-	f.report(w, "")
+	w.place(dirs)
 }
 
 func (w *Watcher) loop() {
