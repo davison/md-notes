@@ -92,13 +92,12 @@ lists them with counts and filters the navigator to the notes carrying one.
 
 Changes on disk show up in the browser without a refresh: the daemon watches
 every registered root and streams change events to the page. The watched
-directories are the ones holding a file ripgrep lists, their ancestors, and
-any subtree below those holding nothing the navigator would list — an empty
-directory, or one whose only files are hidden ones lying directly in it, such
-as a `.gitkeep` placeholder. So gitignored and hidden trees are not watched,
-and neither is a directory whose only files are *ignored*: a note created
-there is seen when that directory next appears in a change batch or when the
-daemon restarts.
+directories are the ones holding a file ripgrep lists, the ones holding a
+hidden file it lists — a `.gitkeep` placeholder, at any depth — their
+ancestors, and any subtree below those holding no files at all. So gitignored
+and hidden trees are not watched, and neither is a directory whose only files
+are *ignored*: a note created there is seen when that directory next appears
+in a change batch or when the daemon restarts.
 
 In a folder with no ignore rules the watch set is much larger than the
 navigator's tree — 5,814 inotify watches for `/usr/share`, whose notes live in

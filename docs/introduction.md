@@ -211,37 +211,31 @@ when the batch names its path or a directory above it.
 
 ### Which directories are watched
 
-The watched set is every directory holding a file ripgrep lists, plus their
-ancestors, plus any subtree beneath those that holds nothing the navigator would
-list. Two things qualify: a subtree with no files at all, and one whose only files
-are hidden ones lying *directly* in it — the `.gitkeep` that keeps an otherwise
-empty directory in a git repository. The first note created in either is seen live.
+The watched set has three parts, all of them found from one ripgrep listing:
 
-Deeper down, a hidden file counts like any other, and one file that counts
-disqualifies the whole candidate. Ignore rules are invisible to that walk, so
-exempting dotfiles at every depth would let an ignored tree whose files happen to be
-hidden — a cache of `.lock` files, say — read as empty and enter the watch set in
-full.
+- every directory holding a file ripgrep lists, and their ancestors;
+- every directory holding a *placeholder* — a hidden file ripgrep lists, such as the
+  `.gitkeep` that keeps an otherwise empty directory in a git repository — and their
+  ancestors, at any depth;
+- every subtree beneath those that holds no files at all.
 
-Exempting them only at the top has a cost, and it is larger than a first reading
-suggests: a placeholder directory that has a *placeholder-holding subdirectory* is
-not watched at all, not even at its own level, because the deeper `.gitkeep` is a
-file the candidate is judged by. `nest/.gitkeep` alone is watched; `nest/.gitkeep`
-together with `nest/deep/.gitkeep` is not, at either level, and a note created there
-is seen when the directory next appears in a batch or when the daemon restarts —
-exactly as for the ignored-only case below. A `.gitkeep` beside an entirely empty
-subdirectory is unaffected, because an empty subdirectory holds no file at all.
-Nothing here regresses against milestone one, which watched none of these shapes,
-but M2-R4's sentence about "a directory containing only hidden placeholder files"
-holds only for the single-level shape. Whether to close that gap is
-[#20](https://github.com/davison/md-notes/issues/20)'s open decision gate.
+The first note created in any of them is seen live, which is what a placeholder
+directory exists for.
 
-Ignored files count as files for the same reason: reading one as absent would make
-`node_modules` look empty and put a whole ignored tree under watch. So a directory
-whose only files are *ignored* is not watched, and a note created there is seen when
-the directory next appears in a batch, or when the daemon restarts. That is the
-remaining hole in live update's coverage of an ordinary root, and it is the
-trade-off recorded in the
+That listing is `rg --files --hidden --glob '!.*/'`: hidden files asked for, hidden
+directories refused. Asking for hidden files does not disable ripgrep's ignore
+rules, and that is the whole point — a `.gitkeep` no rule covers is named, while the
+`.lock` files of a gitignored cache are not, so an ignored tree of dotfiles cannot
+enter the set by looking empty. Refusing hidden directories costs nothing, because
+they are never watched, and keeps the walk out of `.git` and `.cache`, which is
+where the time would go: computing the watched set costs 5–7% more than the rule
+this replaced, which asked ripgrep for no hidden files at all.
+
+Ignored files are the limit of it. A directory whose only files are *ignored* holds
+nothing ripgrep will name, hidden or not, so it is not watched, and a note created
+there is seen when the directory next appears in a batch, or when the daemon
+restarts. That is the remaining hole in live update's coverage of an ordinary root,
+and it is the trade-off recorded in the
 [milestone one document](milestones/1-daemon-and-rendered-viewer.md).
 
 ### The watch budget
@@ -254,11 +248,11 @@ puts it in — the three groups below:
 
 | root | watched | 1: holds a note, plus ancestors | 2: nothing to list | 3: files but no note |
 | --- | --- | --- | --- | --- |
-| a notes folder | 21 | 3 | 1 | 17 |
-| `~/projects` | 1,613 | 642 | 27 | 944 |
+| a notes folder | 21 | 3 | 2 | 16 |
+| `~/projects` | 1,614 | 642 | 30 | 942 |
 | `/usr/share` | 5,814 | 311 | 706 | 4,797 |
-| `/usr/lib` | 12,690 | 303 | 23 | 12,364 |
-| `~/.cache` | 82,849 | 13,616 | 535 | 68,698 |
+| `/usr/lib` | 12,700 | 303 | 33 | 12,364 |
+| `~/.cache` | 82,874 | 13,616 | 559 | 68,699 |
 
 Group two is small because a directory that holds no file of its own but has
 file-holding descendants is an ancestor, and ancestors go in the group of what they
@@ -284,7 +278,7 @@ budget keeps the ones worth most:
    appear that nothing else would report;
 3. everything else — directories holding files but no note.
 
-The third group is 83–97% of the watch set on every large root above — 59% on
+The third group is 83–97% of the watch set on every large root above — 58% on
 `~/projects`, which is mostly notes — so it is what a spent budget gives up first.
 
 The order holds after startup too. When a directory appears — or gains its first
