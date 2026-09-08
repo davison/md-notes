@@ -94,20 +94,22 @@ Changes on disk show up in the browser without a refresh: the daemon watches
 every registered root and streams change events to the page. The watched
 directories are the ones holding a file ripgrep lists, their ancestors, and
 any subtree below those holding nothing the navigator would list — an empty
-directory, or one whose only files are hidden, such as a `.gitkeep`
-placeholder. So gitignored and hidden trees are not watched, and neither is a
-directory whose only files are *ignored*: a note created there is seen when
-that directory next appears in a change batch or when the daemon restarts.
+directory, or one whose only files are hidden ones lying directly in it, such
+as a `.gitkeep` placeholder. So gitignored and hidden trees are not watched,
+and neither is a directory whose only files are *ignored*: a note created
+there is seen when that directory next appears in a change batch or when the
+daemon restarts.
 
 In a folder with no ignore rules the watch set is much larger than the
-navigator's tree — 5,790 inotify watches for `/usr/share`, whose notes live in
+navigator's tree — 5,814 inotify watches for `/usr/share`, whose notes live in
 311 directories — so each root has a budget of `max_watches` directories, 8192
-by default (`--max-watches N` on `mdn serve`, negative for no budget). Watches
-go first to the directories holding notes and to those where a first note
-could appear, so a root over its budget loses the directories that hold files
-but no note. When the budget is spent, or the kernel runs out of watches, the
-daemon logs one line saying how much of the root is covered and the page shows
-a notice above the navigator; the rest of the root stays live. To raise the
+by default (`--max-watches N` on `mdn serve`, `0` for no budget). Watches go
+first to the directories holding notes and to those where a first note could
+appear, so a root over its budget loses the directories that hold files but no
+note, and a directory that gains notes later takes a watch back from one of
+them. When the budget is spent, or the kernel runs out of watches, the daemon
+logs one line saying how much of the root is covered and the page shows a
+notice above the navigator; the rest of the root stays live. To raise the
 kernel's own limit (this needs root):
 
 ```
