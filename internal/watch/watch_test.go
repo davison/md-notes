@@ -17,13 +17,22 @@ import (
 	"github.com/davison/md-notes/internal/tree"
 )
 
+// group builds a directory set of one priority group, in the order given.
+func group(g tree.Group, names ...string) []tree.Dir {
+	out := make([]tree.Dir, 0, len(names))
+	for _, n := range names {
+		out = append(out, tree.Dir{Path: n, Group: g})
+	}
+	return out
+}
+
 func newTestWatcher(t *testing.T, dirs []string) (*Watcher, string) {
 	t.Helper()
 	root := t.TempDir()
 	for _, d := range dirs {
 		os.MkdirAll(filepath.Join(root, d), 0o755)
 	}
-	w, err := New(root, dirs, t.Logf, WithDebounce(50*time.Millisecond, 300*time.Millisecond))
+	w, err := New(root, group(tree.GroupNotes, dirs...), t.Logf, WithDebounce(50*time.Millisecond, 300*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +260,7 @@ func TestCloseEndsEvents(t *testing.T) {
 func TestMissingDirIsSkipped(t *testing.T) {
 	root := t.TempDir()
 	var warned bool
-	w, err := New(root, []string{"nope"}, func(string, ...any) { warned = true })
+	w, err := New(root, group(tree.GroupNotes, "nope"), func(string, ...any) { warned = true })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +285,7 @@ func TestBudgetWatchesThePriorityPrefix(t *testing.T) {
 		os.MkdirAll(filepath.Join(root, d), 0o755)
 	}
 	var logged []string
-	w, err := New(root, dirs, func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) },
+	w, err := New(root, group(tree.GroupNotes, dirs...), func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) },
 		WithDebounce(50*time.Millisecond, 300*time.Millisecond), WithBudget(3))
 	if err != nil {
 		t.Fatal(err)
@@ -317,7 +326,7 @@ func TestNoBudgetCoversEverything(t *testing.T) {
 		os.MkdirAll(filepath.Join(root, d), 0o755)
 	}
 	var logged int
-	w, err := New(root, dirs, func(string, ...any) { logged++ }, WithBudget(0))
+	w, err := New(root, group(tree.GroupNotes, dirs...), func(string, ...any) { logged++ }, WithBudget(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +343,7 @@ func TestNoBudgetCoversEverything(t *testing.T) {
 func TestBudgetStillCoversTheRoot(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "sub"), 0o755)
-	w, err := New(root, []string{"sub"}, nil, WithDebounce(50*time.Millisecond, 300*time.Millisecond), WithBudget(1))
+	w, err := New(root, group(tree.GroupNotes, "sub"), nil, WithDebounce(50*time.Millisecond, 300*time.Millisecond), WithBudget(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,5 +381,120 @@ func TestFirstNoteInHiddenOnlyDirectory(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "inbox", "first.md"), []byte("# first"), 0o644)
 	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"inbox/first.md"}) {
 		t.Fatalf("first note in a hidden-only directory: %v", b.Paths)
+	}
+}
+
+// watchedRel lists the watched directories relative to the root, sorted.
+func watchedRel(t *testing.T, w *Watcher, root string) []string {
+	t.Helper()
+	var got []string
+	for _, p := range w.fsw.WatchList() {
+		r, _ := filepath.Rel(root, p)
+		got = append(got, r)
+	}
+	sort.Strings(got)
+	return got
+}
+
+func TestPlaceReclaimsTheLowestPriorityWatch(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"a", "b", "c", "d"} {
+		os.MkdirAll(filepath.Join(root, d), 0o755)
+	}
+	dirs := []tree.Dir{
+		{Path: "a", Group: tree.GroupNotes},
+		{Path: "b", Group: tree.GroupEmpty},
+		{Path: "c", Group: tree.GroupOther},
+	}
+	w, err := New(root, dirs, nil, WithBudget(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "a", "b"}) {
+		t.Fatalf("watched = %v, want the root and the two best directories", got)
+	}
+
+	// Recomputing an unchanged set changes nothing: equal priorities never
+	// displace each other, so a stable root does not churn its watches.
+	w.place(dirs)
+	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "a", "b"}) {
+		t.Fatalf("after replacing the same set, watched = %v", got)
+	}
+
+	// A directory that holds a note takes the watch off the least valuable
+	// one, not off the root and not off the other notes directory.
+	w.place([]tree.Dir{
+		{Path: "a", Group: tree.GroupNotes},
+		{Path: "d", Group: tree.GroupNotes},
+		{Path: "b", Group: tree.GroupEmpty},
+		{Path: "c", Group: tree.GroupOther},
+	})
+	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "a", "d"}) {
+		t.Fatalf("watched = %v, want d to have taken b's watch", got)
+	}
+	cov := w.Coverage()
+	if cov.Watched != 3 || cov.Unwatched != 2 || !cov.OverBudget {
+		t.Fatalf("Coverage() = %+v, want three watched and two given up", cov)
+	}
+}
+
+// The priority order must survive startup: on a root whose budget is spent,
+// a directory that gains notes later has to displace a directory holding
+// files but no note. Reported in the model review of #26, whose scenario
+// this is.
+func TestNotesDirectoryCreatedLaterTakesAWatch(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed; CI installs it")
+	}
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "a"), 0o755)
+	os.MkdirAll(filepath.Join(root, "b"), 0o755)
+	os.MkdirAll(filepath.Join(root, "c"), 0o755)
+	os.WriteFile(filepath.Join(root, "a", "a.md"), []byte("# a"), 0o644)
+	os.WriteFile(filepath.Join(root, "b", "b.txt"), []byte("b"), 0o644)
+	os.WriteFile(filepath.Join(root, "c", "c.txt"), []byte("c"), 0o644)
+
+	dirs, err := tree.Dirs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := New(root, dirs, t.Logf, WithDebounce(50*time.Millisecond, 300*time.Millisecond), WithBudget(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	time.Sleep(20 * time.Millisecond)
+	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "a", "b"}) {
+		t.Fatalf("watched = %v, want the root, the notes directory and one other", got)
+	}
+
+	// A new directory with notes in it, as the review's scenario had it.
+	os.MkdirAll(filepath.Join(root, "d"), 0o755)
+	os.WriteFile(filepath.Join(root, "d", "n.md"), []byte("# dn"), 0o644)
+	next(t, w)
+	// The relisting runs at flush; give it a moment to settle.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if reflect.DeepEqual(watchedRel(t, w, root), []string{".", "a", "d"}) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "a", "d"}) {
+		t.Fatalf("watched = %v, want d to hold a watch and b to have given one up", got)
+	}
+	// Drain whatever the creations produced, then prove d is live.
+	for {
+		select {
+		case <-w.Events():
+			continue
+		case <-time.After(100 * time.Millisecond):
+		}
+		break
+	}
+	os.WriteFile(filepath.Join(root, "d", "second.md"), []byte("# d2"), 0o644)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"d/second.md"}) {
+		t.Fatalf("second note in the new directory: %v", b.Paths)
 	}
 }
