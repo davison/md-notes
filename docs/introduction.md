@@ -227,9 +227,16 @@ the editor never closes and autosave would have written the draft anyway.
 Edits go to the original file through the [conditional save](#conditional-saves)
 endpoint, so they are subject to the same root confinement and the same Host and
 Origin guard as everything else, and the source is written back byte for byte —
-frontmatter, line endings and trailing newline included. The editor edits existing
-notes only: it cannot create, rename or delete one, and the save API has no
-create-on-missing path.
+frontmatter, hard tabs, trailing spaces, a byte-order mark and a missing final
+newline all survive an edit untouched. The editor edits existing notes only: it
+cannot create, rename or delete one, and the save API has no create-on-missing path.
+
+Line endings survive too, with one qualification. CodeMirror splits a document on
+any of the three endings and joins with LF, so the editor rejoins its text with the
+ending the note itself uses most — CRLF, a lone CR, or LF, a tie going to LF. A note
+that uses one ending throughout therefore keeps every byte through an edit; a note
+that already *mixes* endings comes back uniform in its dominant one the first time
+it is edited.
 
 The editor and its language parsers are part of the UI bundle embedded in the
 binary. About 400 KB of it — 140 KB gzipped — loads with the page; the per-language
