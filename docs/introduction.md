@@ -243,9 +243,14 @@ whether or not you open it. The page pulls two JavaScript chunks — about 710 K
 together, being CodeMirror itself and the table of languages it can highlight — plus
 11 KB of CSS, all of it before `Ctrl+E` is ever pressed. The daemon sets no
 `Content-Encoding`, so that is what crosses loopback rather than a compressed third
-of it; it is paid once per page load and then cached. The per-language parsers for
-fenced code are separate chunks, one per language, fetched when a note containing
-such a block is opened in the editor — not when the block is typed in.
+of it, and no `Cache-Control`, `ETag` or `Last-Modified` either, so nothing is
+cached: every page load fetches all of it again, and a conditional request is
+answered with the whole file rather than a 304. Moving between notes does not repay
+it — navigation inside the app is client-side and fetches only the note — but a
+reload, a new tab, or a note URL opened directly does. Over loopback it costs
+milliseconds. The per-language parsers for fenced code are separate chunks, one per
+language, fetched when a note containing such a block is opened in the editor — not
+when the block is typed in.
 
 ### Autosave and the save states
 

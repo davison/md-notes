@@ -627,9 +627,10 @@ the prose was wrong — twice in five places at once.
 
 A note for anyone following those comments into the history: they, and
 [#26](https://github.com/davison/md-notes/pull/26)'s body and reviews, name the
-commits by the SHAs they had on the task branch, which the rebase merge rewrote. Only
-`f676bd9`, `a71ced8` and `56774b2` appear in comments on
-[#20](https://github.com/davison/md-notes/issues/20); the other four appear in the PR. `f676bd9` is
+commits by the SHAs they had on the task branch, which the rebase merge rewrote.
+Only `f676bd9`, `a71ced8` and `56774b2` appear in comments on
+[#20](https://github.com/davison/md-notes/issues/20); the other four appear in the
+PR. `f676bd9` is
 [`035a379`](https://github.com/davison/md-notes/commit/035a379) on `main`, `a71ced8`
 is [`6e5fd7f`](https://github.com/davison/md-notes/commit/6e5fd7f), `816078d` is
 [`fe4338b`](https://github.com/davison/md-notes/commit/fe4338b), `0fe99ed` is
@@ -643,10 +644,10 @@ is [`6e5fd7f`](https://github.com/davison/md-notes/commit/6e5fd7f), `816078d` is
 Four of the five PRs went through review, at least one round of fixes, and a
 re-review; [#23](https://github.com/davison/md-notes/pull/23) is the exception, and
 [#26](https://github.com/davison/md-notes/pull/26) the other end of the range, with
-three reviews and three rounds of fixes and a decision gate in the middle of them. The reviewer
-seat is routed to the same identity as the author (pure solo tier), so each review is
-a comment rather than a formal approval, and the operator confirmed each merge
-explicitly — for example
+three reviews and three rounds of fixes and a decision gate in the middle of them.
+The reviewer seat is routed to the same identity as the author (pure solo tier), so
+each review is a comment rather than a formal approval, and the operator confirmed
+each merge explicitly — for example
 [#23](https://github.com/davison/md-notes/pull/23#issuecomment-5576486486).
 
 The habit milestone one established held: findings were confirmed by execution
@@ -678,8 +679,8 @@ rather than by reading, in both directions.
 - **Watch coverage ([#26](https://github.com/davison/md-notes/pull/26#issuecomment-5577212242)):**
   the longest loop of the milestone. Round one: the hidden-file exemption admitted a
   gitignored dotfile tree (202 directories against one), and the priority order held
-  at startup only, so a directory that gained notes on a full root stayed dark while
-  a lower-ranked one kept its watch. Round two
+  at startup only, so a directory that gained notes on a full root stayed dark
+  while a lower-ranked one kept its watch. Round two
   ([#26](https://github.com/davison/md-notes/pull/26#issuecomment-5577482079))
   blocked on the record rather than the code, and also found that a deletion did not
   hand its budget back and that `Coverage.Watched` counted directories the current
@@ -737,7 +738,7 @@ surprise someone who has not read this far:
 | A root over its budget leaves its lowest-priority directories unwatched, and a reclaimed watch opens the same gap for the directory that loses it | [#20](https://github.com/davison/md-notes/issues/20#issuecomment-5577328490) |
 | A coverage change reaches the browser on the next keepalive tick, so up to thirty seconds late | [the introduction](../introduction.md#when-coverage-is-limited) |
 | A note can still write `mdn-` classes and give its own text the syntax highlighter's colours — the bound of the reserved namespace, not a leak out of it | [#25](https://github.com/davison/md-notes/pull/25) |
-| The editor loads with the page whether or not it is opened: two JavaScript chunks, about 710 KB together, before `Ctrl+E` is pressed. The daemon sets no `Content-Encoding`, so they cross loopback uncompressed | [#19](https://github.com/davison/md-notes/issues/19#issuecomment-5576865448), remeasured on this build |
+| The editor loads with the page whether or not it is opened: two JavaScript chunks, about 710 KB together, before `Ctrl+E` is pressed. The daemon serves them uncompressed and uncacheable — no `Content-Encoding`, and no `Cache-Control`, `ETag` or `Last-Modified` — so every page load fetches all of it again | [#19](https://github.com/davison/md-notes/issues/19#issuecomment-5576865448), remeasured on this build; captured as [#32](https://github.com/davison/md-notes/issues/32) |
 | A note that *mixes* line endings is normalised to its dominant one on the first edit; a note using one ending throughout keeps every byte | [#28](https://github.com/davison/md-notes/issues/28#issuecomment-5589841459) |
 | A *clean* editor session on a note deleted on disk enters a conflict claiming unsaved edits, and stays there until dismissed. Nothing is at risk — the "draft" is the file's own text | [#30](https://github.com/davison/md-notes/issues/30) |
 | Note content can emit `class="line-anchor" data-line="N"` and so plant a decoy scroll target for a search hit's `?l=`. `line-anchor` is a note class by design, so M2-R5 is unaffected and the behaviour predates this milestone | [#31](https://github.com/davison/md-notes/issues/31) |
