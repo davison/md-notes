@@ -121,7 +121,15 @@ func Dirs(ctx context.Context, root string, warnf func(string, ...any)) ([]Dir, 
 	others := map[string]struct{}{}
 	var placeholders []string
 	for _, f := range files {
-		if isHidden(f) {
+		// Markdown is classified before hiddenness. A hidden markdown file
+		// can be a note the navigator lists: ripgrep's hidden-file skip is
+		// an ignore rule like any other, so an explicit ! rule un-ignores
+		// it and a plain listing names it too. One listing cannot tell that
+		// file from a hidden draft the navigator does not list, and of the
+		// two mistakes ranking a hidden draft's directory with the
+		// note-holding ones costs less than ranking a directory the
+		// navigator shows notes in among those that hold nothing.
+		if isHidden(f) && !IsMarkdown(f) {
 			placeholders = append(placeholders, f)
 			continue
 		}
