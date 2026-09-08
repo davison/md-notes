@@ -15,21 +15,29 @@ export type Coverage = {
 };
 
 /**
+ * What live update is doing for a root: its watch coverage, or
+ * "unavailable" when the daemon refused the stream outright because the
+ * root has no watcher at all.
+ */
+export type LiveUpdate = Coverage | "unavailable";
+
+/**
  * Subscribes to a root's change stream. onChange receives the relative
  * paths of a batch; after the stream reconnects it receives an empty list,
  * meaning "anything may have changed", so the caller refetches everything.
- * onCoverage, if given, receives the root's watch coverage when the stream
- * opens and whenever it changes.
+ * onLive, if given, receives the root's watch coverage when the stream
+ * opens and whenever it changes, and "unavailable" if the daemon refuses
+ * the stream.
  */
 export function useEvents(
   slug: string,
   onChange: (paths: string[]) => void,
-  onCoverage?: (coverage: Coverage) => void,
+  onLive?: (live: LiveUpdate) => void,
 ) {
   const handler = useRef(onChange);
   handler.current = onChange;
-  const status = useRef(onCoverage);
-  status.current = onCoverage;
+  const status = useRef(onLive);
+  status.current = onLive;
 
   useEffect(() => {
     if (typeof EventSource === "undefined") return;
@@ -52,6 +60,10 @@ export function useEvents(
     });
     es.onerror = () => {
       dropped = true;
+      // A stream the daemon refused — a root whose watcher never started
+      // answers 503 — closes for good rather than retrying, and that is
+      // the most limited coverage there is.
+      if (es.readyState === 2 /* CLOSED */) status.current?.("unavailable");
     };
     es.onopen = () => {
       if (dropped) {

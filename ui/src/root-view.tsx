@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { fetchTags, fetchTree, listRoots, type Root, type Tag, type TreeNode } from "./api";
-import { affects, affectsTree, type Coverage, useEvents } from "./events";
+import { affects, affectsTree, type LiveUpdate, useEvents } from "./events";
 import { Navigator } from "./navigator";
 import { NotePane, UnsavedDrafts, useUnsavedGuard } from "./note-pane";
 import { SearchPane } from "./search-pane";
@@ -21,7 +21,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
   // Bumped when the tree may have changed, so search results and tags refresh.
   const [treeVersion, setTreeVersion] = useState(0);
   const [tags, setTags] = useState<Tag[] | null>(null);
-  const [coverage, setCoverage] = useState<Coverage | null>(null);
+  const [live, setLive] = useState<LiveUpdate | null>(null);
   const current = note ?? "";
   const { query } = useLocation();
   const line = query.l && /^\d+$/.test(query.l) ? Number(query.l) : null;
@@ -84,7 +84,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
       }
       if (current && affects(paths, current)) setNoteVersion((v) => v + 1);
     },
-    setCoverage,
+    setLive,
   );
 
   if (root === undefined) return <main class="page muted">Loading…</main>;
@@ -108,7 +108,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
         <UnsavedDrafts slug={slug} current={current} />
       </header>
       <aside class="nav">
-        <CoverageNotice coverage={coverage} />
+        <LiveUpdateNotice live={live} />
         {treeError && <p class="error">{treeError}</p>}
         {!tree && !treeError && <p class="muted">Loading…</p>}
         {tree && (
@@ -139,22 +139,34 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
 }
 
 /**
- * Says so when the daemon watches only part of the root, because the watch
- * budget is spent or the kernel refused watches. Changes in an unwatched
- * directory still arrive when a watched directory reports them or the
- * daemon restarts, so this is a caveat rather than an error.
+ * Says so when live update covers only part of the root — the watch budget
+ * is spent, or the kernel refused watches — or none of it, when the daemon
+ * has no watcher for the root at all. Changes in an unwatched directory
+ * still arrive when a watched one reports them or the daemon restarts, so
+ * a limited coverage is a caveat rather than an error.
  */
-function CoverageNotice({ coverage }: { coverage: Coverage | null }) {
-  if (!coverage || !coverage.limited) return null;
-  const fix = coverage.overBudget
-    ? `raise max_watches above ${coverage.budget.toLocaleString()}`
-    : "raise fs.inotify.max_user_watches";
+function LiveUpdateNotice({ live }: { live: LiveUpdate | null }) {
+  if (!live) return null;
+  if (live === "unavailable") {
+    return (
+      <p class="notice">
+        Live update is not available for this root: the daemon could not watch it, and
+        the daemon's log says why. Changes on disk show up when you reload the page.
+      </p>
+    );
+  }
+  if (!live.limited) return null;
+  const fix = [
+    live.overBudget ? `raise max_watches above ${live.budget.toLocaleString()}` : "",
+    live.failed > 0 ? "raise fs.inotify.max_user_watches" : "",
+  ].filter(Boolean);
   return (
     <p class="notice">
-      Live update covers {coverage.watched.toLocaleString()} of{" "}
-      {(coverage.watched + coverage.unwatched).toLocaleString()} directories in this root.
-      A change in one of the other {coverage.unwatched.toLocaleString()} shows up when a
-      watched directory reports it or the daemon restarts — to cover them all, {fix}.
+      Live update covers {live.watched.toLocaleString()} of{" "}
+      {(live.watched + live.unwatched).toLocaleString()} directories in this root. A
+      change in one of the other {live.unwatched.toLocaleString()} shows up when a
+      watched directory reports it or the daemon restarts
+      {fix.length > 0 ? ` — to cover them all, ${fix.join(", and ")}` : ""}.
     </p>
   );
 }

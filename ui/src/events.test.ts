@@ -6,6 +6,7 @@ class FakeEventSource {
   static instances: FakeEventSource[] = [];
   url: string;
   closed = false;
+  readyState = 1;
   onerror: (() => void) | null = null;
   onopen: (() => void) | null = null;
   private listeners: Record<string, ((e: MessageEvent) => void)[]> = {};
@@ -73,6 +74,18 @@ describe("useEvents", () => {
     es.emit("status", JSON.stringify({ watched: 2, unwatched: 1, limited: true }));
     es.emit("status", "garbage");
     expect(seen).toEqual([{ watched: 2, unwatched: 1, limited: true }]);
+  });
+
+  it("reports a refused stream as live update being unavailable", () => {
+    const seen: unknown[] = [];
+    renderHook(() => useEvents("n", () => {}, (l) => seen.push(l)));
+    const es = FakeEventSource.instances[0];
+    es.readyState = 0;
+    es.onerror!();
+    expect(seen).toEqual([]);
+    es.readyState = 2;
+    es.onerror!();
+    expect(seen).toEqual(["unavailable"]);
   });
 
   it("signals a full refresh after a reconnect, not on first open", () => {
