@@ -73,7 +73,7 @@ which supersedes that row of the first verdict and no other.
 | M2-R3 | Serialized saves, stale revisions refused, drafts never discarded by a conflict, visible conflict states | [Satisfied](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) — one low finding filed ([#30](https://github.com/davison/md-notes/issues/30)) |
 | M2-R4 | First note in a hidden-only directory seen live; documented, justified watch policy and clear reporting | [Satisfied](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) |
 | M2-R5 | Note content cannot apply the application's layout classes; highlighting still works | [Satisfied](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) — one low finding filed ([#31](https://github.com/davison/md-notes/issues/31)) |
-| M2-R6 | Documentation explains editing, autosave, conflicts and watch limitations; roadmap and this record | [Provisional](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) on the state of `main` before this task, and satisfied on the merge of [#27](https://github.com/davison/md-notes/pull/27) under the milestone's closure gate ([#17](https://github.com/davison/md-notes/issues/17)) |
+| M2-R6 | Documentation explains editing, autosave, conflicts and watch limitations; roadmap and this record | [Not satisfied, provisionally](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484), on the state of `main` before this task — a superseding verdict is outstanding, see below |
 
 M2-R2's verdict is the one the milestone turned on. QA found that the editor rewrote
 a note's CRLF or lone-CR line endings to LF on the first keystroke — 48 bytes and
@@ -92,6 +92,17 @@ with exactly the typed character added, opening the editor and toggling back wit
 typing left all fifteen md5-identical, and the five mixed fixtures came back uniform
 in the ending the rule picks, both tie directions included
 ([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5592034687)).
+
+M2-R6 is the one row no verdict yet settles. QA graded it against `main` as it stood
+before this task, said its verdict "should be superseded once #22 merges", and the
+re-verification did not revisit it; the operator's disposition
+([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5591886325))
+covers the four findings and is silent on R6. The milestone's closure gate on
+[#17](https://github.com/davison/md-notes/issues/17) requires both that every
+requirement verdict is satisfied *and* that the milestone document is merged, so this
+document's merge is a precondition of closure rather than the verdict itself. A
+superseding QA verdict or operator disposition for M2-R6 is therefore outstanding at
+the point this document lands, and closure is what should produce it.
 
 Every finding across the two QA passes, and what was done with it
 ([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5591886325) for the
@@ -338,6 +349,14 @@ Recorded as a decision rather than raised as a gate, because the plan named
 `language-data` and the reviewer flagged the size as a trade-off to record, not as a
 defect.
 
+Those are the figures as measured on [#24](https://github.com/davison/md-notes/pull/24),
+and they are no longer what the build produces: it now emits two eager chunks rather
+than one — the entry, and a shared chunk the entry statically imports and the page
+modulepreloads — totalling about 710 KB of JavaScript, all of it loaded in view mode
+before the editor is opened. The decision's reasoning is unaffected, since the
+alternatives it rejected would not have moved that cost; what changed is the number,
+and [the introduction](../introduction.md#editing) states the current one.
+
 ### A directory whose only files are hidden is watched; one whose only files are ignored is not
 
 Recorded on [#20](https://github.com/davison/md-notes/issues/20#issuecomment-5577085446),
@@ -437,6 +456,17 @@ had `0` meaning "use the default" in configuration and "no cap" in the watcher, 
 rejected for leaving `max_watches: 0` silently meaning 8192, a value a user can
 write and will not get.
 
+### `config.Resolve` takes an `Overrides` struct
+
+Recorded as a decision in the same comment as the reporting one
+([#20](https://github.com/davison/md-notes/issues/20#issuecomment-5577089080)), and
+kept here rather than under Deviations because nothing in that task's plan named a
+positional signature to depart from.
+
+- **Trade-off:** it touches six existing call sites in the config tests, against
+  `Resolve("cfg.yml", dir, 0, 0)` at every future call site, where neither zero is
+  readable and a third override would make it worse.
+
 ### The nested-placeholder gate, and one listing rather than two
 
 The narrowing that fixed the ignored-dotfile-tree finding (below, under
@@ -483,8 +513,9 @@ One listing costs 5–7%. The watch sets are identical on `/usr/share`, `/usr/li
 Recorded on [#21](https://github.com/davison/md-notes/issues/21#issuecomment-5577001077),
 adopting [#14](https://github.com/davison/md-notes/issues/14). Chroma emits its token
 classes under `mdn-` via `chromahtml.ClassPrefix`, `internal/render/gencss` takes the
-prefix from the renderer so markup and stylesheet cannot drift, and the sanitiser
-admits `mdn-<lowercase alnum>` and nothing else on `pre`, `code` and `span`. The
+prefix from the renderer so markup and stylesheet cannot drift, and on `pre`, `code`
+and `span` the sanitiser admits `mdn-<lowercase alnum>`, goldmark's
+`language-<name>` fallback for a fence chroma could not tokenise, and nothing else. The
 note's own structural classes — goldmark's footnote classes, and this package's
 `outside-root` and `line-anchor` — keep their exact-match allowance; they were never
 the leak.
@@ -555,13 +586,6 @@ Recorded because the PR body had claimed no deviations, which round one of the r
 found untrue
 ([#29](https://github.com/davison/md-notes/pull/29#issuecomment-5589824871)).
 
-### `config.Resolve` takes an `Overrides` struct
-
-[#20](https://github.com/davison/md-notes/issues/20#issuecomment-5577089080). It
-touches six existing call sites in the config tests, against
-`Resolve("cfg.yml", dir, 0, 0)` at every future call site, where neither zero is
-readable and a third override would make it worse.
-
 ## Corrections to the record itself
 
 Three times, a review finding was not about the code but about what the record said
@@ -601,8 +625,11 @@ the prose was wrong — twice in five places at once.
   deviation from this task's own plan
   ([#22](https://github.com/davison/md-notes/issues/22#issuecomment-5589950252)).
 
-A note for anyone following those comments into the history: they name the commits
-by the SHAs they had on the task branch, which the rebase merge rewrote. `f676bd9` is
+A note for anyone following those comments into the history: they, and
+[#26](https://github.com/davison/md-notes/pull/26)'s body and reviews, name the
+commits by the SHAs they had on the task branch, which the rebase merge rewrote. Only
+`f676bd9`, `a71ced8` and `56774b2` appear in comments on
+[#20](https://github.com/davison/md-notes/issues/20); the other four appear in the PR. `f676bd9` is
 [`035a379`](https://github.com/davison/md-notes/commit/035a379) on `main`, `a71ced8`
 is [`6e5fd7f`](https://github.com/davison/md-notes/commit/6e5fd7f), `816078d` is
 [`fe4338b`](https://github.com/davison/md-notes/commit/fe4338b), `0fe99ed` is
@@ -613,9 +640,10 @@ is [`6e5fd7f`](https://github.com/davison/md-notes/commit/6e5fd7f), `816078d` is
 
 ## What the reviews and QA changed
 
-Every PR went through review, at least one round of fixes, and a re-review;
-[#26](https://github.com/davison/md-notes/pull/26) took three reviews and three
-rounds of fixes, with a decision gate in the middle of them. The reviewer
+Four of the five PRs went through review, at least one round of fixes, and a
+re-review; [#23](https://github.com/davison/md-notes/pull/23) is the exception, and
+[#26](https://github.com/davison/md-notes/pull/26) the other end of the range, with
+three reviews and three rounds of fixes and a decision gate in the middle of them. The reviewer
 seat is routed to the same identity as the author (pure solo tier), so each review is
 a comment rather than a formal approval, and the operator confirmed each merge
 explicitly — for example
@@ -709,6 +737,7 @@ surprise someone who has not read this far:
 | A root over its budget leaves its lowest-priority directories unwatched, and a reclaimed watch opens the same gap for the directory that loses it | [#20](https://github.com/davison/md-notes/issues/20#issuecomment-5577328490) |
 | A coverage change reaches the browser on the next keepalive tick, so up to thirty seconds late | [the introduction](../introduction.md#when-coverage-is-limited) |
 | A note can still write `mdn-` classes and give its own text the syntax highlighter's colours — the bound of the reserved namespace, not a leak out of it | [#25](https://github.com/davison/md-notes/pull/25) |
+| The editor loads with the page whether or not it is opened: two JavaScript chunks, about 710 KB together, before `Ctrl+E` is pressed. The daemon sets no `Content-Encoding`, so they cross loopback uncompressed | [#19](https://github.com/davison/md-notes/issues/19#issuecomment-5576865448), remeasured on this build |
 | A note that *mixes* line endings is normalised to its dominant one on the first edit; a note using one ending throughout keeps every byte | [#28](https://github.com/davison/md-notes/issues/28#issuecomment-5589841459) |
 | A *clean* editor session on a note deleted on disk enters a conflict claiming unsaved edits, and stays there until dismissed. Nothing is at risk — the "draft" is the file's own text | [#30](https://github.com/davison/md-notes/issues/30) |
 | Note content can emit `class="line-anchor" data-line="N"` and so plant a decoy scroll target for a search hit's `?l=`. `line-anchor` is a note class by design, so M2-R5 is unaffected and the behaviour predates this milestone | [#31](https://github.com/davison/md-notes/issues/31) |
