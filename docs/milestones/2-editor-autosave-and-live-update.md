@@ -1,8 +1,8 @@
 # M2 — Editor, autosave and live-update follow-ups
 
-Tracking issue: [#17](https://github.com/davison/md-notes/issues/17). Its four
-implementation tasks are merged on `main` at
-[`4c12d24`](https://github.com/davison/md-notes/commit/4c12d24).
+Tracking issue: [#17](https://github.com/davison/md-notes/issues/17). Its five
+implementation tasks — four planned, and one opened by the QA verdict — are merged on
+`main` at [`619de06`](https://github.com/davison/md-notes/commit/619de06).
 
 ## Goal and outcome
 
@@ -24,13 +24,17 @@ state in the note bar, and a conflict banner that keeps the draft whatever happe
 to the file underneath it. Alongside those, a directory whose only files are hidden
 placeholders is now watched, every root's watch set is bounded by a budget spent in
 priority order with limited coverage reported in the browser, and rendered note
-content can no longer wear the application's own CSS classes.
+content can no longer wear the application's own CSS classes. One thing shipped
+because QA stopped the milestone to get it: the editor keeps a note's line endings
+through an edit, which the first four tasks did not
+([#28](https://github.com/davison/md-notes/issues/28)).
 
 The system as it stands is described in [the introduction](../introduction.md);
 [Editing](../introduction.md#editing) is the part this milestone added.
 
-Four implementation tasks delivered it, each through its own PR and review loop, and
-this document is the fifth task ([#22](https://github.com/davison/md-notes/issues/22)):
+Four implementation tasks delivered it, each through its own PR and review loop; a
+fifth was opened by QA's verdict and merged before the milestone closed, and this
+document is the sixth ([#22](https://github.com/davison/md-notes/issues/22)):
 
 | Task | Requirements | PR |
 |------|--------------|----|
@@ -38,6 +42,7 @@ this document is the fifth task ([#22](https://github.com/davison/md-notes/issue
 | [#19](https://github.com/davison/md-notes/issues/19) CodeMirror editor, autosave and conflict handling | M2-R1, M2-R2, M2-R3 | [#24](https://github.com/davison/md-notes/pull/24) |
 | [#20](https://github.com/davison/md-notes/issues/20) Watch hidden-only directories and define large-root resource policy | M2-R4 | [#26](https://github.com/davison/md-notes/pull/26) |
 | [#21](https://github.com/davison/md-notes/issues/21) Isolate application CSS from rendered note classes | M2-R5 | [#25](https://github.com/davison/md-notes/pull/25) |
+| [#28](https://github.com/davison/md-notes/issues/28) Preserve the note's line endings in the editor | M2-R2 (QA finding 1) | [#29](https://github.com/davison/md-notes/pull/29) |
 
 [#20](https://github.com/davison/md-notes/issues/20) and
 [#21](https://github.com/davison/md-notes/issues/21) formally adopted the two low QA
@@ -47,18 +52,50 @@ findings milestone one dispositioned to the backlog —
 
 ## Requirement outcomes
 
-_Pending: the independent QA verdicts for M2-R1 to M2-R6 are being produced against
-the built application on [#17](https://github.com/davison/md-notes/issues/17). This
-table is written from that comment, and this document is not finished until it is._
+The verdicts below are drawn from the independent QA comment on the milestone issue
+([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484)), run
+against the binary `make build` produced from merged `main` at
+[`4c12d24`](https://github.com/davison/md-notes/commit/4c12d24) — three daemons on
+temporary configs, state files and roots, direct exercise of the source API, and the
+UI driven headlessly in Chromium with two browser contexts for the two-session case.
+It raised four findings; the operator's disposition of them is at
+[#17](https://github.com/davison/md-notes/issues/17#issuecomment-5591886325).
 
 | ID | Requirement | Status |
 |----|-------------|--------|
-| M2-R1 | CodeMirror editor with vim keybindings, one-key view/edit toggle that does not steal typing | _awaiting the QA verdict_ |
-| M2-R2 | Autosave to the original file, states shown, failed saves retained and retryable, writes confined and guarded | _awaiting the QA verdict_ |
-| M2-R3 | Serialized saves, stale revisions refused, drafts never discarded by a conflict, visible conflict states | _awaiting the QA verdict_ |
-| M2-R4 | First note in a hidden-only directory seen live; documented watch budget and clear reporting | _awaiting the QA verdict_ |
-| M2-R5 | Note content cannot apply the application's layout classes; highlighting still works | _awaiting the QA verdict_ |
-| M2-R6 | Documentation, roadmap and this record | _awaiting the QA verdict_ |
+| M2-R1 | CodeMirror editor with vim keybindings, one view/edit shortcut that does not steal typing | [Satisfied](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) |
+| M2-R2 | Autosave to the original file preserving frontmatter and source text, states shown, failed saves retained and retryable, writes confined and guarded | [Not satisfied at `4c12d24`](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) on finding 1; fixed by [#28](https://github.com/davison/md-notes/issues/28) through [#29](https://github.com/davison/md-notes/pull/29) at [`619de06`](https://github.com/davison/md-notes/commit/619de06) — _re-verification pending_ |
+| M2-R3 | Serialized saves, stale revisions refused, drafts never discarded by a conflict, visible conflict states | [Satisfied](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) — one low finding filed ([#30](https://github.com/davison/md-notes/issues/30)) |
+| M2-R4 | First note in a hidden-only directory seen live; documented, justified watch policy and clear reporting | [Satisfied](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) |
+| M2-R5 | Note content cannot apply the application's layout classes; highlighting still works | [Satisfied](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484) — one low finding filed ([#31](https://github.com/davison/md-notes/issues/31)) |
+| M2-R6 | Documentation explains editing, autosave, conflicts and watch limitations; roadmap and this record | [Provisional](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484), on the state of `main` before this document's PR — _re-verification pending_ |
+
+M2-R2's verdict is the one the milestone turned on. QA found that the editor rewrote
+a note's CRLF or lone-CR line endings to LF on the first keystroke — 48 bytes and
+nine CRLF became 40 bytes and none — against M2-R2's "preserving frontmatter and
+source text" and against what
+[the introduction](../introduction.md#conditional-saves) already claimed. The daemon
+was not at fault: a PUT of the exact bytes a GET returned reproduced the file with an
+identical md5, so the loss was entirely in the editor, and both sides' suites passed
+because neither contained a carriage return. The operator ruled it blocking and it
+was fixed as [#28](https://github.com/davison/md-notes/issues/28); see
+[Line endings are restored at the editor's boundary](#line-endings-are-restored-at-the-editors-boundary).
+
+QA's other three findings were dispositioned without blocking the milestone
+([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5591886325)):
+
+| Finding | Disposition |
+|---------|-------------|
+| 1 — the editor rewrites CRLF and lone-CR line endings on the first keystroke | Blocking; fixed by [#28](https://github.com/davison/md-notes/issues/28) / [#29](https://github.com/davison/md-notes/pull/29) |
+| 2 — a *clean* session enters a deleted-note conflict claiming unsaved edits | Backlog, captured as [#30](https://github.com/davison/md-notes/issues/30) |
+| 3 — statements on `main` the merged work made false | Folded into [#22](https://github.com/davison/md-notes/issues/22), this document's task |
+| 4 — note content can forge `line-anchor` and redirect a search hit's scroll target | Backlog, captured as [#31](https://github.com/davison/md-notes/issues/31), with the same observation from the [#21](https://github.com/davison/md-notes/issues/21) review |
+
+- **Trade-off, as recorded:** findings 2 and 4 put no data at risk and neither falls
+  within a requirement's wording, so fixing them now would extend the milestone for
+  cosmetic outcomes.
+- **Rejected:** a remedy task inside this milestone; both captures record a clear
+  shape for a later task to adopt.
 
 ## Decisions
 
@@ -201,6 +238,46 @@ the one behaviour a vim user is most likely to assume wrongly: `:q`, `:q!`, `:x`
 `:wq` all **save**, because the editor never closes and autosave would have written
 the draft anyway
 ([#19](https://github.com/davison/md-notes/issues/19#issuecomment-5576919511)).
+
+### Line endings are restored at the editor's boundary
+
+Recorded on [#28](https://github.com/davison/md-notes/issues/28#issuecomment-5589728523),
+the task QA's blocking finding opened. CodeMirror splits a document on any line
+ending and joins with LF, and the editor handed that text straight to the session, so
+one keystroke rewrote every ending in a CRLF or lone-CR note. The fix keeps
+CodeMirror's default splitting and converts at the boundary: when the editor hands
+its document to the session it rejoins with the ending the note had when the state
+was built.
+
+- **Trade-off:** setting `EditorState.lineSeparator` instead would make CodeMirror
+  split only on the configured separator, so a pasted or typed `\n` inside a CRLF
+  note would become literal content within a line rather than a line break — and
+  `doc.toString()` joins with LF regardless, so only `sliceDoc()` honours the facet,
+  a trap the reviewer confirmed. Converting at the boundary keeps every editing
+  operation in the editor's native LF form and makes the exact-bytes guarantee hold
+  for the shapes that occur in practice: pure LF, pure CRLF and pure CR. What is
+  given up is byte preservation of a note that *already* mixes endings, which is
+  normalised to its dominant one on the first edit.
+- **Rejected:** the `lineSeparator` facet, for the paste and mixed-content behaviour
+  above; and doing nothing in the editor while narrowing the documentation to a
+  daemon-only guarantee, which is what QA found misleading in the first place.
+
+The rule the code applies is *dominance by count*, ties to LF and then to CRLF, so a
+stray carriage return never decides a whole file. That is not what the decision first
+said — it described a precedence order, "CRLF if the note contains one, else a lone
+CR, else LF" — and round one of the review of
+[#29](https://github.com/davison/md-notes/pull/29#issuecomment-5589824871) showed the
+difference matters: a mostly-LF note containing one CRLF, or one stray CR, would have
+been converted wholesale. The by-count rule is recorded as part of the deviation
+([#28](https://github.com/davison/md-notes/issues/28#issuecomment-5589841459)), and
+the deviation is what the code and the user documentation follow.
+
+Two things the fix repaired beyond the finding, both measured by the reviewer against
+the built binary
+([#29](https://github.com/davison/md-notes/pull/29#issuecomment-5589824871)):
+`Enter` now inserts the note's own ending rather than an LF, and an undo back to the
+original text now reaches *clean* — on `main` the LF-normalised draft no longer
+equalled `base.source`, so undoing to where you started still saved a rewritten file.
 
 ### The storage mirror is one record per note, shared by every tab
 
@@ -450,6 +527,20 @@ The gate resolution then restored the nest by exactly that route, measured prope
 is closed rather than carried: `emptySubtree`'s special case is gone and a file of
 any kind disqualifies a subtree again, which is milestone one's rule.
 
+### The `lineSeparator` facet, and a minority lone CR
+
+[#28](https://github.com/davison/md-notes/issues/28#issuecomment-5589841459). Two
+departures from that task's plan. Step 1 said the editor would configure CodeMirror's
+`lineSeparator` facet; the implementation converts at the editor's boundary instead,
+for the reasons in the decision above. Step 2 said a lone `\r` inside a CRLF note
+would be preserved as content; it is not — CodeMirror treats it as a line break, so
+it becomes the note's dominant ending on the first edit, like any other minority
+ending.
+
+Recorded because the PR body had claimed no deviations, which round one of the review
+found untrue
+([#29](https://github.com/davison/md-notes/pull/29#issuecomment-5589824871)).
+
 ### `config.Resolve` takes an `Overrides` struct
 
 [#20](https://github.com/davison/md-notes/issues/20#issuecomment-5577089080). It
@@ -459,9 +550,9 @@ readable and a third override would make it worse.
 
 ## Corrections to the record itself
 
-Twice, the reviewer's blocking finding was not about the code but about what the
-record said the code did. Both are worth keeping, because in both cases the tests
-were right and the prose was wrong in five places at once.
+Three times, a review finding was not about the code but about what the record said
+the code did. They are worth keeping, because in each case the tests were right and
+the prose was wrong — twice in five places at once.
 
 - **The narrowed guard's real cost.** The decision comment, the introduction, the
   `emptySubtree` comment, the PR body and a commit message all said a placeholder
@@ -482,6 +573,19 @@ were right and the prose was wrong in five places at once.
   ([`4c12d24`](https://github.com/davison/md-notes/commit/4c12d24)), with the
   reviewer's root as the test
   ([#20](https://github.com/davison/md-notes/issues/20#issuecomment-5588186363)).
+- **User documentation that did not exist yet.**
+  [#28](https://github.com/davison/md-notes/issues/28#issuecomment-5589728523)'s
+  decision justified normalising a mixed-endings note partly on the ground that "the
+  record and the user documentation state" it. The record did; nothing on `main` did,
+  because the introduction's Editing section was still unwritten in this task. Round
+  one of the review of [#29](https://github.com/davison/md-notes/pull/29#issuecomment-5589824871)
+  caught it, and the correction
+  ([#28](https://github.com/davison/md-notes/issues/28#issuecomment-5589841653))
+  restates the rule and hands the sentence to
+  [#22](https://github.com/davison/md-notes/issues/22) — where it is now the
+  line-endings paragraph in [Editing](../introduction.md#editing), recorded as a
+  deviation from this task's own plan
+  ([#22](https://github.com/davison/md-notes/issues/22#issuecomment-5589950252)).
 
 A note for anyone following those comments into the history: they name the commits
 by the SHAs they had on the task branch, which the rebase merge rewrote. `f676bd9` is
@@ -493,7 +597,7 @@ is [`6e5fd7f`](https://github.com/davison/md-notes/commit/6e5fd7f), `816078d` is
 [`b7f259b`](https://github.com/davison/md-notes/commit/b7f259b), and `56774b2` is
 [`4c12d24`](https://github.com/davison/md-notes/commit/4c12d24).
 
-## What the reviews changed
+## What the reviews and QA changed
 
 Every PR went through review, at least one round of fixes, and a re-review;
 [#26](https://github.com/davison/md-notes/pull/26) took three reviews and three
@@ -543,10 +647,32 @@ rather than by reading, in both directions.
   ([#26](https://github.com/davison/md-notes/pull/26#issuecomment-5588139809)), found
   the un-ignored hidden *note* mis-ranked. Every reproduction became a test.
 
+- **Line endings ([#29](https://github.com/davison/md-notes/pull/29#issuecomment-5589824871)):**
+  the fix detected the ending by the first form present rather than the most
+  frequent, so a mostly-LF note containing one CRLF — or one stray CR — would have
+  been converted wholesale. The reviewer measured both cases; the rule became
+  dominance by count, ties to LF, and both cases are now tests. The same review found
+  the PR body claiming no deviations when there were two, and the decision citing
+  user documentation that did not exist. Approved on round two
+  ([#29](https://github.com/davison/md-notes/pull/29#issuecomment-5589936438)).
+
 Two of those findings changed the shape of the milestone rather than a line of code:
 the hidden-versus-ignored narrowing produced the decision gate on the nested
 placeholder, and the storage-mirror finding produced the shared-slot limitation this
 document records above.
+
+Independent QA then found what four review loops had not, and it is the sharpest
+lesson of the milestone: the editor rewrote every line ending in a CRLF or lone-CR
+note on the first keystroke
+([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484)). Both
+sides of the seam were tested and both suites were green — `internal/source` and
+`internal/server` each round-trip CRLF, and the UI suite had no carriage return in it
+at all — so the defect lived exactly where neither side looked, in the composition.
+QA also named the two suite gaps behind its findings, and both are now closed by the
+tasks that answered them: [#29](https://github.com/davison/md-notes/pull/29) added
+the first UI tests containing a carriage return, and
+[#30](https://github.com/davison/md-notes/issues/30) carries the missing
+clean-session deletion case.
 
 ## Known gaps at the boundary
 
@@ -569,6 +695,14 @@ surprise someone who has not read this far:
 | A root over its budget leaves its lowest-priority directories unwatched, and a reclaimed watch opens the same gap for the directory that loses it | [#20](https://github.com/davison/md-notes/issues/20#issuecomment-5577328490) |
 | A coverage change reaches the browser on the next keepalive tick, so up to thirty seconds late | [the introduction](../introduction.md#when-coverage-is-limited) |
 | A note can still write `mdn-` classes and give its own text the syntax highlighter's colours — the bound of the reserved namespace, not a leak out of it | [#25](https://github.com/davison/md-notes/pull/25) |
+| A note that *mixes* line endings is normalised to its dominant one on the first edit; a note using one ending throughout keeps every byte | [#28](https://github.com/davison/md-notes/issues/28#issuecomment-5589841459) |
+| A *clean* editor session on a note deleted on disk enters a conflict claiming unsaved edits, and stays there until dismissed. Nothing is at risk — the "draft" is the file's own text | [#30](https://github.com/davison/md-notes/issues/30) |
+| Note content can emit `class="line-anchor" data-line="N"` and so plant a decoy scroll target for a search hit's `?l=`. `line-anchor` is a note class by design, so M2-R5 is unaffected and the behaviour predates this milestone | [#31](https://github.com/davison/md-notes/issues/31) |
+
+The last two are QA's findings 2 and 4, carried as backlog captures by the operator's
+disposition
+([#17](https://github.com/davison/md-notes/issues/17#issuecomment-5591886325)) rather
+than fixed inside the milestone.
 
 Milestone one's own boundary notes still stand: more than about six open tabs starve
 the extra ones of live update, symlinked files inside a root are absent from the
@@ -607,6 +741,12 @@ is still waiting on the authentication path the browser extension will need.
   "Review round three" section is the author's reply to the round-two review. The
   counting drifted between author and reviewer part-way through; no review appears to
   be missing from the thread.
+- **Nothing asked for a test across the daemon/UI seam.** Milestone one recorded the
+  decision that tests ride each PR rather than forming a requirement of their own
+  ([#1](https://github.com/davison/md-notes/issues/1#issuecomment-5572364167)), and
+  this milestone inherited it without revisiting. QA's blocking finding lived exactly
+  in the composition of two well-tested halves, and no requirement, plan or review
+  had asked where a test spanning them would live. The record still does not say.
 - **The gate's cost figure was accepted on a measurement that was wrong.** The
   operator resolved the nested-placeholder gate on "2 to 20 percent", a number
   measured at the shell rather than in the daemon
