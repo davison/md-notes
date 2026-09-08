@@ -224,15 +224,22 @@ func TestDirs(t *testing.T) {
 	os.MkdirAll(filepath.Join(root, "a", "emptychild"), 0o755)
 	os.MkdirAll(filepath.Join(root, "onlyhidden", ".cache"), 0o755)
 	write(t, filepath.Join(root, "onlyhidden", ".cache", "x"), "")
+	write(t, filepath.Join(root, "placeholder", ".gitkeep"), "")
+	write(t, filepath.Join(root, "nest", ".gitkeep"), "")
+	write(t, filepath.Join(root, "nest", "deep", ".gitkeep"), "")
 	os.MkdirAll(filepath.Join(root, ".git", "objects"), 0o755)
 	write(t, filepath.Join(root, ".ignore"), "vendor/\n")
 	write(t, filepath.Join(root, "vendor", "lib", "x.md"), "")
 
 	// vendor is ignored and holds files, so it is not watched. onlyhidden
 	// has nothing but a hidden cache, which the navigator would skip, so a
-	// note created there would be listed and it is watched. Empty nests
-	// are watched throughout.
-	want := []string{"", "a", "a/b", "a/emptychild", "empty", "empty/nested", "empty/nested/deeper", "images", "onlyhidden"}
+	// note created there would be listed and it is watched; placeholder and
+	// the nest under it hold nothing but .gitkeep files and are watched for
+	// the same reason. Empty nests are watched throughout.
+	want := []string{
+		"", "a", "a/b", "a/emptychild", "empty", "empty/nested", "empty/nested/deeper",
+		"images", "nest", "nest/deep", "onlyhidden", "placeholder",
+	}
 	for i := 0; i < 50; i++ {
 		got, err := Dirs(context.Background(), root, nil)
 		if err != nil {
@@ -240,6 +247,28 @@ func TestDirs(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("run %d: Dirs() = %v, want %v", i, got, want)
+		}
+	}
+}
+
+// A directory whose only files are ignored stays unwatched: reading ignored
+// files as absent would make node_modules look empty and pull whole ignored
+// trees into the watch set. The asymmetry with hidden files is deliberate.
+func TestDirsLeavesIgnoredOnlyDirectoriesUnwatched(t *testing.T) {
+	requireRg(t)
+	root := t.TempDir()
+	write(t, filepath.Join(root, "note.md"), "")
+	write(t, filepath.Join(root, ".ignore"), "build/\n*.log\n")
+	write(t, filepath.Join(root, "build", "out.md"), "")
+	write(t, filepath.Join(root, "logs", "run.log"), "")
+
+	got, err := Dirs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range got {
+		if strings.HasPrefix(d, "build") || strings.HasPrefix(d, "logs") {
+			t.Fatalf("Dirs() = %v, want no ignored-only directory", got)
 		}
 	}
 }
