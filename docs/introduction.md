@@ -159,7 +159,10 @@ A Preact application, three panes per root:
   frontmatter, and the body. Notes render server-side as GitHub-flavoured markdown —
   tables, task lists, strikethrough, autolinks, footnotes, and fenced code
   highlighted by chroma — then pass through a sanitiser, so a note cannot run script
-  on the app's origin. Relative links to markdown become in-app navigation; relative
+  on the app's origin, nor dress itself in the application's own CSS. The only
+  classes a rendered note may carry are its own structural ones and chroma's, which
+  the highlighter emits under the reserved `mdn-` prefix that no application
+  stylesheet uses. Relative links to markdown become in-app navigation; relative
   images and other assets are served from the raw endpoint; a link whose target
   escapes the root keeps its text but loses its destination and says why.
 - **Search and tags.** A debounced search box whose results group by file, showing
