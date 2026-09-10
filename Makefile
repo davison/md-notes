@@ -45,7 +45,7 @@ vet: ui-deps extension-deps
 	pnpm --dir extension typecheck
 
 ## check: everything CI runs
-check: vet test build extension-dist
+check: vet test build extension
 
 ## install: copy the binary to $(PREFIX)/bin (default ~/.local/bin)
 install: build
