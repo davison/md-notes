@@ -155,6 +155,26 @@ func TestStoreValid(t *testing.T) {
 	}
 }
 
+// Rotation is a revocation: the replaced token must stop working on the
+// next request, whether or not anything ever presents the new one.
+func TestStoreRefusesTheReplacedTokenImmediately(t *testing.T) {
+	path := tokenPath(t)
+	old, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewStore(path, old)
+	if !s.Valid(old) {
+		t.Fatal("the current token was refused")
+	}
+	if _, err := Rotate(path); err != nil {
+		t.Fatal(err)
+	}
+	if s.Valid(old) {
+		t.Error("the replaced token is still accepted after rotation")
+	}
+}
+
 func TestStoreSeesARotatedTokenWithoutRestart(t *testing.T) {
 	path := tokenPath(t)
 	old, _, err := Load(path)
