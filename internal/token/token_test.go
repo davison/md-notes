@@ -2,11 +2,13 @@ package token
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func tokenPath(t *testing.T) string {
@@ -240,8 +242,15 @@ func TestReadRefusesASymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	if value, _, err := Load(link); !errors.Is(err, ErrMalformed) {
-		t.Errorf("Load through a symlink = %q, %v; want ErrMalformed", value, err)
+	value, _, err := Load(link)
+	if !errors.Is(err, ErrNotRegular) {
+		t.Errorf("Load through a symlink = %q, %v; want ErrNotRegular", value, err)
+	}
+	// The message has to name the cause and the remedy: a user keeping
+	// state symlinked into a dotfiles repository meets this as a daemon
+	// that will not start.
+	if msg := fmt.Sprint(err); !strings.Contains(msg, "a symlink") || !strings.Contains(msg, "--token-file") {
+		t.Errorf("error %q names neither the cause nor the remedy", msg)
 	}
 	info, err := os.Stat(target)
 	if err != nil {
@@ -268,8 +277,12 @@ func TestReadRefusesASymlink(t *testing.T) {
 
 func TestReadRefusesADirectory(t *testing.T) {
 	dir := t.TempDir()
-	if _, _, err := Load(dir); !errors.Is(err, ErrMalformed) {
-		t.Errorf("error = %v, want ErrMalformed", err)
+	_, _, err := Load(dir)
+	if !errors.Is(err, ErrNotRegular) {
+		t.Errorf("error = %v, want ErrNotRegular", err)
+	}
+	if msg := fmt.Sprint(err); !strings.Contains(msg, "a directory") {
+		t.Errorf("error %q does not say what was found", msg)
 	}
 }
 
@@ -378,5 +391,104 @@ func TestConcurrentRotationsDoNotCollide(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Errorf("%d files in the state directory, want only the token", len(entries))
+	}
+}
+
+// The repair goes to the open descriptor, not the name it was opened by.
+// The window is narrow — between the SameFile check and the chmod — but
+// it is the same window finding 5 closed, and a name is not evidence of
+// anything by the time the chmod runs. Staged here rather than raced: the
+// path is replaced with a symlink to a victim while the descriptor is
+// still open, which is exactly the state a chmod by name would act on.
+func TestTightenRepairsTheDescriptorNotThePath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "token")
+	if err := os.WriteFile(path, []byte("TOKEN\n"), 0o666); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	victim := filepath.Join(dir, "victim")
+	if err := os.WriteFile(victim, []byte("not the token\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, path); err != nil {
+		t.Fatal(err)
+	}
+
+	tighten(f, info)
+
+	if got := mode(t, victim); got != 0o644 {
+		t.Errorf("the victim was chmodded to %v; the repair followed the path", got)
+	}
+	repaired, err := f.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := repaired.Mode().Perm(); got != FileMode {
+		t.Errorf("the opened file is %v, want %v", got, FileMode)
+	}
+}
+
+func mode(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.Mode().Perm()
+}
+
+// A crash between CreateTemp and Rename leaves a 0600 file holding a
+// valid-looking secret that is not the live token. A unique staging name
+// is not reclaimed by the next write the way the fixed one was, so the
+// next write sweeps what is plainly stale.
+func TestWriteSweepsStaleStagingFiles(t *testing.T) {
+	path := tokenPath(t)
+	if _, _, err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Dir(path)
+	stale := filepath.Join(dir, "token.999.tmp")
+	if err := os.WriteFile(stale, []byte("ABANDONED\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * staleStaging)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	// A staging file that could still belong to a rotation in flight is
+	// left alone: removing it would break the rename it is waiting for.
+	fresh := filepath.Join(dir, "token.111.tmp")
+	if err := os.WriteFile(fresh, []byte("IN FLIGHT\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Something else in the state directory is not ours to remove.
+	other := filepath.Join(dir, "roots.json")
+	if err := os.WriteFile(other, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Rotate(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
+		t.Error("the abandoned staging file survived a write")
+	}
+	for _, keep := range []string{fresh, other, path} {
+		if _, err := os.Stat(keep); err != nil {
+			t.Errorf("%s was swept: %v", filepath.Base(keep), err)
+		}
 	}
 }

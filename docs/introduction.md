@@ -120,6 +120,14 @@ restart: it notices the file has been replaced and, from the next request, accep
 the new token and refuses the old one. Both commands take `--token-file FILE`, which
 must name the same file the daemon was given.
 
+The token file must be a **regular file**, not a symlink — reading it repairs its
+permissions to `0600`, and that must not reach a file you did not nominate as the
+token. A path that is a symlink is refused, and the daemon says so and stops rather
+than following it; `mdn token --rotate` on that path replaces the link with a
+regular file. If you keep state under version control, point `--token-file`
+somewhere else rather than linking this one in — it is a secret, and it is the one
+state file that should not be copied between machines.
+
 A client presents it in an `Authorization` header:
 
 ```
