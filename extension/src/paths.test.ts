@@ -102,10 +102,17 @@ describe("fileUrlToPath as a security boundary", () => {
     expect(fileUrlToPath("file:///home/you/a%5Cb.md")).toBeNull();
   });
 
-  it("refuses an empty segment: a // run, or a trailing slash", () => {
-    expect(fileUrlToPath("file:///home/you//a.md")).toBeNull();
-    expect(fileUrlToPath("file:///home/you/notes/")).toBeNull();
+  it("collapses an empty segment rather than refusing a file that exists", () => {
+    // A `//` run names the same file, and collapsing it escapes nothing —
+    // `normalisePath` would have collapsed it anyway.
+    expect(fileUrlToPath("file:///home/you//a.md")).toBe("/home/you/a.md");
+    expect(fileUrlToPath("file:///home/you///deep//a.md")).toBe("/home/you/deep/a.md");
+    expect(fileUrlToPath("file:///home/you/notes/")).toBe("/home/you/notes");
+  });
+
+  it("refuses a URL that names no segment at all", () => {
     expect(fileUrlToPath("file:///")).toBeNull();
+    expect(fileUrlToPath("file:////")).toBeNull();
   });
 
   it("still accepts a literal dot segment, which the URL parser has already resolved", () => {

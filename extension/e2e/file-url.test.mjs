@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -84,6 +85,9 @@ const blocker = missingPrerequisite(playwright);
 
 describe("file URL intercept", { skip: blocker ?? false }, () => {
   let tmp, notesDir, outsideDir, port, daemon, context, worker, extensionId, appOrigin;
+  // A second origin, deliberately outside the extension's host permissions:
+  // Chromium redacts a tab's URL there, which is the ordinary web's shape.
+  let elsewhere, elsewhereOrigin;
 
   const startDaemon = async () => {
     daemon = spawn(
@@ -117,6 +121,13 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
     port = await freePort();
     appOrigin = `http://localhost:${port}`;
     await startDaemon();
+
+    elsewhere = createHttpServer((_req, res) => {
+      res.setHeader("content-type", "text/html");
+      res.end("<h1>somewhere else</h1>");
+    });
+    await new Promise((r) => elsewhere.listen(0, "127.0.0.1", r));
+    elsewhereOrigin = `http://127.0.0.1:${elsewhere.address().port}`;
 
     // Load a copy of dist/, so the shipped manifest keeps its narrow host
     // permission while the test grants the ephemeral port it needs.
@@ -154,6 +165,7 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
 
   after(async () => {
     await context?.close();
+    elsewhere?.close();
     daemon?.kill("SIGTERM");
     if (tmp !== undefined) fs.rmSync(tmp, { recursive: true, force: true });
   });
@@ -281,31 +293,65 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
     await page.close();
   });
 
-  it("renders the failure in the popup", async () => {
-    await stopDaemon();
+  it("forgets a tab that has moved on to the ordinary web", async () => {
+    // Chromium only fills in `tab.url` for origins the extension has
+    // permission for, so a `loading` event with no URL at all *is* the signal
+    // that this tab is somewhere the extension cannot see — and the record
+    // from the note it used to show must not follow it there.
     const page = await context.newPage();
-    const fileUrl = noteFileUrl();
-    await page.goto(fileUrl);
-    const tabId = await waitFor(() => pageTabId(worker, fileUrl), "the tab to appear");
-    await waitFor(() => tabStatus(worker, tabId), "the failure to be recorded");
+    await page.goto(noteFileUrl());
+    await page.waitForURL(`${appOrigin}/r/notes/deep/a%20note.md`, { timeout: 15000 });
+    const tabId = await waitFor(
+      () => pageTabId(worker, `${appOrigin}/r/notes/deep/a%20note.md`),
+      "the redirected tab",
+    );
+    assert.equal((await tabStatus(worker, tabId)).kind, "opened");
 
-    // The popup reports the active tab; navigating this one to popup.html
-    // keeps the tab id, so it reads the record the failure just wrote.
+    await page.goto(elsewhereOrigin);
+    await waitFor(
+      async () => (await tabStatus(worker, tabId)) === null,
+      "the record to be dropped on an origin the extension cannot see",
+    );
+
+    // and the popup on that page has nothing to say
     await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    await page.waitForSelector("#status.error");
-    assert.match(await page.textContent("#status"), /daemon not reachable/);
-    assert.match(await page.textContent("#daemon"), new RegExp(appOrigin));
+    await page.waitForSelector("#status");
+    assert.equal(await page.textContent("#status"), "Nothing to report for this tab.");
+    await page.close();
+  });
+
+  it("renders both popup states", async () => {
+    const popupUrl = `chrome-extension://${extensionId}/popup.html`;
+    const page = await context.newPage();
+    await page.goto(popupUrl);
 
     // A tab the extension has never acted on has nothing to report.
-    const fresh = await context.newPage();
-    await fresh.goto(`chrome-extension://${extensionId}/popup.html`);
-    await fresh.waitForSelector("#status");
-    assert.equal(await fresh.textContent("#status"), "Nothing to report for this tab.");
-    assert.equal(await fresh.getAttribute("#status", "class"), "status");
-    await fresh.close();
+    await page.waitForSelector("#status");
+    assert.equal(await page.textContent("#status"), "Nothing to report for this tab.");
+    assert.equal(await page.getAttribute("#status", "class"), "status");
+    assert.match(await page.textContent("#daemon"), new RegExp(appOrigin));
 
+    // The popup reads the record for the tab it is open over, so seeding this
+    // tab's own record is what a real popup over a failed file page sees.
+    const tabId = await page.evaluate(
+      () => new Promise((resolve) => chrome.tabs.getCurrent((t) => resolve(t.id))),
+    );
+    await worker.evaluate(
+      (id) =>
+        chrome.storage.session.set({
+          [`status:${id}`]: {
+            kind: "unreachable",
+            message: "daemon not reachable at http://localhost:7337",
+            source: "file:///n/a.md",
+            at: Date.now(),
+          },
+        }),
+      tabId,
+    );
+    await page.reload();
+    await page.waitForSelector("#status.error");
+    assert.match(await page.textContent("#status"), /daemon not reachable/);
     await page.close();
-    await startDaemon();
   });
 });
 
