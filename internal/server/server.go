@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/davison/md-notes/internal/config"
 	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/search"
@@ -42,6 +43,9 @@ type Server struct {
 	// Nil accepts nothing, so a daemon built without one refuses every
 	// request that carries an Authorization header.
 	token Validator
+	// clipsDir is where POST /api/clip writes, relative to the notes root.
+	clipsDir string
+
 	// keepalive is how often an idle event stream sends a comment.
 	keepalive time.Duration
 	// watchBudget caps the directories watched per root. Zero is no
@@ -79,6 +83,12 @@ func WithToken(v Validator) Option {
 	return func(s *Server) { s.token = v }
 }
 
+// WithClipsDir sets where the clip endpoint writes, relative to the notes
+// root. The configuration has already confined it to the root.
+func WithClipsDir(dir string) Option {
+	return func(s *Server) { s.clipsDir = dir }
+}
+
 // New builds a Server. ui is the built single-page app; every path that is
 // not an API route and not a file in ui serves its index.html so the app
 // can route client-side.
@@ -89,6 +99,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 	s := &Server{
 		reg: reg, port: port, ui: ui, mux: http.NewServeMux(), log: logger, md: render.New(),
 		source:    source.New(reg),
+		clipsDir:  config.DefaultClipsDir,
 		keepalive: 30 * time.Second,
 		hubs:      map[string]*watch.Hub{},
 		watchers:  map[string]*watch.Watcher{},
@@ -105,6 +116,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 	}
 	s.mux.HandleFunc("GET /api/roots", s.listRoots)
 	s.mux.HandleFunc("POST /api/roots", s.addRoot)
+	s.mux.HandleFunc("POST /api/clip", s.clipHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/raw/{path...}", s.rawFile)
 	s.mux.HandleFunc("GET /api/r/{slug}/tree", s.treeHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/note/{path...}", s.noteHandler)
@@ -423,6 +435,14 @@ func bearer(r *http.Request) (string, bool) {
 // daemon with no token configured accepts none.
 func (s *Server) validToken(presented string) bool {
 	return s.token != nil && s.token.Valid(presented)
+}
+
+// authenticated reports whether the request proved it holds the token.
+// The guard lets an unauthenticated same-origin request through, so an
+// endpoint that requires the token asks for itself.
+func (s *Server) authenticated(r *http.Request) bool {
+	presented, carried := bearer(r)
+	return carried && s.validToken(presented)
 }
 
 func writeUnauthorized(w http.ResponseWriter) {

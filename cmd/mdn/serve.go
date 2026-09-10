@@ -62,6 +62,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	srv := server.New(reg, cfg.Port, ui.FS(), logger,
 		server.WithWatchBudget(*cfg.MaxWatches),
 		server.WithToken(token.NewStore(*tokenFile, secret)),
+		server.WithClipsDir(cfg.ClipsDir),
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
