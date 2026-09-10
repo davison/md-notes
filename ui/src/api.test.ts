@@ -22,7 +22,13 @@ describe("listRoots", () => {
   });
 
   it("surfaces the daemon's error message", async () => {
-    mockFetch(403, { error: "cross-origin request refused" });
+    // What the guard actually sends: a refusal now carries a code beside
+    // the message, and the message names the remedy.
+    mockFetch(403, {
+      code: "cross_origin",
+      error:
+        "cross-origin request refused; present the bearer token to write from another origin",
+    });
     await expect(listRoots()).rejects.toThrow("cross-origin request refused");
   });
 

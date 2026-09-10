@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // FileMode is the permission the token file is created with and repaired
@@ -27,11 +28,17 @@ const FileMode fs.FileMode = 0o600
 // is reported rather than held in memory.
 const maxBytes = 4096
 
-// ErrMalformed is returned when the token file holds something that is not
-// a single line of token text, or is not a regular file. A symlink is
-// refused rather than followed: reading the token repairs the file's
-// permissions, and that must not reach a file the user did not nominate.
+// ErrMalformed is returned when the token file holds something that is
+// not a single line of token text.
 var ErrMalformed = errors.New("token file does not hold a single token")
+
+// ErrNotRegular is returned when the token file is a symlink, a
+// directory, or anything else that is not a regular file. A symlink is
+// refused rather than followed because reading the token repairs the
+// file's permissions, and that must not reach a file the user did not
+// nominate as the token. `mdn token --rotate` replaces such a path with
+// a regular file.
+var ErrNotRegular = errors.New("the token file must be a regular file; --token-file names another one")
 
 // Load returns the token stored at path, generating and storing one when
 // the file is absent or empty. The second result says whether this call
@@ -95,7 +102,7 @@ func read(path string) (string, os.FileInfo, error) {
 		return "", nil, err
 	}
 	if !link.Mode().IsRegular() {
-		return "", nil, fmt.Errorf("%s: %w", path, ErrMalformed)
+		return "", nil, fmt.Errorf("%s is %s: %w", path, describe(link.Mode()), ErrNotRegular)
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -109,7 +116,7 @@ func read(path string) (string, os.FileInfo, error) {
 	// And the file opened must be the one that was not a link, in case the
 	// two raced.
 	if !info.Mode().IsRegular() || !os.SameFile(link, info) {
-		return "", nil, fmt.Errorf("%s: %w", path, ErrMalformed)
+		return "", nil, fmt.Errorf("%s changed while it was being read: %w", path, ErrNotRegular)
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
 	if err != nil {
@@ -122,8 +129,24 @@ func read(path string) (string, os.FileInfo, error) {
 	if strings.ContainsAny(value, "\n\r") {
 		return "", nil, fmt.Errorf("%s: %w", path, ErrMalformed)
 	}
-	tighten(path, info)
+	// The descriptor, not the path: between the SameFile check above and a
+	// chmod by name the path could become a symlink, and the repair would
+	// follow it to a file the user never nominated.
+	tighten(f, info)
 	return value, info, nil
+}
+
+// describe names what was found where the token file should be, so the
+// message says what to fix rather than only that something is wrong.
+func describe(mode fs.FileMode) string {
+	switch {
+	case mode&fs.ModeSymlink != 0:
+		return "a symlink"
+	case mode.IsDir():
+		return "a directory"
+	default:
+		return "not a regular file"
+	}
 }
 
 // write stores value at path with mode 0600, through a temporary file in
@@ -169,14 +192,47 @@ func write(path, value string) (os.FileInfo, error) {
 	if err := os.Rename(tmp, path); err != nil {
 		return nil, err
 	}
+	sweep(path, tmp)
 	return info, nil
 }
 
+// staleStaging is how long a staging file must have been lying about
+// before a write clears it. A write takes microseconds, so anything this
+// old was left by a crash between CreateTemp and Rename — and a unique
+// name, unlike the fixed one it replaced, is not reclaimed by the next
+// write. Well clear of any rotation in flight, since deleting a live
+// staging file would break the rename it is waiting for.
+const staleStaging = time.Hour
+
+// sweep removes staging files a crash left behind, so that the state
+// directory does not accumulate 0600 files holding valid-looking secrets
+// that are not the live token. Best effort: this is tidying, and a
+// failure to tidy is not a failure to write.
+func sweep(path, keep string) {
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(path), filepath.Base(path)+".*.tmp"))
+	if err != nil {
+		return
+	}
+	for _, m := range matches {
+		if m == keep {
+			continue
+		}
+		info, err := os.Lstat(m)
+		if err != nil || !info.Mode().IsRegular() || time.Since(info.ModTime()) < staleStaging {
+			continue
+		}
+		os.Remove(m)
+	}
+}
+
 // tighten repairs a token file left readable by anyone else, rather than
-// trusting it to stay private. A filesystem that refuses is not fatal.
-func tighten(path string, info os.FileInfo) {
+// trusting it to stay private. It takes the open file rather than its
+// name so that the repair lands on the descriptor already proved to be
+// the token — a name can be replaced between the proof and the chmod. A
+// filesystem that refuses is not fatal.
+func tighten(f *os.File, info os.FileInfo) {
 	if info.Mode().Perm()&^FileMode != 0 {
-		os.Chmod(path, FileMode)
+		f.Chmod(FileMode)
 	}
 }
 
@@ -219,7 +275,13 @@ func (s *Store) refresh() {
 		return
 	}
 	if s.info != nil && sameFile(s.info, info) {
-		tighten(s.path, info)
+		if info.Mode().Perm()&^FileMode != 0 {
+			// A chmod changes no field sameFile compares, so the repair
+			// cannot wait for the next re-read. Going through read gets
+			// the lstat, the SameFile check and the descriptor-based
+			// repair rather than a chmod by name.
+			read(s.path)
+		}
 		return
 	}
 	value, from, err := read(s.path)

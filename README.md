@@ -77,7 +77,8 @@ as a user service, see [contrib/mdn.service](contrib/mdn.service).
 
 `mdn token` prints the daemon's bearer token — what a browser extension
 presents to write a clipping — and `mdn token --rotate` replaces it, which
-a running daemon picks up without a restart.
+a running daemon picks up without a restart. The token file must be a
+regular file, not a symlink; `--token-file FILE` moves it.
 
 To browse the markdown in any other folder, such as a code project:
 
