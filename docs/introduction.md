@@ -132,15 +132,39 @@ served whatever its `Origin`, which is how the browser extension writes from its
 reachable without it still is, over loopback, exactly as before, and the web UI
 sends no `Authorization` header at all. `POST /api/clip` is the one endpoint that
 *requires* the token, because nothing on the daemon's own origin needs to call it.
+Note that the token opens the *whole* API to the origin presenting it, not the clip
+endpoint alone: a holder can register a root and read files under it.
 
 The `Host` check is not waived by the token: DNS rebinding is a separate attack, and
 a rebound page holds no token anyway.
 
-A request whose `Authorization` header is not a valid `Bearer <token>` — a wrong
-token, a rotated-away one, or another scheme — is refused with `401` and
-`{"code": "unauthorized", "error": ...}`, whatever its origin, rather than falling
-back to the Origin rule. A stale token in a client's settings is therefore reported
-as one.
+**The caller must be one CORS does not govern.** An `Authorization` header makes a
+cross-origin `fetch` non-simple, so a browser *page* sends `OPTIONS` first — and the
+daemon refuses the preflight like any other cross-origin request and sends no
+`Access-Control-Allow-Origin` on any response. That is deliberate: the intended
+client is a Manifest V3 extension **service worker** holding `host_permissions` for
+the daemon's origin, which is exempt from CORS and never preflights. A fetch from a
+content script, a popup document or an ordinary web page therefore fails at the
+preflight with the browser's opaque CORS error, whatever token it holds, and that is
+the boundary — a page that has merely found the port must not be able to write, even
+if it has somehow read the token. An extension does its clipping from the service
+worker.
+
+### Refusals
+
+| Status | Code | What happened |
+|--------|------|---------------|
+| 403 | `bad_host` | The `Host` header is not `localhost` or `127.0.0.1` with the daemon's port |
+| 403 | `cross_origin` | A foreign `Origin` and no token: present the token to write from another origin |
+| 401 | `unauthorized` | An `Authorization` header that is not a valid `Bearer <token>` — a wrong token, a rotated-away one, or another scheme |
+
+The guard answers before any handler runs, and its refusals carry the same
+`{code, error}` envelope and `Cache-Control: no-store` as the handlers below, so one
+client handles both. The two a client tells apart in practice are `cross_origin` —
+no token configured yet — and `unauthorized` — a token that is not the current one;
+a stale token is never quietly treated as no token. The `401` carries a
+`WWW-Authenticate: Bearer` challenge for the sake of generic HTTP clients; there is
+no interactive login behind it.
 
 ### Conditional saves
 
@@ -257,7 +281,10 @@ Body text.
 ```
 
 `clipped` is RFC 3339 in the daemon's local time zone, and the note is created
-`0644` less the daemon's umask, like any other file it would write. Nothing is
+`0644` less the daemon's umask, like any other file it would write. The title is
+carried as it was sent, with two exceptions: runs of whitespace, newlines included,
+collapse to single spaces, and a title longer than 300 characters is cut to 300 — a
+`<title>` that is a paragraph would otherwise make the header unreadable. Nothing is
 added to the markdown — not even a trailing newline — and nothing is normalised. The new note
 reaches every open page through the [events stream](#live-updates) like any other
 new file; the very first clip of an installation may report the new `clips`
@@ -269,7 +296,8 @@ Clip errors use the same `{code, error}` envelope as
 | Status | Code | Meaning |
 |--------|------|---------|
 | 400 | `invalid_body` | Malformed JSON, a missing or empty field, a relative `url`, or a `kind` that is neither `page` nor `selection` |
-| 401 | `unauthorized` | No token, or not the current one |
+| 401 | `unauthorized` | An `Authorization` header that is not the current token |
+| 403 | `cross_origin` | A foreign `Origin` and no `Authorization` header at all — the [guard](#refusals) answers, and the handler never runs |
 | 403 | `outside_root` | `clips_dir` resolves outside the notes root |
 | 403 | `permission_denied` | The clips directory is not writable |
 | 409 | `conflict` | The dated name and every suffix are taken |
@@ -594,7 +622,10 @@ echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-mdn.conf
   defeats DNS rebinding.
 - An `Origin` header, if present, must be the daemon's own origin — unless the
   request carries the [bearer token](#authentication), which is accepted from any
-  origin. A request with no `Origin`, such as the CLI, passes.
+  origin. A request with no `Origin`, such as the CLI, passes. No `OPTIONS`
+  preflight is answered and no CORS header is ever sent, so a browser *page* cannot
+  use the token even if it has one; the exemption is for an extension service
+  worker, which CORS does not govern.
 - Every path a request names is resolved through one function: it is cleaned and
   rejected if it leaves the root lexically, then symlinks are evaluated and it is
   rejected again if the real path leaves the root. A symlink pointing back inside the
