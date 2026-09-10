@@ -16,6 +16,7 @@ commands:
   serve     run the daemon against the configured notes root
   open DIR  register DIR with the running daemon and open it in the browser
             (--no-browser prints the URL instead)
+  token     print the daemon's bearer token (--rotate replaces it)
   version   print the version
 `
 
@@ -33,6 +34,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runServe(args[1:], stdout, stderr)
 	case "open":
 		return runOpen(args[1:], stdout, stderr)
+	case "token":
+		return runToken(args[1:], stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, version)
 		return 0
