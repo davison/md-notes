@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   encodePath,
   fileUrlToPath,
+  normalisePath,
   isMarkdownPath,
   isUnder,
   localMarkdownFile,
@@ -61,6 +62,81 @@ describe("fileUrlToPath", () => {
 
   it("refuses a path carrying a NUL", () => {
     expect(fileUrlToPath("file:///n/a%00b.md")).toBeNull();
+  });
+});
+
+describe("fileUrlToPath as a security boundary", () => {
+  // The path this returns is matched against the daemon's roots, and its
+  // directory is what `POST /api/roots` is asked to register. A percent-
+  // encoded separator that decoded into `../` would let a crafted file URL
+  // escape the matched root, or register somewhere like /etc.
+  it("refuses an encoded separator that would decode into a traversal", () => {
+    expect(fileUrlToPath("file:///tmp/probe/notes%2F..%2Fsecretdir/x.md")).toBeNull();
+    expect(
+      fileUrlToPath(
+        "file:///tmp/probe/nowhere%2F..%2F..%2F..%2F..%2F..%2F..%2Fetc/hosts.md",
+      ),
+    ).toBeNull();
+    expect(fileUrlToPath("file:///home/you/notes%2F..%2F..%2F..%2Fetc/hosts.md")).toBeNull();
+  });
+
+  it("refuses an encoded separator even where it decodes to something harmless", () => {
+    expect(fileUrlToPath("file:///home/you/a%2Fb.md")).toBeNull();
+    expect(fileUrlToPath("file:///home/you/a%2fb.md")).toBeNull();
+  });
+
+  it("refuses an encoded dot segment that carries a separator with it", () => {
+    expect(fileUrlToPath("file:///home/you/notes/%2E%2E%2Fetc/a.md")).toBeNull();
+    expect(fileUrlToPath("file:///home/you/%2e%2e%2f%2e%2e%2fetc/a.md")).toBeNull();
+  });
+
+  it("accepts an encoded dot segment the URL parser has already resolved", () => {
+    // `%2e%2e` on its own is a dot segment to the URL parser, which resolves
+    // it before the extension sees the pathname — the resulting path is the
+    // real one, and the browser is showing that same file.
+    expect(fileUrlToPath("file:///home/you/notes/%2e%2e/a.md")).toBe("/home/you/a.md");
+    expect(fileUrlToPath("file:///home/you/notes/%2E/a.md")).toBe("/home/you/notes/a.md");
+  });
+
+  it("refuses an encoded backslash, which is a separator on the platforms this is not", () => {
+    expect(fileUrlToPath("file:///home/you/a%5Cb.md")).toBeNull();
+  });
+
+  it("refuses an empty segment: a // run, or a trailing slash", () => {
+    expect(fileUrlToPath("file:///home/you//a.md")).toBeNull();
+    expect(fileUrlToPath("file:///home/you/notes/")).toBeNull();
+    expect(fileUrlToPath("file:///")).toBeNull();
+  });
+
+  it("still accepts a literal dot segment, which the URL parser has already resolved", () => {
+    // The browser is showing the resolved file, so this is its true path.
+    expect(fileUrlToPath("file:///home/you/notes/../a.md")).toBe("/home/you/a.md");
+    expect(fileUrlToPath("file:///home/you/./a.md")).toBe("/home/you/a.md");
+  });
+
+  it("returns a path that is already in normal form", () => {
+    for (const url of [
+      "file:///home/you/notes/a.md",
+      "file:///home/you/my%20notes/caf%C3%A9.md",
+      "file:///home/you/notes/../a.md",
+    ]) {
+      const path = fileUrlToPath(url);
+      expect(path).not.toBeNull();
+      expect(path).toBe(normalisePath(path!));
+    }
+  });
+
+  it("keeps a crafted URL out of the open-file path entirely", () => {
+    expect(localMarkdownFile("file:///tmp/probe/notes%2F..%2Fsecretdir/x.md")).toBeNull();
+  });
+});
+
+describe("normalisePath", () => {
+  it("resolves dot segments and empty ones", () => {
+    expect(normalisePath("/a/b/../c.md")).toBe("/a/c.md");
+    expect(normalisePath("/a//b/./c.md")).toBe("/a/b/c.md");
+    expect(normalisePath("/a/../../../etc")).toBe("/etc");
+    expect(normalisePath("/")).toBe("/");
   });
 });
 
