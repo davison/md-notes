@@ -12,6 +12,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/davison/md-notes/internal/roots"
 	"gopkg.in/yaml.v3"
@@ -22,8 +23,10 @@ import (
 // short enough to survive being copied about.
 const maxSlug = 64
 
-// maxTitle bounds the title carried into the frontmatter, which is not a
-// filename and can afford to be longer.
+// maxTitle bounds the title carried into the frontmatter, in runes, since
+// what makes a header unreadable is its length on screen and not its
+// length in bytes. It is not a filename and can afford to be longer than
+// the slug.
 const maxTitle = 300
 
 // maxCollisions bounds the numeric suffix search, so that a directory that
@@ -191,12 +194,19 @@ func note(c Clip, now time.Time) ([]byte, error) {
 }
 
 // Title is the title as the frontmatter carries it: one line, trimmed, and
-// bounded, so that a page whose <title> is a paragraph cannot make the
-// header unreadable. An empty title is left empty rather than invented.
+// bounded to maxTitle runes, so that a page whose <title> is a paragraph
+// cannot make the header unreadable. An empty title is left empty rather
+// than invented.
+//
+// The bound counts runes rather than bytes because cutting a UTF-8
+// sequence in half leaves a string YAML cannot emit as text at all: the
+// encoder falls back to a base64 !!binary blob, and a long Japanese title
+// — which already yields the `untitled` slug — would lose the one place
+// the title was still readable.
 func Title(title string) string {
 	title = strings.Join(strings.Fields(title), " ")
-	if len(title) > maxTitle {
-		title = strings.TrimSpace(title[:maxTitle])
+	if utf8.RuneCountInString(title) > maxTitle {
+		title = strings.TrimSpace(string([]rune(title)[:maxTitle]))
 	}
 	return title
 }
@@ -217,6 +227,8 @@ func Slug(title string) string {
 			b.WriteByte('-')
 		}
 	}
+	// Every byte written above is ASCII, so the bound below counts
+	// characters as well as bytes and cannot cut a rune in half.
 	slug := trimRuns(b.String())
 	if len(slug) > maxSlug {
 		slug = slug[:maxSlug]

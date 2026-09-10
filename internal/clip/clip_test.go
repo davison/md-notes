@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/davison/md-notes/internal/roots"
 	"gopkg.in/yaml.v3"
@@ -283,11 +284,60 @@ func TestTitleIsOneBoundedLine(t *testing.T) {
 	if got := Title("  a\n\tlong\r\n  title  "); got != "a long title" {
 		t.Errorf("Title = %q", got)
 	}
-	if got := Title(strings.Repeat("x", 400)); len(got) != maxTitle {
-		t.Errorf("length %d, want %d", len(got), maxTitle)
+	if got := Title(strings.Repeat("x", 400)); utf8.RuneCountInString(got) != maxTitle {
+		t.Errorf("length %d runes, want %d", utf8.RuneCountInString(got), maxTitle)
 	}
 	if got := Title(""); got != "" {
 		t.Errorf("Title(\"\") = %q, want it left empty", got)
+	}
+}
+
+// The bound counts runes: cutting a UTF-8 sequence in half leaves a string
+// yaml.v3 can only emit as a base64 !!binary blob, which would make the
+// title of a long non-Latin page unreadable in the one place it survives.
+func TestTitleBoundsMultibyteOnRuneBoundaries(t *testing.T) {
+	for _, title := range []string{
+		"x" + strings.Repeat("あ", 400),
+		strings.Repeat("あ", 301),
+		strings.Repeat("é", 400),
+		"xx" + strings.Repeat("日本語のページ", 100),
+	} {
+		got := Title(title)
+		if !utf8.ValidString(got) {
+			t.Errorf("Title(%.12q…) is not valid UTF-8: %q", title, got)
+		}
+		if n := utf8.RuneCountInString(got); n != maxTitle {
+			t.Errorf("Title(%.12q…) is %d runes, want %d", title, n, maxTitle)
+		}
+		if !strings.HasPrefix(title, got) {
+			t.Errorf("Title(%.12q…) = %.12q…, want a prefix of the title", title, got)
+		}
+	}
+}
+
+// The whole note, not only the string: a long multibyte title must still
+// come back out of the frontmatter as text.
+func TestWriteKeepsALongMultibyteTitleReadable(t *testing.T) {
+	root := notesRoot(t)
+	title := "x" + strings.Repeat("あ", 400)
+	rel, err := Write(root, "clips", page(title), when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root.Path, rel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "!!binary") {
+		t.Fatalf("the title was written as a binary blob:\n%s", data)
+	}
+	front, _, _ := strings.Cut(strings.TrimPrefix(string(data), "---\n"), "---\n")
+	var got struct{ Title string }
+	if err := yaml.Unmarshal([]byte(front), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != Title(title) || !strings.HasPrefix(title, got.Title) {
+		t.Errorf("title = %.12q… (%d runes), want the bounded prefix", got.Title, utf8.RuneCountInString(got.Title))
 	}
 }
 
