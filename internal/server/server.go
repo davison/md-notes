@@ -38,6 +38,10 @@ type Server struct {
 	md     *render.Renderer
 	source *source.Store
 
+	// token validates the bearer token a non-loopback client presents.
+	// Nil accepts nothing, so a daemon built without one refuses every
+	// request that carries an Authorization header.
+	token Validator
 	// keepalive is how often an idle event stream sends a comment.
 	keepalive time.Duration
 	// watchBudget caps the directories watched per root. Zero is no
@@ -61,6 +65,18 @@ type Option func(*Server)
 // Zero, the default, is no budget at all.
 func WithWatchBudget(n int) Option {
 	return func(s *Server) { s.watchBudget = n }
+}
+
+// Validator answers whether a presented bearer token is the daemon's own.
+// It is *token.Store in the daemon and a stub in tests.
+type Validator interface {
+	Valid(presented string) bool
+}
+
+// WithToken gives the daemon the bearer token clients present in an
+// Authorization header.
+func WithToken(v Validator) Option {
+	return func(s *Server) { s.token = v }
 }
 
 // New builds a Server. ui is the built single-page app; every path that is
@@ -351,6 +367,13 @@ func (s *Server) eventsHandler(w http.ResponseWriter, r *http.Request) {
 // an attacker's hostname carries that hostname. The Origin check refuses
 // cross-origin requests from other pages; requests with no Origin header,
 // such as the CLI, pass because they are not browser cross-site requests.
+//
+// A request carrying the daemon's bearer token is exempt from the Origin
+// check, because the token is the claim the same-origin rule stands in for
+// and no other page can read it: that is how the extension writes from its
+// chrome-extension origin. A wrong token is refused outright rather than
+// falling back to the origin rule, so a stale one is reported as such. The
+// Host check applies either way.
 func (s *Server) guard(next http.Handler) http.Handler {
 	allowedHosts := map[string]bool{
 		"localhost:" + strconv.Itoa(s.port): true,
@@ -361,15 +384,49 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			writeError(w, http.StatusForbidden, "unexpected Host header")
 			return
 		}
-		if origin := r.Header.Get("Origin"); origin != "" {
-			o := strings.ToLower(strings.TrimSuffix(origin, "/"))
-			if !allowedHosts[strings.TrimPrefix(o, "http://")] || !strings.HasPrefix(o, "http://") {
-				writeError(w, http.StatusForbidden, "cross-origin request refused")
-				return
+		presented, carried := bearer(r)
+		switch {
+		case carried && s.validToken(presented):
+		case carried:
+			writeUnauthorized(w)
+			return
+		default:
+			if origin := r.Header.Get("Origin"); origin != "" {
+				o := strings.ToLower(strings.TrimSuffix(origin, "/"))
+				if !allowedHosts[strings.TrimPrefix(o, "http://")] || !strings.HasPrefix(o, "http://") {
+					writeError(w, http.StatusForbidden, "cross-origin request refused")
+					return
+				}
 			}
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// bearer returns the token presented in the Authorization header. The
+// second result says whether the request carried the header at all; a
+// header in another scheme carries no token and is refused, since the
+// daemon offers no other way to authenticate.
+func bearer(r *http.Request) (string, bool) {
+	h := r.Header.Get("Authorization")
+	if h == "" {
+		return "", false
+	}
+	scheme, value, found := strings.Cut(h, " ")
+	if !found || !strings.EqualFold(scheme, "bearer") {
+		return "", true
+	}
+	return strings.TrimSpace(value), true
+}
+
+// validToken reports whether presented is the daemon's bearer token. A
+// daemon with no token configured accepts none.
+func (s *Server) validToken(presented string) bool {
+	return s.token != nil && s.token.Valid(presented)
+}
+
+func writeUnauthorized(w http.ResponseWriter) {
+	writeSourceError(w, http.StatusUnauthorized, "unauthorized", "a valid bearer token is required")
 }
 
 func (s *Server) listRoots(w http.ResponseWriter, r *http.Request) {
