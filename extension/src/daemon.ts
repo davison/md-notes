@@ -27,12 +27,24 @@ export class DaemonError extends Error {
 /** The `fetch` the calls use; injected so the tests need no network. */
 export type Fetch = typeof fetch;
 
-function headers(settings: Settings, json: boolean): Record<string, string> {
+export interface CallOptions {
+  /**
+   * Present the bearer token. A GET without it carries no `Origin` header
+   * from the extension's background context and passes the daemon's guard
+   * unauthenticated, which is what the intercept relies on; adding the header
+   * makes the request one the daemon must accept on the token's merit, which
+   * is what the options page's connection test wants.
+   */
+  authenticated?: boolean;
+  fetch?: Fetch;
+}
+
+function headers(settings: Settings, json: boolean, authenticated: boolean): Record<string, string> {
   const h: Record<string, string> = {};
   if (json) h["Content-Type"] = "application/json";
   // The daemon's Origin guard refuses a chrome-extension origin unless the
   // request carries the installation's bearer token.
-  if (settings.token !== "") h["Authorization"] = `Bearer ${settings.token}`;
+  if (authenticated && settings.token !== "") h["Authorization"] = `Bearer ${settings.token}`;
   return h;
 }
 
@@ -103,10 +115,14 @@ function asRoot(value: unknown): Root {
 
 /**
  * The roots the daemon serves. A GET from the extension's background context
- * carries no Origin header, so this call needs no token.
+ * carries no Origin header, so by default this call needs no token; pass
+ * `authenticated` to make the daemon judge the token instead.
  */
-export async function listRoots(settings: Settings, doFetch: Fetch = fetch): Promise<Root[]> {
-  const body = await call(settings, "/api/roots", { method: "GET" }, doFetch);
+export async function listRoots(settings: Settings, options: CallOptions = {}): Promise<Root[]> {
+  const authenticated = options.authenticated === true;
+  const init: RequestInit = { method: "GET" };
+  if (authenticated && settings.token !== "") init.headers = headers(settings, false, true);
+  const body = await call(settings, "/api/roots", init, options.fetch ?? fetch);
   const roots = (body as { roots?: unknown }).roots;
   if (!Array.isArray(roots)) {
     throw new DaemonError("bad_response", "the daemon returned no roots list");
@@ -122,13 +138,17 @@ export async function listRoots(settings: Settings, doFetch: Fetch = fetch): Pro
 export async function registerRoot(
   settings: Settings,
   dir: string,
-  doFetch: Fetch = fetch,
+  options: CallOptions = {},
 ): Promise<Root> {
   const body = await call(
     settings,
     "/api/roots",
-    { method: "POST", headers: headers(settings, true), body: JSON.stringify({ path: dir }) },
-    doFetch,
+    {
+      method: "POST",
+      headers: headers(settings, true, true),
+      body: JSON.stringify({ path: dir }),
+    },
+    options.fetch ?? fetch,
   );
   return asRoot(body);
 }

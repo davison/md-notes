@@ -33,7 +33,7 @@ describe("listRoots", () => {
     const r = record();
     const roots = await listRoots(
       withToken,
-      r.fetcher(respond(200, { roots: [{ slug: "notes", path: "/n", kind: "notes" }] })),
+      { fetch: r.fetcher(respond(200, { roots: [{ slug: "notes", path: "/n", kind: "notes" }] })) },
     );
     expect(roots).toEqual([{ slug: "notes", path: "/n", kind: "notes" }]);
     expect(r.calls[0]?.url).toBe("http://localhost:7337/api/roots");
@@ -42,20 +42,43 @@ describe("listRoots", () => {
 
   it("reports an unreachable daemon rather than throwing the network error", async () => {
     const r = record();
-    const err = await listRoots(
-      settings,
-      r.fetcher(() => {
+    const err = await listRoots(settings, {
+      fetch: r.fetcher(() => {
         throw new TypeError("Failed to fetch");
       }),
-    ).catch((e: unknown) => e);
+    }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(DaemonError);
     expect((err as DaemonError).kind).toBe("unreachable");
     expect((err as DaemonError).message).toContain("http://localhost:7337");
   });
 
+  it("sends the token when the caller asks the daemon to judge it", async () => {
+    const r = record();
+    await listRoots(withToken, {
+      authenticated: true,
+      fetch: r.fetcher(respond(200, { roots: [] })),
+    });
+    expect(r.calls[0]?.init?.headers).toMatchObject({ Authorization: "Bearer s3cret" });
+  });
+
+  it("sends no header when asked to authenticate with no token stored", async () => {
+    const r = record();
+    await listRoots(settings, { authenticated: true, fetch: r.fetcher(respond(200, { roots: [] })) });
+    expect(r.calls[0]?.init?.headers).toBeUndefined();
+  });
+
+  it("reports a rejected token from an authenticated read", async () => {
+    const r = record();
+    const err = await listRoots(withToken, {
+      authenticated: true,
+      fetch: r.fetcher(respond(401, { error: "invalid token" })),
+    }).catch((e: unknown) => e);
+    expect((err as DaemonError).kind).toBe("token_rejected");
+  });
+
   it("refuses a reply that is not a roots list", async () => {
     const r = record();
-    const err = await listRoots(settings, r.fetcher(respond(200, { nope: 1 }))).catch(
+    const err = await listRoots(settings, { fetch: r.fetcher(respond(200, { nope: 1 })) }).catch(
       (e: unknown) => e,
     );
     expect((err as DaemonError).kind).toBe("bad_response");
@@ -68,7 +91,7 @@ describe("registerRoot", () => {
     const root = await registerRoot(
       withToken,
       "/home/you/scratch",
-      r.fetcher(respond(200, { slug: "scratch", path: "/home/you/scratch", kind: "recent" })),
+      { fetch: r.fetcher(respond(200, { slug: "scratch", path: "/home/you/scratch", kind: "recent" })) },
     );
     expect(root.slug).toBe("scratch");
     const call = r.calls[0];
@@ -85,7 +108,7 @@ describe("registerRoot", () => {
     await registerRoot(
       settings,
       "/n",
-      r.fetcher(respond(200, { slug: "n", path: "/n", kind: "recent" })),
+      { fetch: r.fetcher(respond(200, { slug: "n", path: "/n", kind: "recent" })) },
     );
     expect(r.calls[0]?.init?.headers).not.toHaveProperty("Authorization");
   });
@@ -95,7 +118,7 @@ describe("registerRoot", () => {
     const err = await registerRoot(
       settings,
       "/n",
-      r.fetcher(respond(403, { error: "cross-origin request refused" })),
+      { fetch: r.fetcher(respond(403, { error: "cross-origin request refused" })) },
     ).catch((e: unknown) => e);
     expect((err as DaemonError).kind).toBe("origin_refused");
     expect((err as DaemonError).message).toContain("cross-origin request refused");
@@ -107,7 +130,7 @@ describe("registerRoot", () => {
     const err = await registerRoot(
       withToken,
       "/n",
-      r.fetcher(respond(403, { error: "cross-origin request refused" })),
+      { fetch: r.fetcher(respond(403, { error: "cross-origin request refused" })) },
     ).catch((e: unknown) => e);
     expect((err as DaemonError).message).toContain("even with a token");
   });
@@ -117,7 +140,7 @@ describe("registerRoot", () => {
     const err = await registerRoot(
       withToken,
       "/n",
-      r.fetcher(respond(401, { error: "invalid token" })),
+      { fetch: r.fetcher(respond(401, { error: "invalid token" })) },
     ).catch((e: unknown) => e);
     expect((err as DaemonError).kind).toBe("token_rejected");
   });
@@ -127,7 +150,7 @@ describe("registerRoot", () => {
     const err = await registerRoot(
       withToken,
       "relative/dir",
-      r.fetcher(respond(400, { error: "path must be absolute" })),
+      { fetch: r.fetcher(respond(400, { error: "path must be absolute" })) },
     ).catch((e: unknown) => e);
     expect((err as DaemonError).kind).toBe("refused");
     expect((err as DaemonError).message).toBe("path must be absolute");

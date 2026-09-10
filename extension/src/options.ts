@@ -1,6 +1,6 @@
 /** The options page: which daemon, and the token to present to it. */
 
-import { listRoots } from "./daemon";
+import { DaemonError, listRoots } from "./daemon";
 import {
   DEFAULT_DAEMON_URL,
   loadSettings,
@@ -72,11 +72,48 @@ async function test() {
     return;
   }
   say("testing…");
+
+  // Two questions with different answers: an unauthenticated read says
+  // whether the daemon is there at all, and only a read carrying the token
+  // says whether the token is any good.
+  let roots;
   try {
-    const roots = await listRoots(settings);
-    say(`daemon answered: ${roots.length} root${roots.length === 1 ? "" : "s"}`, "ok");
+    roots = await listRoots(settings);
   } catch (err) {
     say(err instanceof Error ? err.message : String(err), "error");
+    return;
+  }
+  const reached = `daemon answered: ${roots.length} root${roots.length === 1 ? "" : "s"}`;
+
+  if (settings.token === "") {
+    say(`${reached}; no token stored, so registering a folder or clipping will be refused`, "ok");
+    return;
+  }
+  if (!(await checksTokens(settings))) {
+    say(`${reached}; this daemon does not check tokens yet, so yours was not verified`, "ok");
+    return;
+  }
+  try {
+    await listRoots(settings, { authenticated: true });
+    say(`${reached}, and the token was accepted`, "ok");
+  } catch (err) {
+    say(`${reached}, but ${err instanceof Error ? err.message : String(err)}`, "error");
+  }
+}
+
+/**
+ * Whether this daemon judges bearer tokens at all, asked by presenting one it
+ * cannot have issued. A daemon that predates M3-R1 ignores the header and
+ * answers 200, and reporting "the token was accepted" on the strength of that
+ * would be a lie — the whole point of the button is to catch a bad token.
+ */
+async function checksTokens(settings: { daemonUrl: string }): Promise<boolean> {
+  const sentinel = { daemonUrl: settings.daemonUrl, token: `not-a-token-${crypto.randomUUID()}` };
+  try {
+    await listRoots(sentinel, { authenticated: true });
+    return false;
+  } catch (err) {
+    return err instanceof DaemonError && err.kind === "token_rejected";
   }
 }
 
