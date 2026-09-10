@@ -19,6 +19,7 @@ import (
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/search"
 	"github.com/davison/md-notes/internal/tags"
+	"github.com/davison/md-notes/internal/token"
 	"github.com/davison/md-notes/internal/tree"
 	"github.com/davison/md-notes/internal/watch"
 )
@@ -57,7 +58,11 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 		"index.html":    {Data: []byte("<html>app</html>")},
 		"assets/app.js": {Data: []byte("console.log(1)")},
 	}
-	s := New(reg, port, ui, log.New(io.Discard, "", 0))
+	tok, _, err := token.Load(filepath.Join(base, "token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(reg, port, ui, log.New(io.Discard, "", 0), WithToken(token.NewStore(filepath.Join(base, "token"), tok)))
 	s.keepalive = 100 * time.Millisecond
 	t.Cleanup(s.Close)
 	ts := httptest.NewServer(s.Handler())
@@ -93,6 +98,25 @@ func readAll(t *testing.T, r io.Reader) string {
 	t.Helper()
 	b, _ := io.ReadAll(r)
 	return string(b)
+}
+
+// daemonToken is the bearer token the test daemon holds.
+func daemonToken(t *testing.T, base string) string {
+	t.Helper()
+	tok, _, err := token.Load(filepath.Join(base, "token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tok
+}
+
+// bearerHeader presents tok the way the extension does.
+func bearerHeader(tok string, extra ...string) map[string]string {
+	h := map[string]string{"Authorization": "Bearer " + tok}
+	for i := 0; i+1 < len(extra); i += 2 {
+		h[extra[i]] = extra[i+1]
+	}
+	return h
 }
 
 func TestGuardHost(t *testing.T) {
@@ -133,6 +157,93 @@ func TestGuardOrigin(t *testing.T) {
 		if resp.StatusCode != want {
 			t.Errorf("Origin %q: status %d, want %d", origin, resp.StatusCode, want)
 		}
+	}
+}
+
+// The token is the claim the same-origin rule stands in for, so a request
+// carrying it is served from any origin — which is how the extension writes
+// from its own chrome-extension origin.
+func TestGuardTokenPassesAnyOrigin(t *testing.T) {
+	ts, base := newTestServer(t)
+	tok := daemonToken(t, base)
+	cases := []struct {
+		name string
+		hdr  map[string]string
+		want int
+	}{
+		{"extension origin with the token", bearerHeader(tok, "Origin", "chrome-extension://abcdefghijklmnop"), 200},
+		{"extension origin without it", map[string]string{"Origin": "chrome-extension://abcdefghijklmnop"}, 403},
+		{"foreign web origin with the token", bearerHeader(tok, "Origin", "https://evil.example"), 200},
+		{"no origin with the token", bearerHeader(tok), 200},
+		{"wrong token", bearerHeader(tok + "x"), 401},
+		{"wrong token from the daemon's own origin", bearerHeader("nonsense", "Origin", "http://localhost:7337"), 401},
+		{"empty bearer", map[string]string{"Authorization": "Bearer "}, 401},
+		{"another scheme", map[string]string{"Authorization": "Basic " + tok}, 401},
+		{"the header alone", map[string]string{"Authorization": tok}, 401},
+		{"lower-case scheme", map[string]string{"Authorization": "bearer " + tok}, 200},
+	}
+	for _, c := range cases {
+		resp := do(t, ts, "GET", "/api/roots", "", c.hdr)
+		if resp.StatusCode != c.want {
+			t.Errorf("%s: status %d, want %d", c.name, resp.StatusCode, c.want)
+		}
+	}
+	// The Host check is not waived by the token: DNS rebinding is a
+	// separate attack, and a rebound page could hold no token anyway.
+	resp := do(t, ts, "GET", "/api/roots", "", bearerHeader(tok, "Host", "evil.example:7337"))
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("bad Host with the token: status %d, want 403", resp.StatusCode)
+	}
+}
+
+func TestGuardRefusalIsTheSourceErrorEnvelope(t *testing.T) {
+	ts, base := newTestServer(t)
+	resp := do(t, ts, "GET", "/api/roots", "", bearerHeader(daemonToken(t, base)+"x"))
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401", resp.StatusCode)
+	}
+	var body struct{ Code, Error string }
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Code != "unauthorized" || body.Error == "" {
+		t.Errorf("body = %+v, want code unauthorized and a message", body)
+	}
+}
+
+// mdn token --rotate must reach a running daemon; nothing restarts it.
+func TestGuardSeesARotatedToken(t *testing.T) {
+	ts, base := newTestServer(t)
+	old := daemonToken(t, base)
+	fresh, err := token.Rotate(filepath.Join(base, "token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := do(t, ts, "GET", "/api/roots", "", bearerHeader(fresh)); resp.StatusCode != 200 {
+		t.Errorf("rotated token: status %d, want 200", resp.StatusCode)
+	}
+	if resp := do(t, ts, "GET", "/api/roots", "", bearerHeader(old)); resp.StatusCode != 401 {
+		t.Errorf("replaced token: status %d, want 401", resp.StatusCode)
+	}
+}
+
+// A daemon built without a token accepts none, rather than treating the
+// Authorization header as decoration.
+func TestGuardWithoutATokenRefusesEveryBearer(t *testing.T) {
+	reg, err := roots.New(t.TempDir(), filepath.Join(t.TempDir(), "roots.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(reg, port, fstest.MapFS{}, log.New(io.Discard, "", 0))
+	t.Cleanup(s.Close)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	servers[ts] = s
+	if resp := do(t, ts, "GET", "/api/roots", "", bearerHeader("anything")); resp.StatusCode != 401 {
+		t.Errorf("status %d, want 401", resp.StatusCode)
+	}
+	if resp := do(t, ts, "GET", "/api/roots", "", nil); resp.StatusCode != 200 {
+		t.Errorf("unauthenticated loopback request: status %d, want 200", resp.StatusCode)
 	}
 }
 
