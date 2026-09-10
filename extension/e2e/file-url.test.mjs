@@ -295,6 +295,15 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
     await page.waitForSelector("#status.error");
     assert.match(await page.textContent("#status"), /daemon not reachable/);
     assert.match(await page.textContent("#daemon"), new RegExp(appOrigin));
+
+    // A tab the extension has never acted on has nothing to report.
+    const fresh = await context.newPage();
+    await fresh.goto(`chrome-extension://${extensionId}/popup.html`);
+    await fresh.waitForSelector("#status");
+    assert.equal(await fresh.textContent("#status"), "Nothing to report for this tab.");
+    assert.equal(await fresh.getAttribute("#status", "class"), "status");
+    await fresh.close();
+
     await page.close();
     await startDaemon();
   });

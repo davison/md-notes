@@ -136,19 +136,6 @@ sudo sysctl fs.inotify.max_user_watches=524288
 echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-mdn.conf
 ```
 
-## Browser extension
-
-`make extension` builds a Chromium Manifest V3 extension into
-`extension/dist`, loadable unpacked in Brave from `brave://extensions` with
-**Developer mode** on. Switch on **Allow access to file URLs** in its details
-and a local `.md` or `.markdown` file opens in md-notes instead of rendering
-as plain text: the extension registers the file's folder with the running
-daemon, or opens the note under a root that already contains it, and leaves
-the page alone with a red `!` on the toolbar icon when the daemon cannot be
-reached. Its options page holds the daemon URL and the token.
-[docs/extension.md](docs/extension.md) covers loading it, the token, and each
-permission it asks for and why.
-
 The daemon listens on the loopback address only, refuses requests whose
 Host or Origin is not its own, and never serves a path that resolves
 outside a registered root, symlinks included. It holds one bearer token,
@@ -158,6 +145,21 @@ accepted whatever its origin, which is how a browser extension writes to
 the notes. Nothing else needs it, and the premise underneath is unchanged:
 a single-user machine, where every local process already runs as the user
 who owns the notes and can read that file anyway.
+
+## Browser extension
+
+`make extension` builds a Chromium Manifest V3 extension into
+`extension/dist`, loadable unpacked in Brave from `brave://extensions` with
+**Developer mode** on. Switch on **Allow access to file URLs** in its details
+and a local `.md` or `.markdown` file that is already inside a root the daemon
+serves opens in md-notes instead of rendering as plain text; the page is left
+alone, with a red `!` on the toolbar icon saying why, when the daemon cannot
+be reached. Opening a file from anywhere else means registering its folder as
+a new root, which the daemon will only accept from the extension with a bearer
+token — so that half waits on the token work in this same milestone. Its
+options page holds the daemon URL and the token.
+[docs/extension.md](docs/extension.md) covers loading it, the token, and each
+permission it asks for and why.
 
 ## Status
 
