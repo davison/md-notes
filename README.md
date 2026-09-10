@@ -62,6 +62,7 @@ Create `~/.config/mdn/config.yml`:
 notes_root: /home/you/notes
 port: 7337
 max_watches: 8192
+clips_dir: clips
 ```
 
 Then run the daemon and open the browser:
@@ -73,6 +74,10 @@ xdg-open http://localhost:7337/
 
 `mdn serve --root DIR --port N` overrides the file. To run it under systemd
 as a user service, see [contrib/mdn.service](contrib/mdn.service).
+
+`mdn token` prints the daemon's bearer token — what a browser extension
+presents to write a clipping — and `mdn token --rotate` replaces it, which
+a running daemon picks up without a restart.
 
 To browse the markdown in any other folder, such as a code project:
 
@@ -130,9 +135,13 @@ echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-mdn.conf
 
 The daemon listens on the loopback address only, refuses requests whose
 Host or Origin is not its own, and never serves a path that resolves
-outside a registered root, symlinks included. It has no authentication of
-its own: it assumes a single-user machine, where every local process
-already runs as the user who owns the notes.
+outside a registered root, symlinks included. It holds one bearer token,
+generated on first start and stored at `~/.local/state/mdn/token` with
+mode `0600`; a request presenting it in an `Authorization` header is
+accepted whatever its origin, which is how a browser extension writes to
+the notes. Nothing else needs it, and the premise underneath is unchanged:
+a single-user machine, where every local process already runs as the user
+who owns the notes and can read that file anyway.
 
 ## Status
 
