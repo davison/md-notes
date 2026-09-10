@@ -58,11 +58,11 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 		"index.html":    {Data: []byte("<html>app</html>")},
 		"assets/app.js": {Data: []byte("console.log(1)")},
 	}
-	tok, _, err := token.Load(filepath.Join(base, "token"))
+	store, _, err := token.Open(filepath.Join(base, "token"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := New(reg, port, ui, log.New(io.Discard, "", 0), WithToken(token.NewStore(filepath.Join(base, "token"), tok)))
+	s := New(reg, port, ui, log.New(io.Discard, "", 0), WithToken(store))
 	s.keepalive = 100 * time.Millisecond
 	t.Cleanup(s.Close)
 	ts := httptest.NewServer(s.Handler())
