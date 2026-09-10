@@ -50,7 +50,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "mdn serve:", err)
 		return 1
 	}
-	secret, created, err := token.Load(*tokenFile)
+	secret, created, err := token.Open(*tokenFile)
 	if err != nil {
 		fmt.Fprintln(stderr, "mdn serve:", err)
 		return 1
@@ -61,7 +61,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 
 	srv := server.New(reg, cfg.Port, ui.FS(), logger,
 		server.WithWatchBudget(*cfg.MaxWatches),
-		server.WithToken(token.NewStore(*tokenFile, secret)),
+		server.WithToken(secret),
 		server.WithClipsDir(cfg.ClipsDir),
 	)
 

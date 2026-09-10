@@ -133,13 +133,22 @@ func TestRotateReplacesTheStoredToken(t *testing.T) {
 	}
 }
 
-func TestStoreValid(t *testing.T) {
-	path := tokenPath(t)
+// openStore is the daemon's own path to a Store, with the token it holds.
+func openStore(t *testing.T, path string) (*Store, string) {
+	t.Helper()
+	s, _, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	value, _, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewStore(path, value)
+	return s, value
+}
+
+func TestStoreValid(t *testing.T) {
+	s, value := openStore(t, tokenPath(t))
 	for presented, want := range map[string]bool{
 		value:                    true,
 		"":                       false,
@@ -159,11 +168,7 @@ func TestStoreValid(t *testing.T) {
 // next request, whether or not anything ever presents the new one.
 func TestStoreRefusesTheReplacedTokenImmediately(t *testing.T) {
 	path := tokenPath(t)
-	old, _, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := NewStore(path, old)
+	s, old := openStore(t, path)
 	if !s.Valid(old) {
 		t.Fatal("the current token was refused")
 	}
@@ -177,11 +182,7 @@ func TestStoreRefusesTheReplacedTokenImmediately(t *testing.T) {
 
 func TestStoreSeesARotatedTokenWithoutRestart(t *testing.T) {
 	path := tokenPath(t)
-	old, _, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := NewStore(path, old)
+	s, old := openStore(t, path)
 	fresh, err := Rotate(path)
 	if err != nil {
 		t.Fatal(err)
@@ -196,11 +197,7 @@ func TestStoreSeesARotatedTokenWithoutRestart(t *testing.T) {
 
 func TestStoreRefusesEverythingWhenTheFileIsGone(t *testing.T) {
 	path := tokenPath(t)
-	value, _, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := NewStore(path, value)
+	s, value := openStore(t, path)
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
@@ -215,12 +212,7 @@ func TestStoreRefusesEverythingWhenTheFileIsGone(t *testing.T) {
 }
 
 func TestStoreIsSafeForConcurrentUse(t *testing.T) {
-	path := tokenPath(t)
-	value, _, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := NewStore(path, value)
+	s, value := openStore(t, tokenPath(t))
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Add(1)
@@ -233,4 +225,158 @@ func TestStoreIsSafeForConcurrentUse(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// Reading the token repairs the file's permissions, so it must not follow
+// a link: a --token-file pointed at one would otherwise read and chmod a
+// file the user never nominated as the token.
+func TestReadRefusesASymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("secretline\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if value, _, err := Load(link); !errors.Is(err, ErrMalformed) {
+		t.Errorf("Load through a symlink = %q, %v; want ErrMalformed", value, err)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Errorf("the link's target was chmodded to %v", got)
+	}
+	// Rotation replaces the link rather than writing through it.
+	if _, err := Rotate(link); err != nil {
+		t.Fatal(err)
+	}
+	link2, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !link2.Mode().IsRegular() {
+		t.Error("rotation left a symlink in place")
+	}
+	if data, err := os.ReadFile(target); err != nil || string(data) != "secretline\n" {
+		t.Errorf("the link's target was written through: %q, %v", data, err)
+	}
+}
+
+func TestReadRefusesADirectory(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := Load(dir); !errors.Is(err, ErrMalformed) {
+		t.Errorf("error = %v, want ErrMalformed", err)
+	}
+}
+
+// Open reads the value and stamps the file as one operation. Were they
+// separate, a rotation landing between them would leave the store holding
+// the superseded token with the *new* file's identity, so nothing would
+// ever prompt a re-read: the daemon would serve the old token and refuse
+// the current one.
+func TestOpenCannotPinASupersededToken(t *testing.T) {
+	path := tokenPath(t)
+	first, created, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("the token already existed")
+	}
+	s, created, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created {
+		t.Error("Open reported creating a token that already existed")
+	}
+	if !s.Valid(first) {
+		t.Fatal("the stored token was refused")
+	}
+	// Whatever the store holds, the file is the authority the moment it
+	// changes.
+	fresh, err := Rotate(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Valid(fresh) || s.Valid(first) {
+		t.Error("the store did not follow the file")
+	}
+}
+
+func TestOpenGeneratesWhenAbsent(t *testing.T) {
+	path := tokenPath(t)
+	s, created, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Error("Open did not report creating the token")
+	}
+	value, _, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Valid(value) {
+		t.Error("the store does not hold the token it just generated")
+	}
+}
+
+// A chmod changes no field the identity comparison sees, so the repair
+// has to ride on the stat the store already does.
+func TestStoreRepairsPermissionsWhileRunning(t *testing.T) {
+	path := tokenPath(t)
+	s, value := openStore(t, path)
+	if err := os.Chmod(path, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Valid(value) {
+		t.Fatal("the current token was refused")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != FileMode {
+		t.Errorf("mode after an authenticated request %v, want %v", got, FileMode)
+	}
+}
+
+// Two rotations at once must not share a staging file.
+func TestConcurrentRotationsDoNotCollide(t *testing.T) {
+	path := tokenPath(t)
+	if _, _, err := Load(path); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := Rotate(path); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent rotation: %v", err)
+	}
+	value, _, err := Load(path)
+	if err != nil || value == "" {
+		t.Fatalf("token after the rotations = %q, %v", value, err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("%d files in the state directory, want only the token", len(entries))
+	}
 }
