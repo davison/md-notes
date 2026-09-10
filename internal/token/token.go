@@ -177,11 +177,11 @@ func (s *Store) refresh() {
 	if s.info != nil && sameFile(s.info, info) {
 		return
 	}
-	value, read, err := read(s.path)
+	value, from, err := read(s.path)
 	if err != nil || value == "" {
 		return
 	}
-	s.value, s.info = value, read
+	s.value, s.info = value, from
 }
 
 func sameFile(a, b os.FileInfo) bool {
