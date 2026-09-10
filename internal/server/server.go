@@ -393,7 +393,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !allowedHosts[strings.ToLower(r.Host)] {
-			writeError(w, http.StatusForbidden, "unexpected Host header")
+			writeGuardError(w, http.StatusForbidden, "bad_host", "unexpected Host header")
 			return
 		}
 		presented, carried := bearer(r)
@@ -406,7 +406,11 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			if origin := r.Header.Get("Origin"); origin != "" {
 				o := strings.ToLower(strings.TrimSuffix(origin, "/"))
 				if !allowedHosts[strings.TrimPrefix(o, "http://")] || !strings.HasPrefix(o, "http://") {
-					writeError(w, http.StatusForbidden, "cross-origin request refused")
+					// A client that meant to authenticate and has no token
+					// yet lands here, so the code has to be distinguishable
+					// from a token that was presented and refused.
+					writeGuardError(w, http.StatusForbidden, "cross_origin",
+						"cross-origin request refused; present the bearer token to write from another origin")
 					return
 				}
 			}
@@ -445,8 +449,21 @@ func (s *Server) authenticated(r *http.Request) bool {
 	return carried && s.validToken(presented)
 }
 
+// writeGuardError refuses a request before any handler runs, in the same
+// {code, error} envelope the handlers use, so one client can tell the
+// guard's refusals apart from each other and from a handler's: a popup
+// with no token pasted in yet gets cross_origin, and one holding a stale
+// token gets unauthorized.
+func writeGuardError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeSourceError(w, status, code, message)
+}
+
 func writeUnauthorized(w http.ResponseWriter) {
-	writeSourceError(w, http.StatusUnauthorized, "unauthorized", "a valid bearer token is required")
+	// A generic HTTP client expects the challenge; a browser will not act
+	// on it, since the daemon has no interactive login on this path.
+	w.Header().Set("WWW-Authenticate", `Bearer realm="mdn"`)
+	writeGuardError(w, http.StatusUnauthorized, "unauthorized", "a valid bearer token is required")
 }
 
 func (s *Server) listRoots(w http.ResponseWriter, r *http.Request) {

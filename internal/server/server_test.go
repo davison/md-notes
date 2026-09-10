@@ -196,18 +196,62 @@ func TestGuardTokenPassesAnyOrigin(t *testing.T) {
 	}
 }
 
-func TestGuardRefusalIsTheSourceErrorEnvelope(t *testing.T) {
+// Every refusal the guard makes carries a code, so a client can tell "no
+// token pasted in yet" from "the token was refused" — which is what the
+// extension's popup has to report differently.
+func TestGuardRefusalsAreDistinguishable(t *testing.T) {
 	ts, base := newTestServer(t)
-	resp := do(t, ts, "GET", "/api/roots", "", bearerHeader(daemonToken(t, base)+"x"))
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status %d, want 401", resp.StatusCode)
+	tok := daemonToken(t, base)
+	cases := []struct {
+		name   string
+		hdr    map[string]string
+		status int
+		code   string
+	}{
+		{"a wrong token", bearerHeader(tok + "x"), http.StatusUnauthorized, "unauthorized"},
+		{"no token from another origin", map[string]string{"Origin": "chrome-extension://abc"}, http.StatusForbidden, "cross_origin"},
+		{"an unexpected Host", map[string]string{"Host": "evil.example:7337"}, http.StatusForbidden, "bad_host"},
 	}
-	var body struct{ Code, Error string }
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatal(err)
+	for _, c := range cases {
+		resp := do(t, ts, "GET", "/api/roots", "", c.hdr)
+		if resp.StatusCode != c.status {
+			t.Errorf("%s: status %d, want %d", c.name, resp.StatusCode, c.status)
+			continue
+		}
+		if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s: Cache-Control %q, want no-store", c.name, got)
+		}
+		var body struct{ Code, Error string }
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Code != c.code || body.Error == "" {
+			t.Errorf("%s: body = %+v, want code %s and a message", c.name, body, c.code)
+		}
 	}
-	if body.Code != "unauthorized" || body.Error == "" {
-		t.Errorf("body = %+v, want code unauthorized and a message", body)
+	// The 401 carries the challenge a generic HTTP client expects.
+	resp := do(t, ts, "GET", "/api/roots", "", bearerHeader("nonsense"))
+	if got := resp.Header.Get("WWW-Authenticate"); !strings.HasPrefix(got, "Bearer") {
+		t.Errorf("WWW-Authenticate = %q, want a Bearer challenge", got)
+	}
+}
+
+// The Origin exemption is for a caller CORS does not govern — an MV3
+// service worker holding host_permissions. A page-context fetch would
+// preflight first, and the preflight is refused like any other
+// cross-origin request: no CORS headers are sent, deliberately.
+func TestGuardRefusesThePreflight(t *testing.T) {
+	ts, _ := newTestServer(t)
+	resp := do(t, ts, "OPTIONS", "/api/clip", "", map[string]string{
+		"Origin":                         "chrome-extension://abc",
+		"Access-Control-Request-Method":  "POST",
+		"Access-Control-Request-Headers": "authorization,content-type",
+	})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("preflight: status %d, want 403", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want no CORS headers at all", got)
 	}
 }
 
