@@ -145,3 +145,44 @@ func TestLoadParsesMaxWatches(t *testing.T) {
 		t.Fatalf("max_watches = %v, want nil when the key is absent", *cfg.MaxWatches)
 	}
 }
+
+func TestResolveClipsDir(t *testing.T) {
+	dir := t.TempDir()
+	for given, want := range map[string]string{
+		"":           DefaultClipsDir,
+		"  ":         DefaultClipsDir,
+		"clips":      "clips",
+		"inbox/web":  "inbox/web",
+		"./clips/":   "clips",
+		".":          ".",
+		"a/../clips": "clips",
+	} {
+		cfg, err := Config{ClipsDir: given}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
+		if err != nil {
+			t.Fatalf("clips_dir %q: %v", given, err)
+		}
+		if cfg.ClipsDir != want {
+			t.Errorf("clips_dir %q resolved to %q, want %q", given, cfg.ClipsDir, want)
+		}
+	}
+	for _, given := range []string{"/etc", "../outside", "..", "clips/../..", "/"} {
+		cfg, err := (Config{ClipsDir: given}).Resolve("cfg.yml", Overrides{NotesRoot: dir})
+		if err == nil {
+			t.Errorf("clips_dir %q resolved to %q, want a refusal", given, cfg.ClipsDir)
+		}
+	}
+}
+
+func TestLoadParsesClipsDir(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte("notes_root: /n\nclips_dir: inbox\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ClipsDir != "inbox" {
+		t.Fatalf("clips_dir = %q", cfg.ClipsDir)
+	}
+}
