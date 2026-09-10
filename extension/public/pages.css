@@ -1,0 +1,138 @@
+:root {
+  --bg: #fbfbfa;
+  --fg: #1f1f1f;
+  --muted: #6b6b6b;
+  --line: #e2e2df;
+  --accent: #2a6db0;
+  --pane: #ffffff;
+  --error: #b3261e;
+  --ok: #1c7c3f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b1b;
+    --fg: #e6e6e3;
+    --muted: #9a9a96;
+    --line: #333331;
+    --accent: #7fb0e6;
+    --pane: #202020;
+    --error: #f2b8b5;
+    --ok: #7ad39a;
+  }
+}
+
+body {
+  margin: 0;
+  padding: 1rem 1.25rem 1.5rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main {
+  max-width: 42rem;
+}
+
+h1 {
+  font-size: 1.15rem;
+  margin: 0 0 0.75rem;
+}
+
+h2 {
+  font-size: 0.95rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+p {
+  margin: 0.5rem 0;
+}
+
+a {
+  color: var(--accent);
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--pane);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 0.25em;
+}
+
+label {
+  display: block;
+  margin: 0.75rem 0 0.25rem;
+  font-weight: 600;
+}
+
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--pane);
+  color: var(--fg);
+  font: inherit;
+}
+
+input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+button {
+  margin-top: 1rem;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: var(--pane);
+  color: var(--fg);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.status {
+  margin-top: 1rem;
+  min-height: 1.5em;
+}
+
+.status.error {
+  color: var(--error);
+}
+
+.status.ok {
+  color: var(--ok);
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.reveal {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: normal;
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.popup {
+  width: 22rem;
+}

@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "md-notes",
+  "version": "0.1.0",
+  "description": "Open local markdown files in md-notes, and clip pages into your notes.",
+  "minimum_chrome_version": "116",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "md-notes",
+    "default_popup": "popup.html",
+    "default_icon": { "128": "icon-128.png" }
+  },
+  "icons": { "128": "icon-128.png" },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "permissions": ["storage", "contextMenus", "activeTab"],
+  "host_permissions": [
+    "http://localhost:7337/*",
+    "http://127.0.0.1:7337/*",
+    "file:///*"
+  ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"]
+}
