@@ -89,8 +89,13 @@ async function test() {
     say(`${reached}; no token stored, so registering a folder or clipping will be refused`, "ok");
     return;
   }
-  if (!(await checksTokens(settings))) {
+  const judging = await checksTokens(settings);
+  if (judging === "ignores") {
     say(`${reached}; this daemon does not check tokens yet, so yours was not verified`, "ok");
+    return;
+  }
+  if (judging !== "checks") {
+    say(`${reached}; could not tell whether it checks tokens (${judging.unknown})`, "ok");
     return;
   }
   try {
@@ -106,14 +111,21 @@ async function test() {
  * cannot have issued. A daemon that predates M3-R1 ignores the header and
  * answers 200, and reporting "the token was accepted" on the strength of that
  * would be a lie — the whole point of the button is to catch a bad token.
+ *
+ * A third answer is possible and is worth keeping apart from the second: any
+ * other refusal, or a request that never arrived, means the question went
+ * unanswered rather than answered "no".
  */
-async function checksTokens(settings: { daemonUrl: string }): Promise<boolean> {
+type TokenJudgement = "checks" | "ignores" | { unknown: string };
+
+async function checksTokens(settings: { daemonUrl: string }): Promise<TokenJudgement> {
   const sentinel = { daemonUrl: settings.daemonUrl, token: `not-a-token-${crypto.randomUUID()}` };
   try {
     await listRoots(sentinel, { authenticated: true });
-    return false;
+    return "ignores";
   } catch (err) {
-    return err instanceof DaemonError && err.kind === "token_rejected";
+    if (err instanceof DaemonError && err.kind === "token_rejected") return "checks";
+    return { unknown: err instanceof Error ? err.message : String(err) };
   }
 }
 

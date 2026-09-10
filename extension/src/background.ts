@@ -60,6 +60,13 @@ async function forget(tabId: number) {
   await clearTabStatus(tabId);
 }
 
+/** This tab is somewhere else now: drop everything remembered about it. */
+function moveOn(tabId: number) {
+  redirected.delete(tabId);
+  inFlight.delete(tabId);
+  if (marked.has(tabId)) void forget(tabId).catch(() => undefined);
+}
+
 /**
  * Handles one navigation. Exported so the worker's behaviour is reachable from
  * a test without driving Chromium's event plumbing.
@@ -91,16 +98,22 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   // the popup suggests (start the daemon, fix the address, paste the token,
   // then reload) work in the tab that failed.
   const url = changeInfo.url ?? tab.url;
-  if (url === undefined) return;
+
+  // No URL at all means the tab is loading an origin this extension cannot
+  // see — Chromium redacts `tab.url` outside `host_permissions`, and neither
+  // `file:` nor the daemon is redacted. So this is the ordinary web, and the
+  // record from whatever this tab did last should not follow it there.
+  if (url === undefined) {
+    moveOn(tabId);
+    return;
+  }
 
   if (!url.startsWith("file:")) {
     // Our own redirect is not the user leaving: the note we just opened keeps
     // the record saying where it came from. Any other address means this tab
     // has moved on, and its badge and record go with it.
     if (redirected.get(tabId) === url) return;
-    redirected.delete(tabId);
-    inFlight.delete(tabId);
-    if (marked.has(tabId)) void forget(tabId).catch(() => undefined);
+    moveOn(tabId);
     return;
   }
 

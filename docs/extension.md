@@ -117,11 +117,17 @@ filesystem, such as `file:///C:/Users/me/note.md`, maps to a path the daemon
 will simply not find, and the failure is the daemon's "no such file".
 
 For the same reason the mapping is strict about what a path may contain. A
-percent escape that decodes into a separator, a `.` or `..` segment, an empty
-segment, or a NUL is refused outright rather than resolved, because the
-directory this step derives is the one the daemon is asked to serve, and a
-crafted URL must not get to choose it. One consequence worth knowing: a file
-whose name contains a literal backslash is left alone.
+percent escape that decodes into a separator, a `.` or `..` segment, or a NUL
+is refused outright rather than resolved, because the directory this step
+derives is the one the daemon is asked to serve, and a crafted URL must not
+get to choose it. (A `//` run is collapsed rather than refused: it names the
+same file and escapes nothing.) One consequence worth knowing: a file whose
+name contains a literal backslash is left alone.
+
+A URL the mapping refuses is treated exactly like a URL that is not markdown
+at all — the page is left alone and nothing is said, no badge and no popup
+message. The failures below are the ones that happen *after* a URL has been
+accepted.
 
 When any of that fails the tab is left exactly as it was, showing the plain
 text the browser was going to show anyway, and the toolbar icon gains a red

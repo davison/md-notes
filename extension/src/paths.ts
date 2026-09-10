@@ -83,13 +83,16 @@ export function fileUrlToPath(url: string): string | null {
       // A stray percent that is not a valid escape.
       return null;
     }
-    // An empty segment is a `//` run or a trailing slash; `.` and `..` are
-    // traversal; a separator or a NUL inside a decoded segment means the
-    // escape was hiding structure.
-    if (segment === "" || segment === "." || segment === "..") return null;
+    // A `//` run or a trailing slash names the same file either way, and
+    // collapsing it escapes nothing. `.` and `..` are traversal, and a
+    // separator or a NUL inside a decoded segment means the escape was
+    // hiding structure: those are refused, not resolved.
+    if (segment === "") continue;
+    if (segment === "." || segment === "..") return null;
     if (segment.includes("/") || segment.includes("\\") || segment.includes("\0")) return null;
     segments.push(segment);
   }
+  if (segments.length === 0) return null;
 
   const path = "/" + segments.join("/");
   // Belt and braces: whatever the segment rules missed, the result must
