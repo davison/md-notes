@@ -85,6 +85,26 @@ const blocker = missingPrerequisite(playwright);
 describe("file URL intercept", { skip: blocker ?? false }, () => {
   let tmp, notesDir, outsideDir, port, daemon, context, worker, extensionId, appOrigin;
 
+  const startDaemon = async () => {
+    daemon = spawn(
+      mdnBin,
+      ["serve", "--root", notesDir, "--port", String(port), "--state", path.join(tmp, "state.json")],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    await waitFor(
+      () => fetch(`${appOrigin}/api/roots`).then(() => true).catch(() => false),
+      "the daemon to listen",
+    );
+  };
+
+  const stopDaemon = async () => {
+    daemon?.kill("SIGTERM");
+    await waitFor(
+      () => fetch(`${appOrigin}/api/roots`).then(() => false).catch(() => true),
+      "the daemon to stop",
+    );
+  };
+
   before(async () => {
     tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mdn-ext-e2e-")));
     notesDir = path.join(tmp, "notes");
@@ -96,15 +116,7 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
 
     port = await freePort();
     appOrigin = `http://localhost:${port}`;
-    daemon = spawn(
-      mdnBin,
-      ["serve", "--root", notesDir, "--port", String(port), "--state", path.join(tmp, "state.json")],
-      { stdio: ["ignore", "pipe", "pipe"] },
-    );
-    await waitFor(
-      () => fetch(`${appOrigin}/api/roots`).then(() => true).catch(() => false),
-      "the daemon to listen",
-    );
+    await startDaemon();
 
     // Load a copy of dist/, so the shipped manifest keeps its narrow host
     // permission while the test grants the ephemeral port it needs.
@@ -174,9 +186,12 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
     await page.close();
   });
 
+  const noteFileUrl = () =>
+    `file://${path.join(notesDir, "deep", "a note.md").split("/").map(encodeURIComponent).join("/")}`;
+
   it("opens a markdown file inside a registered root in the app", async () => {
     const page = await context.newPage();
-    const fileUrl = `file://${path.join(notesDir, "deep", "a note.md").split("/").map(encodeURIComponent).join("/")}`;
+    const fileUrl = noteFileUrl();
     await page.goto(fileUrl);
     await page.waitForURL(`${appOrigin}/r/notes/deep/a%20note.md`, { timeout: 15000 });
     await page.waitForSelector("text=from a file URL", { timeout: 15000 });
@@ -203,13 +218,9 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
   });
 
   it("leaves the page alone and badges the tab when the daemon is down", async () => {
-    daemon.kill("SIGTERM");
-    await waitFor(
-      () => fetch(`${appOrigin}/api/roots`).then(() => false).catch(() => true),
-      "the daemon to stop",
-    );
+    await stopDaemon();
     const page = await context.newPage();
-    const fileUrl = `file://${path.join(notesDir, "deep", "a note.md").split("/").map(encodeURIComponent).join("/")}`;
+    const fileUrl = noteFileUrl();
     await page.goto(fileUrl);
     const tabId = await waitFor(() => pageTabId(worker, fileUrl), "the tab to appear");
     const status = await waitFor(() => tabStatus(worker, tabId), "the failure to be recorded");
@@ -217,6 +228,47 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
     assert.equal(status.kind, "unreachable");
     assert.equal(await worker.evaluate((id) => chrome.action.getBadgeText({ tabId: id }), tabId), "!");
     await page.close();
+    await startDaemon();
+  });
+
+  it("retries on a reload, so starting the daemon and reloading is enough", async () => {
+    // A reload carries no changeInfo.url, so the intercept has to read the
+    // tab's own URL — without that, every remedy the popup suggests is
+    // unreachable in the tab that failed.
+    await stopDaemon();
+    const page = await context.newPage();
+    const fileUrl = noteFileUrl();
+    await page.goto(fileUrl);
+    const tabId = await waitFor(() => pageTabId(worker, fileUrl), "the tab to appear");
+    const failure = await waitFor(() => tabStatus(worker, tabId), "the failure to be recorded");
+    assert.equal(failure.kind, "unreachable");
+
+    await startDaemon();
+    await page.reload();
+    await page.waitForURL(`${appOrigin}/r/notes/deep/a%20note.md`, { timeout: 15000 });
+    await page.waitForSelector("text=from a file URL", { timeout: 15000 });
+    const after = await tabStatus(worker, tabId);
+    assert.equal(after.kind, "opened");
+    assert.ok(after.at > failure.at, "the reload ran a fresh attempt");
+    await page.close();
+  });
+
+  it("renders the failure in the popup", async () => {
+    await stopDaemon();
+    const page = await context.newPage();
+    const fileUrl = noteFileUrl();
+    await page.goto(fileUrl);
+    const tabId = await waitFor(() => pageTabId(worker, fileUrl), "the tab to appear");
+    await waitFor(() => tabStatus(worker, tabId), "the failure to be recorded");
+
+    // The popup reports the active tab; navigating this one to popup.html
+    // keeps the tab id, so it reads the record the failure just wrote.
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.waitForSelector("#status.error");
+    assert.match(await page.textContent("#status"), /daemon not reachable/);
+    assert.match(await page.textContent("#daemon"), new RegExp(appOrigin));
+    await page.close();
+    await startDaemon();
   });
 });
 
