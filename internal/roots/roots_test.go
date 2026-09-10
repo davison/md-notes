@@ -365,3 +365,55 @@ func TestOpenParentConfinement(t *testing.T) {
 		t.Fatal("followed outside symlink")
 	}
 }
+
+func TestNotesReturnsThePermanentRoot(t *testing.T) {
+	dir := t.TempDir()
+	notes := filepath.Join(dir, "notes")
+	other := filepath.Join(dir, "other")
+	for _, d := range []string{notes, other} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := New(notes, filepath.Join(dir, "state.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Add(other); err != nil {
+		t.Fatal(err)
+	}
+	root, ok := r.Notes()
+	if !ok {
+		t.Fatal("no notes root")
+	}
+	if root.Kind != KindNotes || root.Path != notes {
+		t.Errorf("notes root = %+v, want %s", root, notes)
+	}
+}
+
+func TestOpenConfinesToTheRoot(t *testing.T) {
+	dir := t.TempDir()
+	notes := filepath.Join(dir, "notes")
+	if err := os.MkdirAll(notes, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(notes, filepath.Join(dir, "state.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, _ := r.Notes()
+	handle, err := root.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+	if _, err := handle.Create("inside.md"); err != nil {
+		t.Errorf("create inside the root: %v", err)
+	}
+	if _, err := handle.Create("../outside.md"); err == nil {
+		t.Error("created a file above the root")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "outside.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Error("a file appeared above the root")
+	}
+}

@@ -195,6 +195,19 @@ func (r *Registry) Get(slug string) (Root, bool) {
 	return Root{}, false
 }
 
+// Notes returns the permanent notes root. The second result is false only
+// for a registry that was never constructed by New.
+func (r *Registry) Notes() (Root, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, x := range r.roots {
+		if x.Kind == KindNotes {
+			return x, true
+		}
+	}
+	return Root{}, false
+}
+
 // Add registers path as a recent root and persists the registry. Adding a
 // path that is already registered returns the existing root unchanged.
 func (r *Registry) Add(path string) (Root, error) {
@@ -273,6 +286,13 @@ func (r *Registry) OpenParent(slug, rel string) (parent *os.Root, name, canonica
 	}
 	parent, err = base.OpenRoot(relative)
 	return parent, filepath.Base(canonical), canonical, err
+}
+
+// Open returns a directory handle confined to the root, through which a
+// writer creates files without a path it composes itself ever escaping —
+// including through a symlink swapped in mid-operation.
+func (root Root) Open() (*os.Root, error) {
+	return os.OpenRoot(root.real)
 }
 
 // Resolve confines rel to the root. The path is first cleaned lexically so

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -25,6 +26,10 @@ const DefaultPort = 7337
 // unraised system on its own.
 const DefaultMaxWatches = 8192
 
+// DefaultClipsDir is where clips land inside the notes root when the
+// configuration does not say otherwise.
+const DefaultClipsDir = "clips"
+
 // Config is the on-disk configuration, with any flag overrides applied.
 type Config struct {
 	// NotesRoot is the permanent notes folder. Required.
@@ -35,6 +40,10 @@ type Config struct {
 	// Zero is no budget at all; absent from the file asks for
 	// DefaultMaxWatches. Resolve settles it to a non-nil value.
 	MaxWatches *int `yaml:"max_watches"`
+	// ClipsDir is where the clip endpoint writes, relative to the notes
+	// root. Absent asks for DefaultClipsDir; a path that leaves the notes
+	// root is refused.
+	ClipsDir string `yaml:"clips_dir"`
 }
 
 // Overrides are the values a command line supplies, each taking precedence
@@ -45,6 +54,23 @@ type Overrides struct {
 	// MaxWatches is nil when the flag was not given; zero is a request for
 	// no budget, the same as the file's own zero.
 	MaxWatches *int
+}
+
+// ErrEscapesRoot is returned for a configured path that would leave the
+// notes root.
+var ErrEscapesRoot = errors.New("must be a relative path inside the notes root")
+
+// cleanRelative confines a configured path to the notes root lexically.
+// Symlinks are the filesystem's business and are refused at write time by
+// the confined directory handle the writer holds.
+func cleanRelative(p string) (string, error) {
+	cleaned := filepath.Clean(filepath.FromSlash(strings.TrimSpace(p)))
+	sep := string(filepath.Separator)
+	if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, sep) ||
+		cleaned == ".." || strings.HasPrefix(cleaned, ".."+sep) {
+		return "", ErrEscapesRoot
+	}
+	return cleaned, nil
 }
 
 // Path returns the configuration file location:
@@ -116,6 +142,14 @@ func (c Config) Resolve(configPath string, over Overrides) (Config, error) {
 		n := DefaultMaxWatches
 		c.MaxWatches = &n
 	}
+	if strings.TrimSpace(c.ClipsDir) == "" {
+		c.ClipsDir = DefaultClipsDir
+	}
+	clips, err := cleanRelative(c.ClipsDir)
+	if err != nil {
+		return c, fmt.Errorf("clips_dir %q: %w", c.ClipsDir, err)
+	}
+	c.ClipsDir = clips
 	if *c.MaxWatches < 0 {
 		return c, fmt.Errorf("max_watches %d is negative; use 0 for no limit", *c.MaxWatches)
 	}
