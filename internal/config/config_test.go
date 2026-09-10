@@ -92,6 +92,9 @@ func TestPathsHonourXDG(t *testing.T) {
 	if got := StatePath(); got != "/xs/mdn/roots.json" {
 		t.Fatalf("StatePath() = %q", got)
 	}
+	if got := TokenPath(); got != "/xs/mdn/token" {
+		t.Fatalf("TokenPath() = %q", got)
+	}
 }
 
 func TestResolveMaxWatches(t *testing.T) {
