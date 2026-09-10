@@ -17,7 +17,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: ui/pnpm-lock.yaml
+          cache-dependency-path: |
+            ui/pnpm-lock.yaml
+            extension/pnpm-lock.yaml
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
