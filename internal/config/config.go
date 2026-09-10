@@ -59,6 +59,13 @@ func StatePath() string {
 	return filepath.Join(xdgDir("XDG_STATE_HOME", filepath.Join(".local", "state")), "mdn", "roots.json")
 }
 
+// TokenPath returns where the daemon keeps its bearer token:
+// $XDG_STATE_HOME/mdn/token, falling back to ~/.local/state/mdn/token. It
+// sits beside the state file and is kept at mode 0600.
+func TokenPath() string {
+	return filepath.Join(xdgDir("XDG_STATE_HOME", filepath.Join(".local", "state")), "mdn", "token")
+}
+
 func xdgDir(env, fallback string) string {
 	if v := os.Getenv(env); v != "" {
 		return v
