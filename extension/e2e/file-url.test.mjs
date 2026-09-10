@@ -186,6 +186,34 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
     await page.close();
   });
 
+  it("tests the connection with the token, not around it", async () => {
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
+
+    // No token: reachable, and honest that writing will be refused.
+    await page.fill("#token", "");
+    await page.click("#save");
+    await page.waitForSelector("#status.ok");
+    await page.click("#test");
+    await page.waitForFunction(() => document.querySelector("#status").textContent !== "testing…");
+    assert.match(await page.textContent("#status"), /daemon answered: 1 root; no token stored/);
+
+    // A token the daemon will not accept must never be reported as accepted.
+    // Today's daemon ignores the header entirely — a GET carrying it is not a
+    // CORS request, so the Origin guard never sees one — which is why the
+    // page asks first whether this daemon checks tokens at all. Once M3-R1
+    // lands the same click reports the 401 instead.
+    await page.fill("#token", "definitely-a-wrong-token");
+    await page.click("#save");
+    await page.waitForSelector("#status.ok");
+    await page.click("#test");
+    await page.waitForFunction(() => document.querySelector("#status").textContent !== "testing…");
+    const message = await page.textContent("#status");
+    assert.doesNotMatch(message, /token was accepted/);
+    assert.match(message, /does not check tokens yet|rejected the token/);
+    await page.close();
+  });
+
   const noteFileUrl = () =>
     `file://${path.join(notesDir, "deep", "a note.md").split("/").map(encodeURIComponent).join("/")}`;
 
