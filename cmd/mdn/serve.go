@@ -13,6 +13,7 @@ import (
 	"github.com/davison/md-notes/internal/config"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/server"
+	"github.com/davison/md-notes/internal/token"
 	"github.com/davison/md-notes/ui"
 )
 
@@ -23,6 +24,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	root := fs.String("root", "", "notes root (overrides notes_root in the config file)")
 	port := fs.Int("port", 0, "loopback port (overrides port in the config file)")
 	statePath := fs.String("state", config.StatePath(), "file that remembers roots added with mdn open")
+	tokenFile := fs.String("token-file", config.TokenPath(), "file holding the bearer token clients present (created on first start)")
 	maxWatches := fs.Int("max-watches", config.DefaultMaxWatches, "directories watched per root for live update; 0 for no limit (overrides max_watches in the config file)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -48,8 +50,19 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "mdn serve:", err)
 		return 1
 	}
+	secret, created, err := token.Load(*tokenFile)
+	if err != nil {
+		fmt.Fprintln(stderr, "mdn serve:", err)
+		return 1
+	}
+	if created {
+		logger.Printf("generated a bearer token in %s; print it with `mdn token`", *tokenFile)
+	}
 
-	srv := server.New(reg, cfg.Port, ui.FS(), logger, server.WithWatchBudget(*cfg.MaxWatches))
+	srv := server.New(reg, cfg.Port, ui.FS(), logger,
+		server.WithWatchBudget(*cfg.MaxWatches),
+		server.WithToken(token.NewStore(*tokenFile, secret)),
+	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
