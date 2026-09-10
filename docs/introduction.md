@@ -6,7 +6,9 @@ end of [milestone two](milestones/2-editor-autosave-and-live-update.md): the dae
 and the rendered viewer from
 [milestone one](milestones/1-daemon-and-rendered-viewer.md), and now an editor over
 the same notes. Notes are edited in place; creating, renaming and deleting them is
-still done with other tools. The browser clipper and the inbox are not built yet.
+still done with other tools. The daemon side of the browser clipper is now here too
+— a bearer token and a clip endpoint — but the extension that uses them, and the
+inbox, are not built yet.
 
 ## The daemon
 
@@ -16,32 +18,42 @@ loopback address only and serves every root it knows about.
 ```
 mdn serve                run the daemon against the configured notes root
 mdn open DIR             register DIR with the running daemon and open it
+mdn token                print the bearer token (--rotate replaces it)
 mdn version              print the version
 ```
 
 `mdn serve` takes `--config FILE` (default `~/.config/mdn/config.yml`),
-`--root DIR`, `--port N` and `--max-watches N` to override what the file says, and
+`--root DIR`, `--port N` and `--max-watches N` to override what the file says,
 `--state FILE` (default `~/.local/state/mdn/roots.json`) for where folders added with
-`mdn open` are remembered. It stops cleanly on `SIGINT` and `SIGTERM`.
+`mdn open` are remembered, and `--token-file FILE` (default
+`~/.local/state/mdn/token`) for the bearer token. It stops cleanly on `SIGINT` and
+`SIGTERM`.
 
 `mdn open DIR` takes `--config FILE`, `--port N`, and `--no-browser` to print the URL
 instead of launching one. It resolves `DIR` against your working directory, POSTs it
 to the running daemon and opens `/r/<slug>/`. If no daemon answers on the port it
 prints how to start one and exits non-zero — it never starts a daemon itself.
 
-The configuration file holds three keys:
+`mdn token` prints the daemon's bearer token, creating it if the daemon has not run
+yet, and takes `--token-file FILE` and `--rotate`. See
+[Authentication](#authentication).
+
+The configuration file holds four keys:
 
 ```yaml
 notes_root: /home/you/notes
 port: 7337
 max_watches: 8192
+clips_dir: clips
 ```
 
 A missing file is not an error as long as `--root` supplies the notes root. The
 default port is 7337 and the default watch budget 8192 directories per root; `0`
 removes the budget, and a negative value is refused. The Live update section below
-says what the budget buys. `contrib/mdn.service` is a systemd user unit that runs
-`mdn serve`.
+says what the budget buys. `clips_dir` is where [clips](#clipping-a-web-page) land,
+relative to the notes root, default `clips`; an absolute path, or one climbing out
+of the notes root, is refused at startup. `contrib/mdn.service` is a systemd user
+unit that runs `mdn serve`.
 
 ripgrep (`rg`) must be on `PATH` at runtime. It builds the navigator's file listing,
 runs search, and decides which files the tag collector reads — which is how
@@ -83,9 +95,52 @@ described under [Confinement](#confinement).
 | `GET /api/r/{slug}/search?q=` | `{hits, truncated}`; each hit is a path, line number, matching text with match offsets, and the lines either side |
 | `GET /api/r/{slug}/tags` | `{tags: [{name, count, notes}]}`, sorted by count then name |
 | `GET /api/r/{slug}/events` | A Server-Sent Events stream of change batches |
+| `POST /api/clip` | Creates a note from `{url, title, markdown, kind}`; needs the token. See [Clipping a web page](#clipping-a-web-page) |
 
 Everything else serves the embedded UI bundle, falling back to `index.html` so
 client-side routes such as `/r/notes/some/note.md` load.
+
+### Authentication
+
+The daemon holds one bearer token per installation. It is generated the first time
+`mdn serve` runs and stored, one line, at `~/.local/state/mdn/token`
+(`$XDG_STATE_HOME/mdn/token`) with mode `0600` — beside the state file and kept as
+private as it is. `mdn token` prints it, creating it if the daemon has not run yet,
+so a client can be set up before the daemon is ever started:
+
+```
+$ mdn token
+NGTBQLVJHJQOIYMIZH5UMRB2XK
+$ mdn token --rotate
+DK5T2ZHQ4WQKX3BYA7CJEUPMSN
+```
+
+`--rotate` replaces the token and prints the new one. A running daemon needs no
+restart: it notices the file has been replaced and, from the next request, accepts
+the new token and refuses the old one. Both commands take `--token-file FILE`, which
+must name the same file the daemon was given.
+
+A client presents it in an `Authorization` header:
+
+```
+Authorization: Bearer NGTBQLVJHJQOIYMIZH5UMRB2XK
+```
+
+What the token buys is the [Origin](#confinement) check: a request carrying it is
+served whatever its `Origin`, which is how the browser extension writes from its
+`chrome-extension://` origin. It buys nothing else — every endpoint that was
+reachable without it still is, over loopback, exactly as before, and the web UI
+sends no `Authorization` header at all. `POST /api/clip` is the one endpoint that
+*requires* the token, because nothing on the daemon's own origin needs to call it.
+
+The `Host` check is not waived by the token: DNS rebinding is a separate attack, and
+a rebound page holds no token anyway.
+
+A request whose `Authorization` header is not a valid `Bearer <token>` — a wrong
+token, a rotated-away one, or another scheme — is refused with `401` and
+`{"code": "unauthorized", "error": ...}`, whatever its origin, rather than falling
+back to the Origin rule. A stale token in a client's settings is therefore reported
+as one.
 
 ### Conditional saves
 
@@ -143,6 +198,89 @@ permission bits, but creates a new inode owned by the daemon user: hard-link ide
 ownership, ACLs, extended attributes and other extended metadata are not preserved.
 The temporary file is synced before rename; the parent directory is not synced, so
 the API does not promise rename durability across power loss.
+
+### Clipping a web page
+
+`POST /api/clip` creates a note from a web clipping. It is the only endpoint that
+creates a file rather than reading or replacing one, and the only one that requires
+the [token](#authentication).
+
+```
+POST /api/clip
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{"url": "https://example.com/article",
+ "title": "The Cost of Abstraction",
+ "markdown": "# Heading\n\nBody text.\n",
+ "kind": "page"}
+```
+
+`url`, `markdown` and `kind` are required; `kind` is `page` or `selection`; `title`
+may be empty or absent. The response is `201` with the notes root's slug and the
+path of the created note relative to that root, which together are the app URL
+`/r/{root}/{path}`:
+
+```json
+{"root": "notes", "path": "clips/2026-09-10-the-cost-of-abstraction.md"}
+```
+
+The note lands under `clips_dir` inside the **notes** root — never a recent root —
+and the directory is created if it is missing. The name is the clip's date and a
+slug of its title, with `-2`, `-3` … appended if that name is taken, so an existing
+note is never overwritten:
+
+```
+clips/2026-09-10-the-cost-of-abstraction.md
+clips/2026-09-10-the-cost-of-abstraction-2.md
+```
+
+The slug is lower case and ASCII: accented Latin letters fold to the letter (`Café`
+→ `cafe`), every other run of characters becomes a single hyphen, and the result is
+trimmed to 64 characters at a hyphen. A title that yields nothing — an empty title,
+or one written entirely in another script — gives `untitled`; the title itself is
+still in the frontmatter.
+
+The file is the frontmatter, a blank line, and the markdown byte for byte:
+
+```
+---
+title: The Cost of Abstraction
+source: https://example.com/article
+clipped: "2026-09-10T14:05:00+01:00"
+tags: [clip]
+---
+
+# Heading
+
+Body text.
+```
+
+`clipped` is RFC 3339 in the daemon's local time zone, and the note is created
+`0644` less the daemon's umask, like any other file it would write. Nothing is
+added to the markdown — not even a trailing newline — and nothing is normalised. The new note
+reaches every open page through the [events stream](#live-updates) like any other
+new file; the very first clip of an installation may report the new `clips`
+directory rather than the note itself, which refetches the tree just the same.
+
+Clip errors use the same `{code, error}` envelope as
+[conditional saves](#conditional-saves):
+
+| Status | Code | Meaning |
+|--------|------|---------|
+| 400 | `invalid_body` | Malformed JSON, a missing or empty field, a relative `url`, or a `kind` that is neither `page` nor `selection` |
+| 401 | `unauthorized` | No token, or not the current one |
+| 403 | `outside_root` | `clips_dir` resolves outside the notes root |
+| 403 | `permission_denied` | The clips directory is not writable |
+| 409 | `conflict` | The dated name and every suffix are taken |
+| 413 | `too_large` | The markdown or the request exceeds the size limit |
+| 415 | `invalid_body` | Send `Content-Type: application/json` |
+| 500 | `io_error` | The note could not be written |
+
+The limits are the source API's: the markdown must be valid UTF-8 and at most 8 MiB,
+unpaired JSON Unicode surrogate escapes are rejected, and the encoded request may be
+six bytes per markdown byte plus 64 KiB for the URL, the title and the object
+syntax. Responses carry `Cache-Control: no-store`.
 
 ### Live updates
 
@@ -454,21 +592,30 @@ echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-mdn.conf
 - The listener binds `127.0.0.1` and nothing else.
 - The `Host` header must be `localhost` or `127.0.0.1` with the daemon's port, which
   defeats DNS rebinding.
-- An `Origin` header, if present, must be the daemon's own origin. A request with no
-  `Origin`, such as the CLI, passes.
+- An `Origin` header, if present, must be the daemon's own origin — unless the
+  request carries the [bearer token](#authentication), which is accepted from any
+  origin. A request with no `Origin`, such as the CLI, passes.
 - Every path a request names is resolved through one function: it is cleaned and
   rejected if it leaves the root lexically, then symlinks are evaluated and it is
   rejected again if the real path leaves the root. A symlink pointing back inside the
   root is served.
+- The clip endpoint composes no absolute path: it creates the directory and the note
+  through a directory handle opened on the notes root, so a `clips_dir` that is a
+  symlink out of the root is refused rather than followed, and it creates
+  exclusively, so an existing note is never overwritten.
 - The two halves of that meet at symlinks inside a root: ripgrep does not follow them,
   so a symlinked file or directory is in neither the navigator nor search, but one
   whose target is inside the root is still served by direct URL, and one whose target
   leaves the root is refused.
 
-The daemon has no authentication of its own. It assumes a single-user machine, where
-every local process already runs as the user who owns the notes — so any local
-process can list roots, register folders, and read files under them through the API,
-and files the navigator and search hide are still readable by direct URL. That
-premise was raised and accepted deliberately
-([#2](https://github.com/davison/md-notes/issues/2#issuecomment-5572874194)); a token
-is expected to arrive with the browser extension, which needs one anyway.
+The daemon assumes a single-user machine, where every local process already runs as
+the user who owns the notes — so any local process can list roots, register folders,
+and read files under them through the API without presenting anything, and files the
+navigator and search hide are still readable by direct URL. That premise was raised
+and accepted deliberately
+([#2](https://github.com/davison/md-notes/issues/2#issuecomment-5572874194)). The
+[bearer token](#authentication) does not change it: it exists so that a client which
+cannot make a same-origin claim — the browser extension — can be told apart from a
+web page that has merely found the port, and it is protected by the same `0600` the
+state file has. Any local process running as the user can read the token file, and
+is already inside the premise.
