@@ -21,8 +21,8 @@ do a few things well and nothing else:
 ## Shape
 
 The design as a whole. Milestone one built the daemon and the reading half of
-the web UI, milestone two the editor; the extension and the inbox are still
-ahead.
+the web UI, milestone two the editor; milestone three is building the
+extension, and the inbox is still ahead.
 
 - **Daemon.** One static Go binary. Serves the web UI, watches one or more
   root folders, renders markdown server-side, shells out to ripgrep for
@@ -32,7 +32,8 @@ ahead.
   CodeMirror 6 editor with vim keybindings behind a single toggle.
 - **Browser extension.** Chromium Manifest V3. Clips a readable page or a
   selection as markdown and posts it to the daemon. Also intercepts local
-  markdown file URLs so they open in the app.
+  markdown file URLs so they open in the app. See
+  [docs/extension.md](docs/extension.md).
 - **Sync and mobile.** Out of scope for the daemon. Syncthing keeps the
   folder mirrored between machines and an Android phone, where any markdown
   editor reads the same files. An inbox file lets URLs shared from the
@@ -47,6 +48,7 @@ gitignored and hidden files out of the tree and out of results.
 
 ```
 make build      # builds the UI and the static ./mdn binary
+make extension  # builds the browser extension to extension/dist and a zip
 make check      # vet, typecheck, tests, build
 make install    # copies ./mdn to ~/.local/bin/mdn (PREFIX=... to change)
 ```
@@ -133,6 +135,19 @@ kernel's own limit (this needs root):
 sudo sysctl fs.inotify.max_user_watches=524288
 echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-mdn.conf
 ```
+
+## Browser extension
+
+`make extension` builds a Chromium Manifest V3 extension into
+`extension/dist`, loadable unpacked in Brave from `brave://extensions` with
+**Developer mode** on. Switch on **Allow access to file URLs** in its details
+and a local `.md` or `.markdown` file opens in md-notes instead of rendering
+as plain text: the extension registers the file's folder with the running
+daemon, or opens the note under a root that already contains it, and leaves
+the page alone with a red `!` on the toolbar icon when the daemon cannot be
+reached. Its options page holds the daemon URL and the token.
+[docs/extension.md](docs/extension.md) covers loading it, the token, and each
+permission it asks for and why.
 
 The daemon listens on the loopback address only, refuses requests whose
 Host or Origin is not its own, and never serves a path that resolves
