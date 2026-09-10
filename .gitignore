@@ -2,3 +2,6 @@
 /ui/node_modules/
 /ui/dist/*
 !/ui/dist/.gitkeep
+/extension/node_modules/
+/extension/dist/
+/extension/mdn-extension.zip

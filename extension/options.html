@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>md-notes options</title>
+  <link rel="stylesheet" href="/pages.css" />
+</head>
+<body>
+  <main>
+    <h1>md-notes</h1>
+    <p class="hint">
+      Point the extension at your running daemon and give it the installation's
+      token.
+    </p>
+
+    <label for="daemon-url">Daemon URL</label>
+    <input id="daemon-url" type="text" spellcheck="false" placeholder="http://localhost:7337" />
+    <p class="hint">
+      The default is <code>http://localhost:7337</code>. Another address needs the
+      browser's permission, which is asked for when you save.
+    </p>
+
+    <label for="token">Token</label>
+    <input id="token" type="password" spellcheck="false" autocomplete="off" />
+    <label class="reveal" for="reveal">
+      <input id="reveal" type="checkbox" /> show the token
+    </label>
+    <p class="hint">
+      Print it with <code>mdn token</code>. Writing to the daemon from the
+      extension needs it; opening a file that is already inside a registered root
+      does not.
+    </p>
+
+    <div class="row">
+      <button id="save">Save</button>
+      <button id="test" class="secondary">Test connection</button>
+    </div>
+    <p id="status" class="status" role="status"></p>
+
+    <h2>File URL access</h2>
+    <p id="file-access" class="hint"></p>
+  </main>
+  <script type="module" src="/src/options.ts"></script>
+</body>
+</html>
