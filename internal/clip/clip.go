@@ -133,8 +133,17 @@ func ensureDir(root roots.Root, handle *os.Root, dir string) error {
 	return nil
 }
 
+// writeAll writes the note and makes its bytes durable before reporting
+// success, the way the save path stages its replacement: a 201 the caller
+// acts on should not name a note that a power cut leaves empty. The
+// directory entry is not synced, so the API promises no more about a new
+// name surviving a crash than the save path promises about a rename.
 func writeAll(f *os.File, body []byte) error {
 	if _, err := f.Write(body); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
 		f.Close()
 		return err
 	}
