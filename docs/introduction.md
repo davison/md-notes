@@ -819,12 +819,13 @@ this milestone does not change.
 - An `Origin` header, if present, must be the daemon's own origin — unless the
   request carries the [bearer token](#authentication), which is accepted from any
   origin. A request with no `Origin`, such as the CLI, passes. No `OPTIONS`
-  preflight is answered and no CORS header is ever sent, so a browser *page* cannot
-  use the token even if it has one; the exemption is for a browser extension holding
-  `host_permissions`, which CORS does not govern. Under `tailnet_host` the daemon's own origin
-  is `https://<tailnet_host>` and only that, and a request authenticated by the
-  session cookie gets the check too — `SameSite=Strict` is not left as the only
-  thing between a foreign page and a write.
+  preflight is answered and no CORS header is ever sent, so a **web** page cannot use
+  the token even if it has one, and neither can a content script. The exemption
+  follows `host_permissions`: it is for the extension's own contexts, which CORS
+  does not govern. Under `tailnet_host` the daemon's own origin is
+  `https://<tailnet_host>` and only that, and a request authenticated by the session
+  cookie gets the check too — `SameSite=Strict` is not left as the only thing
+  between a foreign page and a write.
 - Under `tailnet_host` nothing at all is served unauthenticated, and what an
   authenticated caller reaches is the UI's own API: `POST /api/roots` and
   `POST /api/clip` stay on the machine, and so does any endpoint added later until
