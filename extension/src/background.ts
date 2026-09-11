@@ -1,19 +1,33 @@
 /**
- * The MV3 service worker. Its only job in this milestone is the file-URL
- * intercept: a local markdown file the browser is about to render as plain
- * text is opened in md-notes instead.
+ * The MV3 service worker. It does two things.
  *
- * It listens on `chrome.tabs.onUpdated` rather than `chrome.webNavigation`,
- * which keeps the manifest free of both the `tabs` and the `webNavigation`
- * permission: `host_permissions: ["file:///*"]` alone is enough for the tab's
- * URL to be delivered here.
+ * The file-URL intercept: a local markdown file the browser is about to render
+ * as plain text is opened in md-notes instead. It listens on
+ * `chrome.tabs.onUpdated` rather than `chrome.webNavigation`, which keeps the
+ * manifest free of both the `tabs` and the `webNavigation` permission:
+ * `host_permissions: ["file:///*"]` alone is enough for the tab's URL to be
+ * delivered here.
+ *
+ * The clipper: the context menu and the popup both prepare a clip by injecting
+ * the converter into the page, and the popup then asks for it to be saved. The
+ * daemon call has to happen *here*, in the worker, and not in the popup — the
+ * daemon answers no CORS preflight, and only an extension service worker
+ * holding the host permission is exempt from CORS.
  */
 
+import { CLIP_MENU, buildClipRequest, describeClipFailure, menuKind } from "./clip";
+import { postClip } from "./daemon";
+import { CLIP_ENTRY_POINT, extractionError, isExtraction, type ClipKind } from "./extraction";
 import { resolveOpen, type OpenResult } from "./open-file";
+import { isClipMessage, type DiscardReply, type PrepareReply, type SaveReply } from "./messages";
+import { noteUrl } from "./paths";
+import { clearPendingClip, getPendingClip, setPendingClip, type PendingClip } from "./pending";
 import { loadSettings } from "./settings";
 import { clearTabStatus, setTabStatus } from "./status";
 
 const BADGE_COLOUR = "#b3261e";
+/** A clip waiting to be saved is not a failure, so it is not the failure red. */
+const CLIP_BADGE_COLOUR = "#2a6db0";
 
 /** Navigations already being handled, so a repeated `loading` does not race. */
 const inFlight = new Map<number, string>();
@@ -26,6 +40,15 @@ const redirected = new Map<number, string>();
 
 /** Tabs carrying a status record, so unrelated navigations cost nothing. */
 const marked = new Set<number>();
+
+/**
+ * The tab the pending clip came from, mirrored here so the navigation
+ * listener can drop a stale clip without reading storage on every event. The
+ * mirror is lost when the worker is shut down; the clip itself is not, and
+ * the popup shows the URL it was taken from, so the worst a lost mirror costs
+ * is a clip that outlives its page and says where it came from.
+ */
+let pendingTab: number | null = null;
 
 async function showFailure(tabId: number, result: OpenResult & { status: "failed" }, source: string) {
   marked.add(tabId);
@@ -64,6 +87,7 @@ async function forget(tabId: number) {
 function moveOn(tabId: number) {
   redirected.delete(tabId);
   inFlight.delete(tabId);
+  if (pendingTab === tabId) void forgetPendingClip().catch(() => undefined);
   if (marked.has(tabId)) void forget(tabId).catch(() => undefined);
 }
 
@@ -89,6 +113,172 @@ export async function handleNavigation(tabId: number, url: string): Promise<Open
   }
   return result;
 }
+
+/**
+ * (Re)creates the menu entries. Menus survive a browser restart in the
+ * profile, so they are cleared first rather than created twice.
+ */
+async function installMenus(): Promise<void> {
+  await chrome.contextMenus.removeAll();
+  for (const item of CLIP_MENU) chrome.contextMenus.create(item);
+}
+
+/**
+ * Runs the converter in a tab and returns what it made of the page.
+ *
+ * Two injections, deliberately. The first carries Readability and Turndown,
+ * which is far more code than a serialized `func` could hold, and it publishes
+ * one function; the second calls that function, and its return value is
+ * defined by the scripting API rather than by whatever shape the bundler gave
+ * the file. Both need `scripting` plus access to the tab, which is `activeTab`
+ * — granted by the click that got us here and by nothing else.
+ */
+async function extractFrom(tabId: number, kind: ClipKind): Promise<PrepareReply> {
+  let returned: unknown;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["clip-inject.js"] });
+    const [frame] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (entryPoint: string, which: string) => {
+        const clip = (globalThis as unknown as Record<string, unknown>)[entryPoint];
+        return typeof clip === "function"
+          ? (clip as (k: string) => unknown)(which)
+          : { error: "the clipper did not load in this page" };
+      },
+      args: [CLIP_ENTRY_POINT, kind],
+    });
+    returned = frame?.result;
+  } catch (err) {
+    // Chromium refuses to inject into its own pages, the extension gallery and
+    // anything the extension has no access to.
+    return {
+      ok: false,
+      message: `This page cannot be clipped (${err instanceof Error ? err.message : String(err)}).`,
+    };
+  }
+  const failure = extractionError(returned);
+  if (failure !== null) return { ok: false, message: capitalise(failure) };
+  if (!isExtraction(returned)) return { ok: false, message: "The page returned no clip." };
+  return { ok: true, clip: { ...returned, tabId, at: Date.now() } };
+}
+
+function capitalise(text: string): string {
+  return text === "" ? text : `${text[0]!.toUpperCase()}${text.slice(1)}.`;
+}
+
+/** Prepares a clip and holds it for the popup. */
+async function prepareClip(tabId: number, kind: ClipKind): Promise<PrepareReply> {
+  const reply = await extractFrom(tabId, kind);
+  if (!reply.ok) return reply;
+  await setPendingClip(reply.clip);
+  pendingTab = tabId;
+  return reply;
+}
+
+/** Saves the held clip under the title the user settled on. */
+async function saveClip(title: string): Promise<SaveReply> {
+  const pending = await getPendingClip();
+  if (pending === null) {
+    return {
+      ok: false,
+      failure: {
+        kind: "bad_response",
+        message: "There is no clip waiting to be saved.",
+        offerOptions: false,
+      },
+    };
+  }
+  const settings = await loadSettings();
+  try {
+    const result = await postClip(settings, buildClipRequest(pending, title));
+    await forgetPendingClip();
+    return {
+      ok: true,
+      root: result.root,
+      path: result.path,
+      url: noteUrl(settings.daemonUrl, result.root, result.path),
+    };
+  } catch (err) {
+    // The clip is kept: the user pastes a token, or starts the daemon, and
+    // presses Save again without having to find the page a second time.
+    return { ok: false, failure: describeClipFailure(err, settings) };
+  }
+}
+
+/** Drops the held clip and the badge that announced it. */
+async function forgetPendingClip(): Promise<void> {
+  const tabId = pendingTab;
+  pendingTab = null;
+  await clearPendingClip();
+  if (tabId === null || marked.has(tabId)) return;
+  await chrome.action.setBadgeText({ tabId, text: "" });
+  await chrome.action.setTitle({ tabId, title: "md-notes" });
+}
+
+/**
+ * Says a clip is waiting. The context menu gives no popup of its own, so on a
+ * browser that has `action.openPopup` the popup is opened for the user; on one
+ * that has not, the badge is the invitation to open it.
+ */
+async function announceClip(clip: PendingClip): Promise<void> {
+  await chrome.action.setBadgeBackgroundColor({ color: CLIP_BADGE_COLOUR });
+  await chrome.action.setBadgeText({ tabId: clip.tabId, text: "1" });
+  await chrome.action.setTitle({
+    tabId: clip.tabId,
+    title: "md-notes: a clip is ready to save",
+  });
+  const openPopup = (chrome.action as { openPopup?: () => Promise<void> }).openPopup;
+  if (typeof openPopup !== "function") return;
+  try {
+    await openPopup.call(chrome.action);
+  } catch {
+    // Some browsers, and some window states, decline. The badge still says so.
+  }
+}
+
+/** Says a clip could not even be taken. */
+async function announceFailure(tabId: number, message: string): Promise<void> {
+  await setTabStatus(tabId, { kind: "refused", message, source: "", at: Date.now() });
+  marked.add(tabId);
+  await chrome.action.setBadgeBackgroundColor({ color: BADGE_COLOUR });
+  await chrome.action.setBadgeText({ tabId, text: "!" });
+  await chrome.action.setTitle({ tabId, title: `md-notes: ${message}` });
+}
+
+chrome.runtime.onInstalled.addListener(() => void installMenus());
+chrome.runtime.onStartup.addListener(() => void installMenus());
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  const kind = menuKind(info.menuItemId);
+  if (kind === null || tab?.id === undefined) return;
+  const tabId = tab.id;
+  void prepareClip(tabId, kind)
+    .then((reply) => (reply.ok ? announceClip(reply.clip) : announceFailure(tabId, reply.message)))
+    .catch((err: unknown) => console.warn("md-notes: preparing a clip failed:", err));
+});
+
+chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  if (!isClipMessage(message)) return false;
+  const work = (): Promise<PrepareReply | SaveReply | DiscardReply> => {
+    switch (message.type) {
+      case "clip:prepare":
+        return prepareClip(message.tabId, message.kind);
+      case "clip:save":
+        return saveClip(message.title);
+      case "clip:discard":
+        return forgetPendingClip().then(() => ({ ok: true }) as DiscardReply);
+    }
+  };
+  work()
+    .then(sendResponse)
+    .catch((err: unknown) => {
+      // A reply shaped for either caller: the popup reads `message` when it
+      // asked to prepare and `failure` when it asked to save.
+      const message = err instanceof Error ? err.message : String(err);
+      sendResponse({ ok: false, message, failure: { kind: "bad_response", message, offerOptions: false } });
+    });
+  return true;
+});
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== "loading") return;
@@ -139,5 +329,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   inFlight.delete(tabId);
   redirected.delete(tabId);
   marked.delete(tabId);
+  if (pendingTab === tabId) void clearPendingClip().catch(() => undefined);
+  if (pendingTab === tabId) pendingTab = null;
   void clearTabStatus(tabId).catch(() => undefined);
 });

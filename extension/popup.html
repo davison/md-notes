@@ -10,6 +10,29 @@
   <main class="popup">
     <h1>md-notes</h1>
     <p id="daemon" class="hint"></p>
+
+    <div class="row" id="clip-actions">
+      <button id="clip-page">Clip page</button>
+      <button id="clip-selection" class="secondary">Clip selection</button>
+    </div>
+
+    <section id="clip" hidden>
+      <p id="clip-kind" class="hint"></p>
+      <label for="clip-title">Title</label>
+      <input id="clip-title" type="text" spellcheck="false" />
+      <p id="clip-source" class="hint source"></p>
+      <div class="row">
+        <button id="clip-save">Save to notes</button>
+        <button id="clip-discard" class="secondary">Discard</button>
+      </div>
+    </section>
+
+    <p id="clip-status" class="status" role="status"></p>
+    <p id="clip-links" class="links" hidden>
+      <a id="clip-open" href="#" target="_blank" rel="noreferrer" hidden>Open the note</a>
+      <a id="clip-options" href="#" hidden>Options</a>
+    </p>
+
     <p id="status" class="status" role="status"></p>
     <div class="row">
       <button id="options" class="secondary">Options</button>

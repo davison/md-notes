@@ -22,6 +22,14 @@
   }
 }
 
+/*
+ * `hidden` has to beat the author rules below it — a `.row` that is hidden is
+ * still `display: flex` without this.
+ */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   padding: 1rem 1.25rem 1.5rem;
@@ -135,4 +143,16 @@ button.secondary {
 
 .popup {
   width: 22rem;
+}
+
+/* A URL is long and unbreakable; it must not widen the popup. */
+.source {
+  overflow-wrap: anywhere;
+  margin-top: 0.35rem;
+}
+
+.links {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
 }
