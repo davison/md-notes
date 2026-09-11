@@ -72,13 +72,29 @@ options**):
 > built from `main`.
 
 The daemon URL may name a daemon reached over the tailnet rather than one on this
-machine, and the browser will ask for permission for that address. Two of the
-extension's actions do not survive the trip: clipping and registering a new folder
-are served on loopback only, so under a `tailnet_host` name both are refused with
-`loopback_only` — see
-[What is reachable under that name](introduction.md#what-is-reachable-under-that-name-and-what-is-not).
-Opening a file that is already inside a registered root works, with the token
-pasted.
+machine, and the browser will ask for permission for that address — but **nothing
+the extension does works under such a name today**, whatever token is pasted.
+
+- Clipping and registering a new folder are served on loopback only, so both are
+  refused with `loopback_only` under a `tailnet_host` name. That is deliberate; see
+  [What is reachable under that name](introduction.md#what-is-reachable-under-that-name-and-what-is-not).
+- Opening a local file fails too, including one already inside a registered root.
+  The extension asks the daemon for its roots *without* the token — a GET from its
+  background context carries no `Origin`, so on loopback the guard lets it through
+  and the intercept works with nothing pasted — and under `tailnet_host` nothing is
+  served unauthenticated, so that request is `401` and the attempt ends there. The
+  badge and the popup then say **the daemon rejected the token**, which is
+  misleading: the token is fine, it was simply never sent.
+
+**Test connection** is the one thing that *will* report success against such a name,
+because it is the one call that deliberately sends the token; it is therefore no
+guide to whether anything else will work.
+
+Reading your notes from another device is the app's job, not the extension's: open
+`https://<tailnet_host>/` in the browser there and log in. Leave the extension's
+daemon URL pointing at the daemon on this machine.
+[#51](https://github.com/davison/md-notes/issues/51) is the capture for making the
+extension work against a tailnet name.
 
 **Test connection** asks the daemon for its roots and says what came back. If
 a token is stored it also presents one the daemon cannot have issued, to find
@@ -245,7 +261,7 @@ text the browser was going to show anyway, and the toolbar icon gains a red
 | `daemon not reachable at http://localhost:7337` | Nothing is listening. Start `mdn serve`, or fix the daemon URL in the options. |
 | `cross-origin request refused: no token is stored` | The file is not in any registered root, and registering one needs the token. Run `mdn token` and paste it — or register the folder with `mdn open DIR` instead. |
 | `the daemon refused the extension's origin even with a token` | The daemon does not know about tokens: it was built before the token existed. Rebuild it, or use `mdn open DIR`. |
-| `the daemon rejected the token` | The token is wrong or has been rotated. `mdn token` prints the current one. |
+| `the daemon rejected the token` | The token is wrong or has been rotated — `mdn token` prints the current one. It also appears, misleadingly, when the daemon URL names a `tailnet_host`, where the roots call is refused for carrying no token at all ([#51](https://github.com/davison/md-notes/issues/51)). |
 | `path must be absolute`, `not a directory` | The daemon refused the folder; its own message is passed through. |
 
 Whatever the reason, the page itself is untouched. Fix the cause and reload
@@ -268,7 +284,7 @@ The manifest asks for the least that makes the above work. From
 | `scripting` | Putting the extractor and the markdown converter into that tab. `activeTab` says *which* page may be read; `scripting` is what allows code to be run in it at all. |
 | `host_permissions: http://localhost:7337/*`, `http://127.0.0.1:7337/*` | Talking to the daemon. Chromium enforces the port, so this grants no access to any other service on your machine. |
 | `host_permissions: file:///*` | Seeing that a tab has navigated to a local markdown file. Inert until you switch **Allow access to file URLs** on. |
-| `optional_host_permissions: http://*/*`, `https://*/*` | Not granted at install. Only requested, with the browser's own prompt, if you set a daemon URL that is not the default — a different port, or a name reached over the tailnet (where clipping and registering a folder are refused; see above). |
+| `optional_host_permissions: http://*/*`, `https://*/*` | Not granted at install. Only requested, with the browser's own prompt, if you set a daemon URL that is not the default — a different port, or a name reached over the tailnet — though no extension action works under a tailnet name today ([#51](https://github.com/davison/md-notes/issues/51); see above). |
 
 Deliberately **not** asked for:
 
