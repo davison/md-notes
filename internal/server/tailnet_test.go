@@ -877,15 +877,15 @@ func TestLoggingInAgainEndsTheOldSession(t *testing.T) {
 	if s.sessions.Len() != 1 {
 		t.Errorf("%d sessions after logging in again, want the old one gone", s.sessions.Len())
 	}
-	if got := do2(t, ts, first); got != http.StatusUnauthorized {
+	if got := sessionStatus(t, ts, first); got != http.StatusUnauthorized {
 		t.Errorf("the superseded session: status %d, want 401", got)
 	}
-	if got := do2(t, ts, second); got != http.StatusOK {
+	if got := sessionStatus(t, ts, second); got != http.StatusOK {
 		t.Errorf("the new session: status %d, want 200", got)
 	}
 }
 
-func do2(t *testing.T, ts *httptest.Server, cookie string) int {
+func sessionStatus(t *testing.T, ts *httptest.Server, cookie string) int {
 	t.Helper()
 	return tdo(t, ts, "GET", "/api/roots", "", map[string]string{"Cookie": cookie}).StatusCode
 }
