@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -707,5 +710,122 @@ func TestTailnetSessionExpires(t *testing.T) {
 	time.Sleep(60 * time.Millisecond)
 	if got := tdo(t, ts, "GET", "/api/roots", "", map[string]string{"Cookie": cookie}); got.StatusCode != http.StatusUnauthorized {
 		t.Errorf("an expired session: status %d, want 401", got.StatusCode)
+	}
+}
+
+// raw sends a request exactly as written, so a request target in absolute
+// form — which no http.Client will send to an origin server — can be put
+// on the wire. It returns the status line.
+func raw(t *testing.T, ts *httptest.Server, request string) string {
+	t.Helper()
+	conn, err := net.Dial("tcp", ts.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.WriteString(conn, request); err != nil {
+		t.Fatal(err)
+	}
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(line)
+}
+
+// The tailnet boundary is the Host header and nothing else corroborates
+// it, so nothing may be able to decide it *other* than the Host header.
+// Go fills r.Host from the request target's authority when the target is
+// in absolute form, which would let the target pick the rule.
+func TestGuardRefusesAnAbsoluteFormTarget(t *testing.T) {
+	ts, base := newTailnetServer(t)
+	addr := ts.Listener.Addr().String()
+	// The demonstration: a loopback authority in the target with the
+	// tailnet name in the header, which was served under the loopback
+	// rule with no credential at all.
+	got := raw(t, ts, "GET http://"+addr+"/api/roots HTTP/1.1\r\nHost: "+tailnetName+"\r\nConnection: close\r\n\r\n")
+	if !strings.Contains(got, "403") {
+		t.Errorf("absolute-form target with a tailnet Host: %q, want 403", got)
+	}
+	// And the other way round, so neither direction is decided by the
+	// target.
+	got = raw(t, ts, "GET https://"+tailnetName+"/api/roots HTTP/1.1\r\nHost: 127.0.0.1:7337\r\nConnection: close\r\n\r\n")
+	if !strings.Contains(got, "403") {
+		t.Errorf("absolute-form target with a loopback Host: %q, want 403", got)
+	}
+	// Origin form, the only form anything sends here, is untouched.
+	got = raw(t, ts, "GET /api/roots HTTP/1.1\r\nHost: 127.0.0.1:7337\r\nConnection: close\r\n\r\n")
+	if !strings.Contains(got, "200") {
+		t.Errorf("origin form on loopback: %q, want 200", got)
+	}
+	got = raw(t, ts, "GET /api/roots HTTP/1.1\r\nHost: "+tailnetName+"\r\nAuthorization: Bearer "+daemonToken(t, base)+"\r\nConnection: close\r\n\r\n")
+	if !strings.Contains(got, "200") {
+		t.Errorf("origin form under the tailnet name: %q, want 200", got)
+	}
+}
+
+// A proxy that rewrote the Host to the upstream — nginx's `proxy_pass`
+// does by default — would present a loopback Host carrying the forwarding
+// headers it added on the way. Serving that under the loopback rule hands
+// the whole API, unauthenticated, to everything the proxy admits. It fails
+// closed instead, and the refusal says what to fix.
+func TestGuardRefusesAForwardedLoopbackHost(t *testing.T) {
+	ts, _ := newTailnetServer(t)
+	for _, header := range []string{"X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host"} {
+		for _, host := range []string{"127.0.0.1:7337", "localhost:7337"} {
+			resp := do(t, ts, "GET", "/api/roots", "", map[string]string{"Host": host, header: "x"})
+			if resp.StatusCode != http.StatusForbidden {
+				t.Errorf("%s with Host %s: status %d, want 403", header, host, resp.StatusCode)
+				continue
+			}
+			if code := guardCode(t, resp); code != "bad_host" {
+				t.Errorf("%s with Host %s: code %q, want bad_host", header, host, code)
+			}
+		}
+	}
+	// The write the reviewer reached this way is refused with it.
+	resp := do(t, ts, "POST", "/api/roots", `{"path":"/etc"}`, map[string]string{
+		"Host": "127.0.0.1:7337", "X-Forwarded-Proto": "https", "X-Forwarded-For": "100.64.0.9",
+		"Content-Type": "application/json",
+	})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("forwarded root registration: status %d, want 403", resp.StatusCode)
+	}
+	// An ordinary loopback request, which sets none of those, is served.
+	if resp := do(t, ts, "GET", "/api/roots", "", nil); resp.StatusCode != http.StatusOK {
+		t.Errorf("plain loopback: status %d, want 200", resp.StatusCode)
+	}
+}
+
+// With no tailnet host configured there is no boundary to protect and
+// nothing in front, so a forwarding header is just a header.
+func TestForwardedHeadersAreOrdinaryWithoutATailnetHost(t *testing.T) {
+	ts, _ := newTestServer(t)
+	resp := do(t, ts, "GET", "/api/roots", "", map[string]string{"X-Forwarded-Proto": "https", "X-Forwarded-For": "100.64.0.9"})
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status %d, want 200 — loopback without the extra name is unchanged", resp.StatusCode)
+	}
+}
+
+// The docs tell the user that `tailscale status --json` prints the name
+// with its root label, so the fully qualified form of the Host has to
+// match the configured name, which is stored without it.
+func TestTailnetHostMatchesItsFullyQualifiedForm(t *testing.T) {
+	ts, base := newTailnetServer(t)
+	tok := daemonToken(t, base)
+	for host, want := range map[string]int{
+		tailnetName:        http.StatusOK,
+		tailnetName + ".":  http.StatusOK,
+		tailnetName + "..": http.StatusForbidden,
+	} {
+		resp := do(t, ts, "GET", "/api/roots", "", bearerHeader(tok, "Host", host))
+		if resp.StatusCode != want {
+			t.Errorf("Host %q: status %d, want %d", host, resp.StatusCode, want)
+		}
+	}
+	// Loopback's own names are compared as they always were.
+	if resp := do(t, ts, "GET", "/api/roots", "", map[string]string{"Host": "localhost.:7337"}); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("localhost. : status %d, want the 403 it has always had", resp.StatusCode)
 	}
 }

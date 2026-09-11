@@ -409,13 +409,33 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		"127.0.0.1:" + strconv.Itoa(s.port): true,
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Which rule applies is decided by the Host, so nothing may be
+		// able to decide it other than the Host header itself. A request
+		// target in absolute form carries an authority of its own, which
+		// Go copies into r.Host, so the target would choose the rule; no
+		// browser and no reverse proxy sends one to an origin server.
+		if r.URL.Host != "" {
+			writeGuardError(w, http.StatusForbidden, "bad_host",
+				"the request target must be in origin form")
+			return
+		}
 		host := strings.ToLower(r.Host)
 		switch {
 		case loopbackHosts[host]:
+			// A proxy that rewrote the Host would present exactly this:
+			// loopback, with the forwarding headers it added on its way
+			// past. Nothing on loopback sets those, and serving it under
+			// the loopback rule would hand the whole API to whatever the
+			// proxy admits, unauthenticated. Fail closed and say so.
+			if s.tailnetHost != "" && forwarded(r) {
+				writeGuardError(w, http.StatusForbidden, "bad_host",
+					"a forwarded request carries a loopback Host; the proxy in front must pass the original Host through unchanged")
+				return
+			}
 			if !s.guardLoopback(w, r, loopbackHosts) {
 				return
 			}
-		case s.tailnetHost != "" && host == s.tailnetHost:
+		case s.tailnetHost != "" && trimRootLabel(host) == s.tailnetHost:
 			if !s.guardTailnet(w, r) {
 				return
 			}
@@ -425,6 +445,32 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// forwarded reports whether the request passed through a proxy that said
+// so. The headers are meaningful only under the tailnet name; on loopback
+// their presence is the evidence that something in front rewrote the Host
+// the guard depends on.
+func forwarded(r *http.Request) bool {
+	for _, h := range [...]string{"X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host"} {
+		if r.Header.Get(h) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// trimRootLabel drops one trailing dot from a Host's name, so that the
+// fully qualified form of the tailnet name matches the configured one —
+// which is stored without it, because that is what a browser usually
+// sends. The loopback names are compared without this: they are the
+// daemon's own behaviour on the machine, and M3-R6 leaves that alone.
+func trimRootLabel(host string) string {
+	name, port, err := net.SplitHostPort(host)
+	if err != nil {
+		return strings.TrimSuffix(host, ".")
+	}
+	return net.JoinHostPort(strings.TrimSuffix(name, "."), port)
 }
 
 // guardLoopback is the rule for a request to localhost or 127.0.0.1,

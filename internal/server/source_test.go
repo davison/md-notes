@@ -128,7 +128,10 @@ func TestSaveSourceBodyLimit(t *testing.T) {
 	ts, _ := newTestServer(t)
 	s := serverOf(t, ts)
 	// Exercise the encoded-body bound without allocating a huge client string.
-	req := httptest.NewRequest("PUT", "http://localhost:7337"+sourceURL, io.LimitReader(repeatByte(' '), 6*source.MaxBytes+1025))
+	// The target is a path, not an absolute URL: absolute form is what a
+	// client sends to a forward proxy, and the guard refuses it.
+	req := httptest.NewRequest("PUT", sourceURL, io.LimitReader(repeatByte(' '), 6*source.MaxBytes+1025))
+	req.Host = "localhost:7337"
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
