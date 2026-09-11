@@ -48,10 +48,11 @@ func TestServeOverrides(t *testing.T) {
 		root := fs.String("root", "", "")
 		port := fs.Int("port", 0, "")
 		maxWatches := fs.Int("max-watches", config.DefaultMaxWatches, "")
+		tailnetHost := fs.String("tailnet-host", "", "")
 		if err := fs.Parse(args); err != nil {
 			t.Fatal(err)
 		}
-		return overrides(fs, *root, *port, maxWatches)
+		return overrides(fs, *root, *port, *tailnetHost, maxWatches)
 	}
 	if over := build(nil); over.MaxWatches != nil {
 		t.Fatalf("max-watches = %d without the flag, want nothing to override the file", *over.MaxWatches)
@@ -62,5 +63,11 @@ func TestServeOverrides(t *testing.T) {
 	if over := build([]string{"--max-watches", "500", "--root", "/n", "--port", "9"}); over.MaxWatches == nil ||
 		*over.MaxWatches != 500 || over.NotesRoot != "/n" || over.Port != 9 {
 		t.Fatalf("overrides = %+v", over)
+	}
+	if over := build(nil); over.TailnetHost != "" {
+		t.Fatalf("tailnet-host = %q without the flag, want nothing to override the file", over.TailnetHost)
+	}
+	if over := build([]string{"--tailnet-host", "laptop.ts.net"}); over.TailnetHost != "laptop.ts.net" {
+		t.Fatalf("tailnet-host = %q", over.TailnetHost)
 	}
 }
