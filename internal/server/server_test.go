@@ -40,6 +40,13 @@ func serverOf(t *testing.T, ts *httptest.Server) *Server {
 
 func newTestServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
+	return newTestServerWith(t)
+}
+
+// newTestServerWith is newTestServer with extra options, for the tailnet
+// tests; the base directory it returns holds the notes root and the token.
+func newTestServerWith(t *testing.T, opts ...Option) (*httptest.Server, string) {
+	t.Helper()
 	base := t.TempDir()
 	notes := filepath.Join(base, "notes")
 	os.MkdirAll(filepath.Join(notes, "sub"), 0o755)
@@ -62,7 +69,7 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := New(reg, port, ui, log.New(io.Discard, "", 0), WithToken(store))
+	s := New(reg, port, ui, log.New(io.Discard, "", 0), append([]Option{WithToken(store)}, opts...)...)
 	s.keepalive = 100 * time.Millisecond
 	t.Cleanup(s.Close)
 	ts := httptest.NewServer(s.Handler())
