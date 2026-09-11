@@ -81,7 +81,11 @@ func WithWatchBudget(n int) Option {
 // and identifies which token that is. It is *token.Store in the daemon and
 // a stub in tests.
 type Validator interface {
-	Valid(presented string) bool
+	// Authenticate reports whether presented is the current token and, in
+	// the same read, the generation it was compared against — so that a
+	// credential minted from a successful check cannot be stamped with a
+	// generation the check never saw.
+	Authenticate(presented string) (generation uint64, ok bool)
 	// Generation changes when, and only when, the token does, so a
 	// session cookie minted from one can be refused once the token it
 	// rested on has been rotated away.
@@ -518,7 +522,11 @@ func bearer(r *http.Request) (string, bool) {
 // validToken reports whether presented is the daemon's bearer token. A
 // daemon with no token configured accepts none.
 func (s *Server) validToken(presented string) bool {
-	return s.token != nil && s.token.Valid(presented)
+	if s.token == nil {
+		return false
+	}
+	_, ok := s.token.Authenticate(presented)
+	return ok
 }
 
 // authenticated reports whether the request proved it holds the token.

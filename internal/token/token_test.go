@@ -543,3 +543,47 @@ func TestGenerationMovesOnlyWhenTheTokenDoes(t *testing.T) {
 		t.Errorf("generation %d after the file vanished, want it to stand at %d", got, second+1)
 	}
 }
+
+// A caller that mints a credential from a successful check must stamp it
+// with the generation that check saw. Asking separately admits a rotation
+// between the two, and the credential would then outlive the secret that
+// authorised it — the one case the generation exists to cover.
+func TestAuthenticateReportsTheGenerationItComparedAgainst(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	s, _, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen, ok := s.Authenticate(first)
+	if !ok || gen != s.Generation() {
+		t.Fatalf("Authenticate(current) = (%d, %v), want (%d, true)", gen, ok, s.Generation())
+	}
+	second, err := Rotate(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The superseded token is refused, and the generation it comes back
+	// with is the current one, never the one it was minted under.
+	stale, ok := s.Authenticate(first)
+	if ok {
+		t.Error("the replaced token authenticated")
+	}
+	if stale == gen {
+		t.Errorf("generation %d unchanged across a rotation", stale)
+	}
+	fresh, ok := s.Authenticate(second)
+	if !ok || fresh != stale {
+		t.Errorf("Authenticate(new) = (%d, %v), want (%d, true)", fresh, ok, stale)
+	}
+	if _, ok := s.Authenticate(""); ok {
+		t.Error("the empty token authenticated")
+	}
+	// Valid is the same answer without the generation.
+	if !s.Valid(second) || s.Valid(first) {
+		t.Error("Valid disagrees with Authenticate")
+	}
+}
