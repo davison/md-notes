@@ -8,7 +8,8 @@ and the rendered viewer from
 the same notes. Notes are edited in place; creating, renaming and deleting them is
 still done with other tools. The daemon side of the browser clipper is now here too
 — a bearer token and a clip endpoint — but the extension that uses them, and the
-inbox, are not built yet.
+inbox, are not built yet. The daemon can also be reached from another node on the
+tailnet, behind `tailscale serve` and a login page.
 
 ## The daemon
 
@@ -23,9 +24,9 @@ mdn version              print the version
 ```
 
 `mdn serve` takes `--config FILE` (default `~/.config/mdn/config.yml`),
-`--root DIR`, `--port N` and `--max-watches N` to override what the file says,
-`--state FILE` (default `~/.local/state/mdn/roots.json`) for where folders added with
-`mdn open` are remembered, and `--token-file FILE` (default
+`--root DIR`, `--port N`, `--max-watches N` and `--tailnet-host NAME` to override what
+the file says, `--state FILE` (default `~/.local/state/mdn/roots.json`) for where
+folders added with `mdn open` are remembered, and `--token-file FILE` (default
 `~/.local/state/mdn/token`) for the bearer token. It stops cleanly on `SIGINT` and
 `SIGTERM`.
 
@@ -38,13 +39,14 @@ prints how to start one and exits non-zero — it never starts a daemon itself.
 yet, and takes `--token-file FILE` and `--rotate`. See
 [Authentication](#authentication).
 
-The configuration file holds four keys:
+The configuration file holds five keys:
 
 ```yaml
 notes_root: /home/you/notes
 port: 7337
 max_watches: 8192
 clips_dir: clips
+tailnet_host: laptop.tailnet-name.ts.net
 ```
 
 A missing file is not an error as long as `--root` supplies the notes root. The
@@ -52,8 +54,11 @@ default port is 7337 and the default watch budget 8192 directories per root; `0`
 removes the budget, and a negative value is refused. The Live update section below
 says what the budget buys. `clips_dir` is where [clips](#clipping-a-web-page) land,
 relative to the notes root, default `clips`; an absolute path, or one climbing out
-of the notes root, is refused at startup. `contrib/mdn.service` is a systemd user
-unit that runs `mdn serve`.
+of the notes root, is refused at startup. `tailnet_host` is the one extra `Host`
+name the daemon answers to, for requests a `tailscale serve` proxy forwards to the
+loopback port; it is empty by default, and everything under it must authenticate.
+See [Reaching the daemon over the tailnet](#reaching-the-daemon-over-the-tailnet).
+`contrib/mdn.service` is a systemd user unit that runs `mdn serve`.
 
 ripgrep (`rg`) must be on `PATH` at runtime. It builds the navigator's file listing,
 runs search, and decides which files the tag collector reads — which is how
@@ -81,7 +86,10 @@ The home page at `/` lists the notes root under "Notes" and every recent root un
 ## The HTTP API
 
 All endpoints are on the loopback listener, and all of them are behind the guard
-described under [Confinement](#confinement).
+described under [Confinement](#confinement). Most of them are also reachable under a
+configured `tailnet_host`, to an authenticated caller; `POST /api/roots` and
+`POST /api/clip` are not, and the
+[tailnet section](#reaching-the-daemon-over-the-tailnet) says why.
 
 | Endpoint | What it does |
 |----------|--------------|
@@ -158,13 +166,41 @@ the boundary — a page that has merely found the port must not be able to write
 if it has somehow read the token. An extension does its clipping from the service
 worker.
 
+#### A browser on the tailnet
+
+When `tailnet_host` is configured, a browser reaching the daemon under that name
+cannot put the token in a header on every request, so it presents it once instead.
+An unauthenticated navigation is answered with a login page — one self-contained
+document, no script and no asset to fetch — which posts the token to `/login` and
+gets back a cookie:
+
+```
+Set-Cookie: __Host-mdn_session=…; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Strict
+```
+
+The `__Host-` prefix makes the browser itself refuse the cookie unless it is
+`Secure`, `Path=/` and carries no `Domain`, so it is bound to the one name that set
+it. The value is a random session id, never the token; the daemon keeps only its
+SHA-256 and the token *generation* the session was minted from, so `mdn token
+--rotate` logs every device out on the next request, and so does restarting the
+daemon. A session otherwise lasts 30 days.
+
+`/login` exists only under `tailnet_host`. Over loopback it is an ordinary
+client-side route and serves the UI, as it always did.
+
+An unauthenticated request that is *not* a navigation — a `fetch`, the events
+stream, anything under `/api/` — gets `401 {"code":"unauthorized"}` rather than a
+login page it cannot read. An API client should send the `Authorization` header and
+never see the page at all.
+
 ### Refusals
 
 | Status | Code | What happened |
 |--------|------|---------------|
 | 403 | `bad_host` | The `Host` header is not `localhost` or `127.0.0.1` with the daemon's port |
 | 403 | `cross_origin` | A foreign `Origin` and no token: present the token to write from another origin |
-| 401 | `unauthorized` | An `Authorization` header that is not a valid `Bearer <token>` — a wrong token, a rotated-away one, or another scheme |
+| 401 | `unauthorized` | An `Authorization` header that is not a valid `Bearer <token>` — a wrong token, a rotated-away one, or another scheme. Under `tailnet_host`, also a request that proved nothing at all |
+| 403 | `loopback_only` | The endpoint is not reachable under `tailnet_host`. See [the tailnet section](#reaching-the-daemon-over-the-tailnet) |
 
 The guard answers before any handler runs, and its refusals carry the same
 `{code, error}` envelope and `Cache-Control: no-store` as the handlers below, so one
@@ -623,17 +659,129 @@ sudo sysctl fs.inotify.max_user_watches=524288
 echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-mdn.conf
 ```
 
+## Reaching the daemon over the tailnet
+
+The daemon still binds `127.0.0.1` and nothing else. To read your notes from
+another node on your tailnet, put `tailscale serve` in front: it terminates TLS on
+the machine's own tailnet name and proxies to the loopback port, and the tailnet
+ACL decides who may reach it.
+
+First tell the daemon the name it will be reached by, in `~/.config/mdn/config.yml`:
+
+```yaml
+tailnet_host: laptop.tailnet-name.ts.net
+```
+
+or `mdn serve --tailnet-host laptop.tailnet-name.ts.net`. The name is your machine's
+MagicDNS name; `tailscale status --json | jq -r .Self.DNSName` prints it with a
+trailing dot, which you may keep or drop — the daemon stores it without, since that
+is what a browser puts in the `Host`. A name carrying a scheme, a path or a port
+that is not a number is refused at startup rather than left never to match, and so
+is a loopback name — loopback already works and is deliberately left alone.
+
+Then, on the machine running the daemon, with **HTTPS Certificates** and **MagicDNS**
+enabled for the tailnet in the Tailscale admin console:
+
+```
+tailscale serve --bg 7337
+```
+
+That is the whole command. It prints the URL it is serving and the configuration
+persists across restarts. `tailscale serve status` shows what is set up and
+`tailscale serve --https=443 off` takes it down again. (This is the `serve` syntax
+of recent Tailscale releases; an older one spells the same thing differently, and
+`tailscale serve --help` will say how.)
+
+Use `serve`, **not** `tailscale funnel`: funnel publishes to the whole internet,
+where the single-user premise below does not hold at all and one bearer token is the
+only thing between a stranger and your notes.
+
+Serving on a port other than 443 works — `tailscale serve --bg --https=8443 7337` —
+but the browser then sends `laptop.tailnet-name.ts.net:8443` as the `Host`, so
+`tailnet_host` must carry the port too.
+
+### What the proxy forwards, and what the daemon does with it
+
+| Header | Set by | Used for |
+|--------|--------|----------|
+| `Host` | the browser, passed through | matched against `tailnet_host`; this is what makes the guard let the request through |
+| `X-Forwarded-Proto: https` | `tailscale serve` | the login page refuses to set a `Secure` cookie the browser would discard, and says so, rather than looping |
+| `X-Forwarded-For` | `tailscale serve` | the tailnet address in the daemon's log line for each login |
+| `Tailscale-User-Login` and friends | `tailscale serve` | **nothing.** The daemon reads no identity header |
+
+Those headers are trusted only because the listener is loopback: the only things
+that can set them are the proxy and a process already running as you. The identity
+headers are deliberately unused: the capture this work adopts
+([#10](https://github.com/davison/md-notes/issues/10)) asked for one authentication
+path designed once for both the browser extension and the tailnet, and that is the
+token.
+
+### What is reachable under that name, and what is not
+
+Everything under `tailnet_host` must authenticate: the `Authorization` header for an
+API client, the [login page and session cookie](#a-browser-on-the-tailnet) for a
+browser. Nothing is served without one.
+
+What an authenticated caller reaches is the UI's own API and nothing else:
+
+| Reachable | Not reachable |
+|-----------|---------------|
+| `GET /api/roots` | `POST /api/roots` |
+| the per-root reads — `tree`, `note`, `source`, `raw`, `search`, `tags`, `events` | `POST /api/clip` |
+| `PUT /api/r/{slug}/source/{path…}` | anything else under `/api/` |
+| the UI bundle and its client-side routes | |
+
+Anything on the right answers `403 {"code":"loopback_only"}`. It is an allow-list,
+not those two exclusions, so an endpoint added later is loopback-only until somebody
+decides otherwise.
+
+`POST /api/roots` is the one that matters: with it, a caller holding the credential
+could register any directory on the machine and then read every file under it
+through the raw endpoint. On loopback that is inside the premise below — anything
+that can reach the port runs as you and can read those files anyway. Over the
+tailnet it is not, so it stays on the machine. `POST /api/clip` is refused because
+nothing off the machine clips: the extension's daemon URL is `http://localhost:7337`
+and it runs where the notes are.
+
+So a remote device reads, searches, and edits the notes the daemon already serves.
+It cannot add a root, and `mdn open` remains a command for the daemon's own machine.
+
+### The premise, restated
+
+On loopback the daemon assumes a single-user machine: everything that can reach the
+port already runs as the user who owns the notes. Under `tailnet_host` that is no
+longer who is on the other end. The people and devices your **tailnet ACL admits to
+this node** can reach the login page, and one of them holding the token can read,
+search and edit every root the daemon serves — the notes root and every folder added
+with `mdn open`, including any that was only ever meant to be looked at locally.
+
+So: keep the ACL as narrow as the notes deserve, ideally to your own devices; use
+`serve` rather than `funnel`; and treat `mdn token --rotate` as the way to revoke a
+device, since it ends every session and every stored token at once. The token is
+still a single secret shared by every client, which is the shape M3-R1 fixed and
+this milestone does not change.
+
 ## Confinement
 
-- The listener binds `127.0.0.1` and nothing else.
+- The listener binds `127.0.0.1` and nothing else, whether or not `tailnet_host` is
+  configured. Reach from the tailnet comes from a proxy in front, never from a
+  second listener.
 - The `Host` header must be `localhost` or `127.0.0.1` with the daemon's port, which
-  defeats DNS rebinding.
+  defeats DNS rebinding, or the configured `tailnet_host`. The allow-list grows by
+  that one name and no other.
 - An `Origin` header, if present, must be the daemon's own origin — unless the
   request carries the [bearer token](#authentication), which is accepted from any
   origin. A request with no `Origin`, such as the CLI, passes. No `OPTIONS`
   preflight is answered and no CORS header is ever sent, so a browser *page* cannot
   use the token even if it has one; the exemption is for an extension service
-  worker, which CORS does not govern.
+  worker, which CORS does not govern. Under `tailnet_host` the daemon's own origin
+  is `https://<tailnet_host>` and only that, and a request authenticated by the
+  session cookie gets the check too — `SameSite=Strict` is not left as the only
+  thing between a foreign page and a write.
+- Under `tailnet_host` nothing at all is served unauthenticated, and what an
+  authenticated caller reaches is the UI's own API: `POST /api/roots` and
+  `POST /api/clip` stay on the machine, and so does any endpoint added later until
+  somebody decides otherwise.
 - Every path a request names is resolved through one function: it is cleaned and
   rejected if it leaves the root lexically, then symlinks are evaluated and it is
   rejected again if the real path leaves the root. A symlink pointing back inside the
@@ -657,4 +805,5 @@ and accepted deliberately
 cannot make a same-origin claim — the browser extension — can be told apart from a
 web page that has merely found the port, and it is protected by the same `0600` the
 state file has. Any local process running as the user can read the token file, and
-is already inside the premise.
+is already inside the premise. Configuring `tailnet_host` does change it, and
+[The premise, restated](#the-premise-restated) above says how.

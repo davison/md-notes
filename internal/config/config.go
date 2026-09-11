@@ -108,7 +108,13 @@ func cleanTailnetHost(h string) (string, error) {
 		}
 		host = h
 	}
-	host = strings.TrimSuffix(host, ".")
+	// A fully qualified name with the root label spelled out is the same
+	// name; browsers send the Host without it, so the stored form drops
+	// it too rather than never matching.
+	if trimmed := strings.TrimSuffix(host, "."); trimmed != host {
+		name = strings.Replace(name, host, trimmed, 1)
+		host = trimmed
+	}
 	if host == "" {
 		return "", ErrBadTailnetHost
 	}

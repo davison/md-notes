@@ -67,6 +67,9 @@ max_watches: 8192
 clips_dir: clips
 ```
 
+Add `tailnet_host: laptop.tailnet-name.ts.net` to reach the daemon from
+another node on your tailnet; see [Over the tailnet](#over-the-tailnet).
+
 Then run the daemon and open the browser:
 
 ```
@@ -145,6 +148,45 @@ accepted whatever its origin, which is how a browser extension writes to
 the notes. Nothing else needs it, and the premise underneath is unchanged:
 a single-user machine, where every local process already runs as the user
 who owns the notes and can read that file anyway.
+
+## Over the tailnet
+
+`tailnet_host` in the configuration (or `--tailnet-host`) names one extra
+`Host` the daemon answers to, so you can read your notes from another node
+on your tailnet. The listener does not move: it still binds `127.0.0.1`,
+and `tailscale serve` terminates TLS on the machine's own tailnet name and
+proxies to it.
+
+```yaml
+tailnet_host: laptop.tailnet-name.ts.net
+```
+
+```
+tailscale serve --bg 7337
+```
+
+Everything under that name must authenticate. A browser is shown a login
+page, pastes the token once and gets a session cookie scoped to that host
+— `HttpOnly`, `Secure`, `SameSite=Strict` — and the whole UI, live update
+included, works from there. An API client sends the `Authorization`
+header. `mdn token --rotate` ends every session as well as every stored
+token, which is how you revoke a device.
+
+What a caller reaches over the tailnet is narrower than on loopback: the
+UI's own API — the reads, the source save, the events stream, search and
+tags — but not `POST /api/roots` and not `POST /api/clip`. Registering a
+folder is the step from "read my notes" to "read any file on this
+machine", so it stays on the machine.
+
+This is where the single-user premise stretches. On loopback the people
+who can reach the daemon are the processes running as you. Under
+`tailnet_host` they are whoever your **tailnet ACL admits to this node**,
+and one of them holding the token can read and edit every root the daemon
+serves — the notes root and every folder added with `mdn open`. Keep the
+ACL as narrow as the notes deserve, and use `tailscale serve`, never
+`tailscale funnel`, which would publish to the internet at large.
+[docs/introduction.md](docs/introduction.md#reaching-the-daemon-over-the-tailnet)
+has the details.
 
 ## Browser extension
 
