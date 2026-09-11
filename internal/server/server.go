@@ -23,6 +23,7 @@ import (
 	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/search"
+	"github.com/davison/md-notes/internal/session"
 	"github.com/davison/md-notes/internal/source"
 	"github.com/davison/md-notes/internal/tags"
 	"github.com/davison/md-notes/internal/tree"
@@ -45,6 +46,11 @@ type Server struct {
 	token Validator
 	// clipsDir is where POST /api/clip writes, relative to the notes root.
 	clipsDir string
+	// tailnetHost is one extra Host name the guard accepts, for requests
+	// a `tailscale serve` proxy forwards here. Empty is loopback only.
+	tailnetHost string
+	// sessions holds the browser logins issued under tailnetHost.
+	sessions *session.Store
 
 	// keepalive is how often an idle event stream sends a comment.
 	keepalive time.Duration
@@ -71,10 +77,15 @@ func WithWatchBudget(n int) Option {
 	return func(s *Server) { s.watchBudget = n }
 }
 
-// Validator answers whether a presented bearer token is the daemon's own.
-// It is *token.Store in the daemon and a stub in tests.
+// Validator answers whether a presented bearer token is the daemon's own,
+// and identifies which token that is. It is *token.Store in the daemon and
+// a stub in tests.
 type Validator interface {
 	Valid(presented string) bool
+	// Generation changes when, and only when, the token does, so a
+	// session cookie minted from one can be refused once the token it
+	// rested on has been rotated away.
+	Generation() uint64
 }
 
 // WithToken gives the daemon the bearer token clients present in an
@@ -100,6 +111,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 		reg: reg, port: port, ui: ui, mux: http.NewServeMux(), log: logger, md: render.New(),
 		source:    source.New(reg),
 		clipsDir:  config.DefaultClipsDir,
+		sessions:  session.New(session.DefaultTTL),
 		keepalive: 30 * time.Second,
 		hubs:      map[string]*watch.Hub{},
 		watchers:  map[string]*watch.Watcher{},
@@ -386,37 +398,59 @@ func (s *Server) eventsHandler(w http.ResponseWriter, r *http.Request) {
 // chrome-extension origin. A wrong token is refused outright rather than
 // falling back to the origin rule, so a stale one is reported as such. The
 // Host check applies either way.
+//
+// A configured tailnet host is one further name, and one different rule:
+// see guardTailnet. Loopback keeps the rule above whether or not that name
+// is configured — the extra name adds reach, and changes nothing about the
+// machine the daemon runs on.
 func (s *Server) guard(next http.Handler) http.Handler {
-	allowedHosts := map[string]bool{
+	loopbackHosts := map[string]bool{
 		"localhost:" + strconv.Itoa(s.port): true,
 		"127.0.0.1:" + strconv.Itoa(s.port): true,
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !allowedHosts[strings.ToLower(r.Host)] {
+		host := strings.ToLower(r.Host)
+		switch {
+		case loopbackHosts[host]:
+			if !s.guardLoopback(w, r, loopbackHosts) {
+				return
+			}
+		case s.tailnetHost != "" && host == s.tailnetHost:
+			if !s.guardTailnet(w, r) {
+				return
+			}
+		default:
 			writeGuardError(w, http.StatusForbidden, "bad_host", "unexpected Host header")
 			return
 		}
-		presented, carried := bearer(r)
-		switch {
-		case carried && s.validToken(presented):
-		case carried:
-			writeUnauthorized(w)
-			return
-		default:
-			if origin := r.Header.Get("Origin"); origin != "" {
-				o := strings.ToLower(strings.TrimSuffix(origin, "/"))
-				if !allowedHosts[strings.TrimPrefix(o, "http://")] || !strings.HasPrefix(o, "http://") {
-					// A client that meant to authenticate and has no token
-					// yet lands here, so the code has to be distinguishable
-					// from a token that was presented and refused.
-					writeGuardError(w, http.StatusForbidden, "cross_origin",
-						"cross-origin request refused; present the bearer token to write from another origin")
-					return
-				}
-			}
-		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// guardLoopback is the rule for a request to localhost or 127.0.0.1,
+// unchanged since the token landed. It reports whether the request may go
+// on to the mux.
+func (s *Server) guardLoopback(w http.ResponseWriter, r *http.Request, allowedHosts map[string]bool) bool {
+	presented, carried := bearer(r)
+	switch {
+	case carried && s.validToken(presented):
+	case carried:
+		writeUnauthorized(w)
+		return false
+	default:
+		if origin := r.Header.Get("Origin"); origin != "" {
+			o := strings.ToLower(strings.TrimSuffix(origin, "/"))
+			if !allowedHosts[strings.TrimPrefix(o, "http://")] || !strings.HasPrefix(o, "http://") {
+				// A client that meant to authenticate and has no token
+				// yet lands here, so the code has to be distinguishable
+				// from a token that was presented and refused.
+				writeGuardError(w, http.StatusForbidden, "cross_origin",
+					"cross-origin request refused; present the bearer token to write from another origin")
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // bearer returns the token presented in the Authorization header. The
