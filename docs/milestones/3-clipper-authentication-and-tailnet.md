@@ -83,31 +83,73 @@ so far where none was.
 
 ## Requirement outcomes
 
-> **Awaiting the independent QA verdict.** The milestone's gates put QA against the
-> built daemon and the built extension in headless Chromium, exercising all seven
-> requirements ([#35](https://github.com/davison/md-notes/issues/35)); that run is in
-> progress on [#35](https://github.com/davison/md-notes/issues/35) as this document is
-> written. The rows below carry no verdict yet. They are completed from the QA comment
-> on [#35](https://github.com/davison/md-notes/issues/35) before this document merges,
-> the way M2's were drawn from
-> [its verdict](https://github.com/davison/md-notes/issues/17#issuecomment-5589684484);
-> nothing else in this record depends on them.
+The verdicts below are drawn from the independent QA comment on the milestone issue
+([#35](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688)), run
+against the binary and the `extension/dist` a clean worktree of `main` at
+[`b6b0866`](https://github.com/davison/md-notes/commit/b6b0866) produced — five
+temporary daemons above port 8800 on their own configs, state files, token files and
+roots, one of them behind a local TLS-terminating proxy, and headless Chromium driving
+the built extension and the UI against QA's own fixture pages rather than the
+repository's. It raised seven findings, none blocking; the coordinator's disposition
+of them is at
+[#35](https://github.com/davison/md-notes/issues/35#issuecomment-5633500584).
 
 | ID | Requirement | Status |
 |----|-------------|--------|
-| M3-R1 | Token authentication: one bearer token per installation at `0600`, `mdn token` and `--rotate`, the Origin exemption, `401` for a wrong or revoked token | _Awaiting the QA verdict on [#35](https://github.com/davison/md-notes/issues/35)_ |
-| M3-R2 | Clip endpoint: `POST /api/clip` writing a dated, slugged, deduplicated note under `clips_dir` with the documented frontmatter, confined to the notes root, appearing live | _Awaiting the QA verdict on [#35](https://github.com/davison/md-notes/issues/35)_ |
-| M3-R3 | Clipping from the browser: both entry points, Readability plus Turndown with GFM, the editable title, the success link and the named failures, the options page | _Awaiting the QA verdict on [#35](https://github.com/davison/md-notes/issues/35)_ |
-| M3-R4 | Opening local markdown in the app: the `file:` intercept, the already-registered and the newly-registered paths, the page left alone when the daemon is unreachable, the file URL permission documented | _Awaiting the QA verdict on [#35](https://github.com/davison/md-notes/issues/35)_ |
-| M3-R5 | Build and install: the extension in the repository, `make extension` producing both artefacts, typecheck and tests in `make check`, least permissions, the install documentation | _Awaiting the QA verdict on [#35](https://github.com/davison/md-notes/issues/35)_ |
-| M3-R6 | Tailnet access: one extra `Host` name, everything under it authenticated, the login page and session cookie, the UI and events stream end to end, loopback unchanged, the premise restated | _Awaiting the QA verdict on [#35](https://github.com/davison/md-notes/issues/35)_ |
-| M3-R7 | Documentation and record: the token, the clip endpoint, the extension, local files and tailnet access documented; the roadmap row; this record | _Awaiting the QA verdict on [#35](https://github.com/davison/md-notes/issues/35)_ |
+| M3-R1 | Token authentication: one bearer token per installation at `0600`, `mdn token` and `--rotate`, the Origin exemption, `401` for a wrong or revoked token | [Satisfied](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688) |
+| M3-R2 | Clip endpoint: a dated, slugged, deduplicated note under `clips_dir` with the documented frontmatter, confined to the notes root, appearing live | [Satisfied](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688) — one low finding accepted |
+| M3-R3 | Clipping from the browser: both entry points, Readability plus Turndown with GFM, the editable title, the success link and the named failures, the options page | [Satisfied](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688) — three low findings accepted |
+| M3-R4 | Opening local markdown in the app: the `file:` intercept, both open paths, the page left alone when the daemon is unreachable, the file URL permission documented | [Satisfied](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688) — one finding filed as [#50](https://github.com/davison/md-notes/issues/50) |
+| M3-R5 | Build and install: the extension in the repository, `make extension` producing both artefacts, typecheck and tests in `make check`, least permissions, the install documentation | [Satisfied](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688) |
+| M3-R6 | Tailnet access: one extra `Host` name, everything under it authenticated, the login page and session cookie, the UI and events stream end to end, loopback unchanged, the premise restated | [Satisfied](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688) |
+| M3-R7 | Documentation and record: the token, the clip endpoint, the extension, local files and tailnet access documented; the roadmap row; this record | [Not satisfied, provisionally](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688), on the state of `main` before this task — a superseding verdict is outstanding, see below |
+
+M3-R7 is the one row no verdict yet settles, and for the same reason M2-R6 was:
+QA graded it against `main` as it stood before this task and said the verdict "should
+be superseded once #40 merges". Everything it could check against behaviour it found
+accurate in every particular it could provoke — the token file rules, rotation, the
+CORS constraint, all five rows of the Refusals table, the clip request and response
+shapes, the slug rules to the letter, and the whole tailnet section including the
+forwarded-header table and the sentence about a non-443 `serve` port, which QA had to
+rely on to build its proxy rig at all. What it graded as missing is the
+milestone-level half — the boundary claims, the roadmap row, this record, and a
+cross-reference from the introduction to
+[the extension page](../extension.md) — every item of it this task's declared scope,
+listed as finding 6 so it could be acted on directly. The closure gate on
+[#35](https://github.com/davison/md-notes/issues/35) requires both that every
+requirement verdict is satisfied *and* that the milestone document is merged, so the
+merge of [#49](https://github.com/davison/md-notes/pull/49) is a precondition of
+closure rather than the verdict itself; the coordinator's disposition says a
+superseding M3-R7 verdict follows it
+([#35](https://github.com/davison/md-notes/issues/35#issuecomment-5633500584)).
+
+QA's seven findings, and what was done with each:
+
+| Finding | Disposition |
+|---------|-------------|
+| 1 — a `file:` URL naming a markdown file that **does not exist** still registers its directory as a permanent root, so navigating to `file:///etc/no-such-note.md` registers `/etc` | Backlog, captured as [#50](https://github.com/davison/md-notes/issues/50) |
+| 2 — Readability lifts the article's own `<h1>` out of a page clip | Accepted; the title survives in the frontmatter and as the app's heading, and a selection clip keeps its `<h1>`s |
+| 3 — task-list checkboxes survive a selection clip but not a page clip | Accepted, with the record corrected and one sentence added to [the extension page](../extension.md#what-ends-up-in-the-note); see [Corrections](#corrections-to-the-record-itself) |
+| 4 — a table with no header row is emitted as raw `<table>` HTML | Accepted; already captured as [#45](https://github.com/davison/md-notes/issues/45) from the review of [#43](https://github.com/davison/md-notes/pull/43) |
+| 5 — the login throttle's total floor was not documented | Folded into this task: [the introduction](../introduction.md#a-browser-on-the-tailnet) now says that once the daemon has seen more than three failures in the window across every address, each further failure waits half a second whatever `X-Forwarded-For` claims, and that a key-varying caller therefore meets the delay and never the `429` |
+| 6 — statements on `main` the merged work made false, and the milestone-level documentation not yet there | Folded into this task; it is the boundary refresh, the roadmap row, this record, and the introduction's link to the extension page |
+| 7 — a `clips_dir` naming an existing regular file fails at clip time (`500 io_error`) rather than at startup | Accepted; nothing is overwritten and the confinement that matters holds, so it is a configuration mistake surfacing late rather than a hole |
+
+- **Trade-off, as recorded in the disposition:** findings 2, 3, 4 and 7 put nothing at
+  risk and none falls within a requirement's wording, so fixing them inside the
+  milestone would extend it for cosmetic outcomes. Finding 1 is real and has a clear
+  shape, but it needs a decision about what should happen when a navigation names a
+  file that is not there — a silent no-op, a confirmation, or an existence check —
+  rather than a patch inside a documentation task.
+- **Rejected:** a remedy task inside this milestone;
+  [#50](https://github.com/davison/md-notes/issues/50) records the shape for a later
+  one to adopt.
 
 The operator's own check of the extension in Brave is recorded on
 [#35](https://github.com/davison/md-notes/issues/35) when they are back at a desk and
 is deliberately **not** a closure gate; anything it finds becomes a backlog capture or
-a remedy task. Two things this milestone's verification could not reach are waiting for
-it: Chromium's own `activeTab` grant, which is given by a user gesture no harness can
+a remedy task. Two things neither the reviews nor QA could reach are waiting for it:
+Chromium's own `activeTab` grant, which is given by a user gesture no harness can
 perform, and the `chrome.permissions.request` prompt for a non-default daemon URL,
 which headless Chromium blocks on
 ([#41](https://github.com/davison/md-notes/pull/41#issuecomment-5622167896)).
@@ -637,7 +679,8 @@ its plan ([#44](https://github.com/davison/md-notes/pull/44)).
 
 Four times a review finding was not about the code but about what the record said the
 code did. In three of the four the code was right and the words were wrong; in the
-fourth the words described a protection the code did not have.
+fourth the words described a protection the code did not have. QA added a fifth, below
+them.
 
 - **Who CORS actually governs.** The CORS settlement, and the Authentication section of
   `docs/introduction.md` that stated it, said the token's Origin exemption was usable
@@ -711,6 +754,19 @@ fourth the words described a protection the code did not have.
   not — the rule is looser on two counts, and looser is right
   ([#43](https://github.com/davison/md-notes/pull/43#issuecomment-5633053331), fixed as
   a comment in [`1e45740`](https://github.com/davison/md-notes/commit/1e45740)).
+
+A fifth, found by QA rather than by a review, is a claim in a **merged** PR
+description. [#43](https://github.com/davison/md-notes/pull/43)'s body lists task lists
+among what the conversion keeps. That is true of a selection clip and false of a page
+clip: Readability's sanitiser removes `input` elements before Turndown sees them, so a
+task list inside an article comes through as ordinary bullets, while a selection over
+the same markup gives `- [x]`. Reproduced against the built extension from this branch,
+both ways in one run. The body is the merge commit's message and cannot be edited, and
+the disposition on
+[#35](https://github.com/davison/md-notes/issues/35#issuecomment-5633500584) says the
+correction belongs here rather than in a rewritten history; the user-facing half is one
+sentence in [the extension page](../extension.md#what-ends-up-in-the-note), which said
+the same thing without the qualification.
 
 One citation in the record is itself wrong, and is left as it stands rather than edited:
 the tailnet CORS decision
@@ -856,12 +912,36 @@ that is now the tailnet's authorisation model. And round two of
 missing decision comment is what put the CORS settlement on the record at all; without
 it this document would not have found it, which is what the reviewer said at the time.
 
-Independent QA's verdicts are outstanding as this document is written; see
-[Requirement outcomes](#requirement-outcomes). Its gate exercises all seven requirements
-against the built daemon and the built extension in headless Chromium, including the
-tailnet cases simulated with a `Host` header and a local TLS-terminating proxy, since
-the tailnet is not available in the test environment
-([#35](https://github.com/davison/md-notes/issues/35)).
+Independent QA then went at the merged whole
+([#35](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688)), and
+found one real defect the four review loops and every suite had missed: **a `file:`
+URL naming a markdown file that does not exist still registers its directory as a
+permanent root**. Navigating to `file:///etc/no-such-note.md` registered `/etc`, wrote
+it to the state file, and left every markdown file under it readable *and writable*
+through the loopback editor, with no unregister endpoint to take it back. The gap is
+an unstated precondition rather than a contradiction of M3-R4, which is why the verdict
+holds — and QA bounded it carefully before recommending a capture: Chromium refuses a
+web page's navigation to a `file:` URL, so the trigger is the user or a link in a page
+already opened over `file://`. It is invisible to the suites on both sides of the seam,
+because `open-file.test.ts` mocks the roots API and the end-to-end suite covers only
+the already-registered path. Filed as [#50](https://github.com/davison/md-notes/issues/50).
+
+Three of its other findings are conversion edges, invisible for one reason — no
+fixture contained the shape. Readability lifts the article's own `<h1>` out of a page
+clip, and strips task-list checkboxes from a page clip, which a *selection* clip keeps;
+both are new. The third, a table with no header row surviving as raw `<table>` HTML, is
+[#45](https://github.com/davison/md-notes/issues/45) found again from the outside,
+which is some evidence that the capture is worth acting on. All three reproduce against
+the built extension. QA named the suite gaps behind them in as many words: no test
+contains a `<table>` without a `<thead>`, a task list inside an article, or an `<h1>`
+inside a selection — and, separately, the register-a-new-root half of M3-R4, the half
+that writes, has no end-to-end coverage at all, which is the gap finding 1 lives in.
+None of them was judged a reason to hold anything.
+
+QA also found the one behaviour this milestone's code has and its documentation did not
+describe — the throttle's total floor — and the boundary statements this task then
+fixed; both are folded into this task, and
+[Requirement outcomes](#requirement-outcomes) says what each became.
 
 ## Known gaps at the boundary
 
@@ -881,7 +961,10 @@ will surprise someone who has not read this far:
 | A page title written entirely in a non-Latin script yields `YYYY-MM-DD-untitled.md`, `-2`, `-3` …; the title itself is in the frontmatter | [#36](https://github.com/davison/md-notes/issues/36#issuecomment-5621889774) |
 | There is one pending clip at a time: clipping in one tab and then in another before saving loses the first | [#37](https://github.com/davison/md-notes/issues/37#issuecomment-5632495099) |
 | A `data:` image is dropped from a clip and a `javascript:` link keeps its text but loses the link | [#37](https://github.com/davison/md-notes/issues/37#issuecomment-5632495099) |
+| A `file:` URL naming a markdown file that **does not exist** still registers its directory as a permanent root, which then serves every markdown file under it to the loopback editor. There is no unregister endpoint; the state file is edited by hand | [#50](https://github.com/davison/md-notes/issues/50) |
+| Readability lifts the article's own `<h1>` out of a page clip — it survives as the frontmatter title and as the app's heading — and strips task-list checkboxes, which a selection clip keeps | [#35](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688), findings 2 and 3 |
 | A clipped table with no header row survives as raw `<table>` HTML, because the GFM plugin declines it and Turndown keeps what it cannot convert | [#45](https://github.com/davison/md-notes/issues/45) |
+| A `clips_dir` naming an existing regular file is accepted at startup and fails on the first clip with `500 {"code":"io_error"}`. Nothing is overwritten, and the escape cases are still caught at startup | [#35](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688), finding 7 |
 | Content after the `pre` inside a matched `div.highlight` — a caption, a filename strip — is dropped along with the copy button | [#47](https://github.com/davison/md-notes/issues/47) |
 | A `file:` URL the path mapping refuses is left alone silently, with no badge and no popup message, like a URL that is not markdown at all | [the extension page](../extension.md#opening-a-local-markdown-file) |
 | The mapping assumes POSIX paths, so a `file:///C:/…` URL maps to a path the daemon simply will not find | [#41](https://github.com/davison/md-notes/pull/41#issuecomment-5622167896) |
@@ -901,7 +984,12 @@ The five M2 follow-up captures — [#30](https://github.com/davison/md-notes/iss
 [#32](https://github.com/davison/md-notes/issues/32),
 [#33](https://github.com/davison/md-notes/issues/33) and
 [#34](https://github.com/davison/md-notes/issues/34) — are still open, deferred by the
-scope decision to a later polish milestone, and this milestone added four of its own.
+scope decision to a later polish milestone, and this milestone added five of its own —
+[#45](https://github.com/davison/md-notes/issues/45),
+[#46](https://github.com/davison/md-notes/issues/46),
+[#47](https://github.com/davison/md-notes/issues/47) and
+[#48](https://github.com/davison/md-notes/issues/48) from the review trail, and
+[#50](https://github.com/davison/md-notes/issues/50) from QA.
 
 ## Where the record is silent
 
