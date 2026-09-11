@@ -303,6 +303,16 @@ func TestTailnetLoginRefusals(t *testing.T) {
 		t.Errorf("null origin: status %d, want 403", opaque.StatusCode)
 	}
 
+	// The one endpoint that runs before anything is proved reads a form,
+	// not a megabyte.
+	big := loginPost(t, ts, strings.Repeat("x", 32<<10), "/")
+	if big.StatusCode != http.StatusBadRequest {
+		t.Errorf("oversize form: status %d, want 400", big.StatusCode)
+	}
+	if len(big.Cookies()) != 0 {
+		t.Errorf("oversize form was given a session: %v", big.Cookies())
+	}
+
 	// The form is posted, not fetched with a method of the caller's choice.
 	if resp := tdo(t, ts, "DELETE", loginPath, "", nil); resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("DELETE /login: status %d, want 405", resp.StatusCode)

@@ -188,6 +188,11 @@ daemon. A session otherwise lasts 30 days.
 `/login` exists only under `tailnet_host`. Over loopback it is an ordinary
 client-side route and serves the UI, as it always did.
 
+Authentication is checked when a request arrives, so an events stream already open
+is not cut off by a rotation: it ends when the page reloads, when the daemon
+restarts, or when the connection does. It carries the paths that changed and no
+file content.
+
 An unauthenticated request that is *not* a navigation — a `fetch`, the events
 stream, anything under `/api/` — gets `401 {"code":"unauthorized"}` rather than a
 login page it cannot read. An API client should send the `Authorization` header and
