@@ -157,14 +157,20 @@ a rebound page holds no token anyway.
 **The caller must be one CORS does not govern.** An `Authorization` header makes a
 cross-origin `fetch` non-simple, so a browser *page* sends `OPTIONS` first — and the
 daemon refuses the preflight like any other cross-origin request and sends no
-`Access-Control-Allow-Origin` on any response. That is deliberate: the intended
-client is a Manifest V3 extension **service worker** holding `host_permissions` for
-the daemon's origin, which is exempt from CORS and never preflights. A fetch from a
-content script, a popup document or an ordinary web page therefore fails at the
-preflight with the browser's opaque CORS error, whatever token it holds, and that is
-the boundary — a page that has merely found the port must not be able to write, even
-if it has somehow read the token. An extension does its clipping from the service
-worker.
+`Access-Control-Allow-Origin` on any response. That is deliberate, and it is the
+boundary: a page that has merely found the port must not be able to write, even if
+it has somehow read the token.
+
+What that admits is **any context of a browser extension holding
+`host_permissions`** for the daemon's origin — its service worker and its extension
+pages, the popup and the options page alike, all of which are exempt from CORS and
+never preflight. What it excludes is an ordinary web page and a content script;
+since Chrome 73 a content script's requests are subject to CORS like a page's. So a
+fetch from a web page fails at the preflight with the browser's opaque CORS error
+whatever token it holds, while the extension's own options page can call the API to
+test its token. (The clipping itself still belongs in the service worker, for a
+different reason: the worker outlives the popup, which is destroyed the moment it
+loses focus, and a context-menu clip has no popup open at all.)
 
 #### A browser on the tailnet
 
@@ -198,11 +204,19 @@ stream, anything under `/api/` — gets `401 {"code":"unauthorized"}` rather tha
 login page it cannot read. An API client should send the `Authorization` header and
 never see the page at all.
 
+Failed logins are bounded: three in a minute from one address are answered at once,
+the next few wait half a second each, and past a dozen the daemon answers
+`429 {"code":"too_many_attempts"}` with a `Retry-After` until the minute rolls. A
+correct token clears the count, so being throttled never locks you out of your own
+daemon. This is not what stands between anyone and the notes — the token is 130 bits
+from `crypto/rand`, and guessing it is hopeless — it bounds how much work and how
+many log lines one caller can cause.
+
 ### Refusals
 
 | Status | Code | What happened |
 |--------|------|---------------|
-| 403 | `bad_host` | The `Host` header is not `localhost` or `127.0.0.1` with the daemon's port |
+| 403 | `bad_host` | The `Host` header is not `localhost` or `127.0.0.1` with the daemon's port, nor the configured `tailnet_host`; or a forwarded request presented a loopback `Host`; or the request target was not in origin form |
 | 403 | `cross_origin` | A foreign `Origin` and no token: present the token to write from another origin |
 | 401 | `unauthorized` | An `Authorization` header that is not a valid `Bearer <token>` — a wrong token, a rotated-away one, or another scheme. Under `tailnet_host`, also a request that proved nothing at all |
 | 403 | `loopback_only` | The endpoint is not reachable under `tailnet_host`. See [the tailnet section](#reaching-the-daemon-over-the-tailnet) |
@@ -710,7 +724,7 @@ but the browser then sends `laptop.tailnet-name.ts.net:8443` as the `Host`, so
 
 | Header | Set by | Used for |
 |--------|--------|----------|
-| `Host` | the browser, passed through | matched against `tailnet_host`; this is what makes the guard let the request through |
+| `Host` | the browser, **passed through unchanged** | matched against `tailnet_host`; this is what makes the guard let the request through |
 | `X-Forwarded-Proto: https` | `tailscale serve` | the login page refuses to set a `Secure` cookie the browser would discard, and says so, rather than looping |
 | `X-Forwarded-For` | `tailscale serve` | the tailnet address in the daemon's log line for each login |
 | `Tailscale-User-Login` and friends | `tailscale serve` | **nothing.** The daemon reads no identity header |
@@ -721,6 +735,26 @@ headers are deliberately unused: the capture this work adopts
 ([#10](https://github.com/davison/md-notes/issues/10)) asked for one authentication
 path designed once for both the browser extension and the tailnet, and that is the
 token.
+
+**Whatever terminates TLS in front must pass the original `Host` through
+unchanged.** That header is the authentication boundary: it is what tells the daemon
+a request came from the tailnet and must therefore prove itself, rather than from
+the machine's own loopback, where it need not. `tailscale serve` does pass it
+through, which is why the command above is the whole configuration. Not every proxy
+does — nginx's `proxy_pass http://127.0.0.1:7337;` rewrites `Host` to the upstream
+address unless you add `proxy_set_header Host $host;`, and a proxy set up that way
+would present every remote request to the daemon as a local one.
+
+The daemon does not simply trust that it was set up correctly. With `tailnet_host`
+configured, a request that presents a loopback `Host` while carrying any
+`X-Forwarded-For`, `X-Forwarded-Proto` or `X-Forwarded-Host` is refused
+`403 bad_host` with a message naming the cause: nothing on loopback sets those
+headers, and a proxy that rewrote the `Host` does. A request target in absolute form
+(`GET http://127.0.0.1:7337/api/roots HTTP/1.1`) is refused the same way, whatever
+is configured, because Go takes `Host` from the target's authority when one is
+present and the target would then choose the rule. Neither refusal can reach a
+correctly configured deployment; both fail closed rather than quietly serving the
+whole API with no credential.
 
 ### What is reachable under that name, and what is not
 
@@ -779,8 +813,8 @@ this milestone does not change.
   request carries the [bearer token](#authentication), which is accepted from any
   origin. A request with no `Origin`, such as the CLI, passes. No `OPTIONS`
   preflight is answered and no CORS header is ever sent, so a browser *page* cannot
-  use the token even if it has one; the exemption is for an extension service
-  worker, which CORS does not govern. Under `tailnet_host` the daemon's own origin
+  use the token even if it has one; the exemption is for a browser extension holding
+  `host_permissions`, which CORS does not govern. Under `tailnet_host` the daemon's own origin
   is `https://<tailnet_host>` and only that, and a request authenticated by the
   session cookie gets the check too — `SameSite=Strict` is not left as the only
   thing between a foreign page and a write.
