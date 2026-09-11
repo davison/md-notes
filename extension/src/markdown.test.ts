@@ -71,6 +71,33 @@ describe("htmlToMarkdown", () => {
     expect(markdown).toContain("> Quoted.");
   });
 
+  it("leaves fenced code exactly as the page wrote it", () => {
+    // PEP 8 puts two blank lines between top-level definitions, and trailing
+    // spaces are a line break in a markdown sample and a real difference in a
+    // patch. Neither tidy may reach inside a fence.
+    const code = 'def a():\n    return 1  \n\n\ndef b():\n\treturn "  "\n';
+    const md = htmlToMarkdown(
+      `<pre><code class="language-python">${code}</code></pre>`,
+      PAGE,
+    );
+    expect(md).toBe("```python\n" + code.replace(/\n+$/, "") + "\n```");
+    expect(md).toContain("return 1  \n");
+    expect(md).toContain("\n\n\ndef b():");
+  });
+
+  it("still tidies the prose around a fence", () => {
+    const md = htmlToMarkdown(
+      "<p>One   </p><p></p><p></p><pre><code>a\n\n\nb</code></pre><p>Two   </p>",
+      PAGE,
+    );
+    expect(md).toBe("One\n\n```\na\n\n\nb\n```\n\nTwo");
+  });
+
+  it("does not mistake a fence inside a fence for the end of it", () => {
+    const md = htmlToMarkdown("<pre><code>```   \n\n\nstill inside</code></pre>", PAGE);
+    expect(md).toBe("````\n```   \n\n\nstill inside\n````");
+  });
+
   it("leaves no trailing whitespace and no run of blank lines", () => {
     expect(markdown).toBe(markdown.trim());
     expect(markdown).not.toMatch(/[ \t]+\n/);

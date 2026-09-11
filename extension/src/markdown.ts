@@ -166,14 +166,50 @@ export function clipTurndown(baseUrl: string): TurndownService {
 }
 
 /**
+ * Trailing whitespace dropped and runs of blank lines collapsed — **outside
+ * fenced code only**.
+ *
+ * Run over the whole document these two tidies edit the clip: PEP 8 puts two
+ * blank lines between top-level definitions, and trailing spaces are a line
+ * break in a markdown sample and a real difference in a diff or a patch. The
+ * daemon writes what it is sent byte for byte; the extension must not quietly
+ * reflow what it found on the page either.
+ */
+function tidyOutsideCode(markdown: string): string {
+  const out: string[] = [];
+  let fence: string | null = null;
+  let blanks = 0;
+  for (const line of markdown.split("\n")) {
+    if (fence !== null) {
+      // Inside a fence: verbatim, including trailing spaces and blank lines.
+      out.push(line);
+      if (new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[ \t]*$`).test(line)) fence = null;
+      continue;
+    }
+    const opening = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (opening !== null) {
+      fence = opening[1]!;
+      blanks = 0;
+      out.push(line.replace(/[ \t]+$/, ""));
+      continue;
+    }
+    const trimmed = line.replace(/[ \t]+$/, "");
+    if (trimmed === "") {
+      blanks += 1;
+      if (blanks > 1) continue;
+    } else {
+      blanks = 0;
+    }
+    out.push(trimmed);
+  }
+  return out.join("\n").trim();
+}
+
+/**
  * `html` as GitHub-flavoured markdown, with every link and image absolute
  * against `baseUrl`. The result is trimmed; the trailing newline a note wants
  * is added where the request is built, so there is one place that decides it.
  */
 export function htmlToMarkdown(html: string, baseUrl: string): string {
-  const markdown = clipTurndown(baseUrl).turndown(html);
-  return markdown
-    .replace(/[ \t]+$/gm, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return tidyOutsideCode(clipTurndown(baseUrl).turndown(html));
 }
