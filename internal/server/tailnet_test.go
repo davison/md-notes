@@ -772,7 +772,10 @@ func TestGuardRefusesAnAbsoluteFormTarget(t *testing.T) {
 // closed instead, and the refusal says what to fix.
 func TestGuardRefusesAForwardedLoopbackHost(t *testing.T) {
 	ts, _ := newTailnetServer(t)
-	for _, header := range []string{"X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host"} {
+	for _, header := range []string{
+		"Forwarded", "Via", "X-Real-IP",
+		"X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host",
+	} {
 		for _, host := range []string{"127.0.0.1:7337", "localhost:7337"} {
 			resp := do(t, ts, "GET", "/api/roots", "", map[string]string{"Host": host, header: "x"})
 			if resp.StatusCode != http.StatusForbidden {
@@ -784,6 +787,17 @@ func TestGuardRefusesAForwardedLoopbackHost(t *testing.T) {
 			}
 		}
 	}
+	// The values a real proxy writes, not just a placeholder.
+	for _, hdr := range []map[string]string{
+		{"Host": "127.0.0.1:7337", "Forwarded": "for=100.64.0.9;proto=https;host=laptop.example.ts.net"},
+		{"Host": "127.0.0.1:7337", "Via": "1.1 nginx"},
+		{"Host": "127.0.0.1:7337", "X-Real-IP": "100.64.0.9"},
+	} {
+		if resp := do(t, ts, "GET", "/api/roots", "", hdr); resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%v: status %d, want 403", hdr, resp.StatusCode)
+		}
+	}
+
 	// The write the reviewer reached this way is refused with it.
 	resp := do(t, ts, "POST", "/api/roots", `{"path":"/etc"}`, map[string]string{
 		"Host": "127.0.0.1:7337", "X-Forwarded-Proto": "https", "X-Forwarded-For": "100.64.0.9",
@@ -802,9 +816,15 @@ func TestGuardRefusesAForwardedLoopbackHost(t *testing.T) {
 // nothing in front, so a forwarding header is just a header.
 func TestForwardedHeadersAreOrdinaryWithoutATailnetHost(t *testing.T) {
 	ts, _ := newTestServer(t)
-	resp := do(t, ts, "GET", "/api/roots", "", map[string]string{"X-Forwarded-Proto": "https", "X-Forwarded-For": "100.64.0.9"})
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("status %d, want 200 — loopback without the extra name is unchanged", resp.StatusCode)
+	for _, hdr := range []map[string]string{
+		{"X-Forwarded-Proto": "https", "X-Forwarded-For": "100.64.0.9"},
+		{"Forwarded": "for=100.64.0.9"},
+		{"Via": "1.1 nginx"},
+		{"X-Real-IP": "100.64.0.9"},
+	} {
+		if resp := do(t, ts, "GET", "/api/roots", "", hdr); resp.StatusCode != http.StatusOK {
+			t.Errorf("%v: status %d, want 200 — loopback without the extra name is unchanged", hdr, resp.StatusCode)
+		}
 	}
 }
 

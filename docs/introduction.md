@@ -216,7 +216,7 @@ many log lines one caller can cause.
 
 | Status | Code | What happened |
 |--------|------|---------------|
-| 403 | `bad_host` | The `Host` header is not `localhost` or `127.0.0.1` with the daemon's port, nor the configured `tailnet_host`; or a forwarded request presented a loopback `Host`; or the request target was not in origin form |
+| 403 | `bad_host` | The `Host` header is not `localhost` or `127.0.0.1` with the daemon's port, nor the configured `tailnet_host`; or a request announcing a proxy presented a loopback `Host`; or the request target was not in origin form |
 | 403 | `cross_origin` | A foreign `Origin` and no token: present the token to write from another origin |
 | 401 | `unauthorized` | An `Authorization` header that is not a valid `Bearer <token>` — a wrong token, a rotated-away one, or another scheme. Under `tailnet_host`, also a request that proved nothing at all |
 | 403 | `loopback_only` | The endpoint is not reachable under `tailnet_host`. See [the tailnet section](#reaching-the-daemon-over-the-tailnet) |
@@ -745,16 +745,23 @@ does — nginx's `proxy_pass http://127.0.0.1:7337;` rewrites `Host` to the upst
 address unless you add `proxy_set_header Host $host;`, and a proxy set up that way
 would present every remote request to the daemon as a local one.
 
-The daemon does not simply trust that it was set up correctly. With `tailnet_host`
-configured, a request that presents a loopback `Host` while carrying any
-`X-Forwarded-For`, `X-Forwarded-Proto` or `X-Forwarded-Host` is refused
-`403 bad_host` with a message naming the cause: nothing on loopback sets those
-headers, and a proxy that rewrote the `Host` does. A request target in absolute form
-(`GET http://127.0.0.1:7337/api/roots HTTP/1.1`) is refused the same way, whatever
-is configured, because Go takes `Host` from the target's authority when one is
-present and the target would then choose the rule. Neither refusal can reach a
-correctly configured deployment; both fail closed rather than quietly serving the
-whole API with no credential.
+There is a backstop under that, and it is worth being exact about what it catches.
+With `tailnet_host` configured, a request that presents a loopback `Host` while
+announcing that it came through a proxy — `Forwarded`, `Via`, `X-Forwarded-For`,
+`X-Forwarded-Proto`, `X-Forwarded-Host` or `X-Real-IP`, none of which anything on
+loopback sets — is refused `403 bad_host` with a message naming the cause. That
+covers Caddy, Traefik, Apache's defaults and the usual nginx boilerplate, which all
+say who they are. It does **not** cover the bare `proxy_pass` line above: nginx on
+its own adds none of those headers, so a proxy configured with that line and nothing
+else is indistinguishable from a local client, and no check here can save it. The
+sentence in bold above is the defence; this is what catches the common mistakes
+before they become unauthenticated access.
+
+A request target in absolute form (`GET http://127.0.0.1:7337/api/roots HTTP/1.1`)
+is refused outright, whatever is configured, because Go takes `Host` from the
+target's authority when one is present and the target would otherwise choose the
+rule. That one is a guarantee rather than a heuristic: origin form is the only form
+a browser or a reverse proxy sends to an origin server.
 
 ### What is reachable under that name, and what is not
 

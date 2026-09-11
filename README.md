@@ -168,9 +168,12 @@ tailscale serve --bg 7337
 Whatever terminates TLS in front must pass the original `Host` through
 unchanged — that header is what tells the daemon a request came from the
 tailnet and must prove itself. `tailscale serve` does; nginx's
-`proxy_pass` does not unless you add `proxy_set_header Host $host;`. The
-daemon refuses a forwarded request that claims a loopback `Host` rather
-than trusting the setup blindly.
+`proxy_pass` does not unless you add `proxy_set_header Host $host;`. As a
+backstop the daemon refuses a request that claims a loopback `Host` while
+announcing a proxy — `Forwarded`, `Via`, `X-Forwarded-*`, `X-Real-IP` —
+which catches most misconfigurations but not a bare `proxy_pass`, since
+nginx alone sends none of those. The sentence above is the defence; the
+backstop is not a substitute for it.
 
 Everything under that name must authenticate. A browser is shown a login
 page, pastes the token once and gets a session cookie scoped to that host

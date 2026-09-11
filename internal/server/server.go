@@ -454,12 +454,33 @@ func (s *Server) guard(next http.Handler) http.Handler {
 	})
 }
 
+// proxyMarkers are the headers a proxy adds to say it handled a request:
+// the standard one from RFC 7239, the hop record every RFC 9110 proxy is
+// supposed to append, and the three X-Forwarded-* conventions that
+// predate both. Nothing on loopback sets any of them.
+var proxyMarkers = [...]string{
+	"Forwarded",
+	"Via",
+	"X-Forwarded-For",
+	"X-Forwarded-Proto",
+	"X-Forwarded-Host",
+	"X-Real-IP",
+}
+
 // forwarded reports whether the request passed through a proxy that said
 // so. The headers are meaningful only under the tailnet name; on loopback
 // their presence is the evidence that something in front rewrote the Host
 // the guard depends on.
+//
+// This is a backstop and cannot be anything else: a proxy that rewrites
+// the Host and announces itself in none of these ways is indistinguishable
+// from a local client, and nginx's bare `proxy_pass` is exactly that. What
+// stops that configuration is the documentation, which says the original
+// Host must be passed through; this catches the proxies that do say so —
+// Caddy, Traefik, Apache's defaults, and the usual nginx boilerplate —
+// before a misconfiguration becomes unauthenticated access.
 func forwarded(r *http.Request) bool {
-	for _, h := range [...]string{"X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host"} {
+	for _, h := range proxyMarkers {
 		if r.Header.Get(h) != "" {
 			return true
 		}
