@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DaemonError, listRoots, registerRoot } from "./daemon";
+import { DaemonError, listRoots, postClip, registerRoot } from "./daemon";
 import type { Settings } from "./settings";
 
 const settings: Settings = { daemonUrl: "http://localhost:7337", token: "" };
@@ -154,5 +154,93 @@ describe("registerRoot", () => {
     ).catch((e: unknown) => e);
     expect((err as DaemonError).kind).toBe("refused");
     expect((err as DaemonError).message).toBe("path must be absolute");
+  });
+});
+
+describe("postClip", () => {
+  const clip = {
+    url: "https://example.com/a",
+    title: "A page",
+    markdown: "# A page\n",
+    kind: "page" as const,
+  };
+
+  it("POSTs the clip with the bearer token and returns where it landed", async () => {
+    const r = record();
+    const result = await postClip(withToken, clip, {
+      fetch: r.fetcher(respond(201, { root: "notes", path: "clips/2026-09-11-a-page.md" })),
+    });
+    expect(result).toEqual({ root: "notes", path: "clips/2026-09-11-a-page.md" });
+    const call = r.calls[0];
+    expect(call?.url).toBe("http://localhost:7337/api/clip");
+    expect(call?.init?.method).toBe("POST");
+    expect(JSON.parse(String(call?.init?.body))).toEqual(clip);
+    expect(call?.init?.headers).toMatchObject({
+      "Content-Type": "application/json",
+      Authorization: "Bearer s3cret",
+    });
+  });
+
+  it("does not ask at all when no token is stored", async () => {
+    const r = record();
+    const err = await postClip(settings, clip, {
+      fetch: r.fetcher(respond(201, { root: "notes", path: "clips/x.md" })),
+    }).catch((e: unknown) => e);
+    expect((err as DaemonError).kind).toBe("no_token");
+    expect(r.calls).toHaveLength(0);
+  });
+
+  it("reads the refusal envelope's code, not just its status", async () => {
+    const r = record();
+    const err = await postClip(withToken, clip, {
+      fetch: r.fetcher(respond(403, { code: "cross_origin", error: "cross-origin request refused" })),
+    }).catch((e: unknown) => e);
+    expect((err as DaemonError).kind).toBe("origin_refused");
+    expect((err as DaemonError).detail).toBe("cross-origin request refused");
+  });
+
+  it("tells a rotated-away token apart from a refused origin", async () => {
+    const r = record();
+    const err = await postClip(withToken, clip, {
+      fetch: r.fetcher(respond(401, { code: "unauthorized", error: "invalid bearer token" })),
+    }).catch((e: unknown) => e);
+    expect((err as DaemonError).kind).toBe("token_rejected");
+    expect((err as DaemonError).detail).toBe("invalid bearer token");
+  });
+
+  it("does not read a bad_host refusal as an origin problem", async () => {
+    const r = record();
+    const err = await postClip(withToken, clip, {
+      fetch: r.fetcher(respond(403, { code: "bad_host", error: "unexpected Host header" })),
+    }).catch((e: unknown) => e);
+    expect((err as DaemonError).kind).toBe("refused");
+    expect((err as DaemonError).message).toBe("unexpected Host header");
+  });
+
+  it("passes the clip handler's own refusals through", async () => {
+    const r = record();
+    const err = await postClip(withToken, clip, {
+      fetch: r.fetcher(respond(413, { code: "too_large", error: "markdown is too large" })),
+    }).catch((e: unknown) => e);
+    expect((err as DaemonError).kind).toBe("refused");
+    expect((err as DaemonError).message).toBe("markdown is too large");
+  });
+
+  it("reports an unreachable daemon", async () => {
+    const r = record();
+    const err = await postClip(withToken, clip, {
+      fetch: r.fetcher(() => {
+        throw new TypeError("Failed to fetch");
+      }),
+    }).catch((e: unknown) => e);
+    expect((err as DaemonError).kind).toBe("unreachable");
+  });
+
+  it("refuses a success that does not say where the clip landed", async () => {
+    const r = record();
+    const err = await postClip(withToken, clip, {
+      fetch: r.fetcher(respond(201, { path: "clips/x.md" })),
+    }).catch((e: unknown) => e);
+    expect((err as DaemonError).kind).toBe("bad_response");
   });
 });

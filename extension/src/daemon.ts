@@ -1,5 +1,6 @@
-/** The daemon's roots API, as the extension sees it. */
+/** The daemon's API, as the extension sees it. */
 
+import type { ClipKind } from "./extraction";
 import type { Root } from "./paths";
 import { trimSlash } from "./paths";
 import type { Settings } from "./settings";
@@ -7,6 +8,7 @@ import type { Settings } from "./settings";
 /** Why a call failed, in terms the popup can explain to the user. */
 export type FailureKind =
   | "unreachable"
+  | "no_token"
   | "origin_refused"
   | "token_rejected"
   | "refused"
@@ -15,12 +17,18 @@ export type FailureKind =
 export class DaemonError extends Error {
   readonly kind: FailureKind;
   readonly status: number | undefined;
+  /**
+   * The daemon's own words, without the hint this extension wraps them in —
+   * so a caller can quote the daemon rather than unpick a sentence.
+   */
+  readonly detail: string;
 
-  constructor(kind: FailureKind, message: string, status?: number) {
+  constructor(kind: FailureKind, message: string, status?: number, detail?: string) {
     super(message);
     this.name = "DaemonError";
     this.kind = kind;
     this.status = status;
+    this.detail = detail ?? message;
   }
 }
 
@@ -48,33 +56,46 @@ function headers(settings: Settings, json: boolean, authenticated: boolean): Rec
   return h;
 }
 
-async function daemonMessage(res: Response): Promise<string> {
+/**
+ * A refusal as the daemon words it: its `{code, error}` envelope, falling back
+ * to the status line for a body that is not one. The code is what a client is
+ * meant to branch on — `unauthorized` and `cross_origin` are told apart there
+ * rather than by status alone.
+ */
+async function refusal(res: Response): Promise<{ code: string; message: string }> {
   try {
-    const body = (await res.json()) as { error?: unknown };
-    if (typeof body.error === "string" && body.error !== "") return body.error;
+    const body = (await res.json()) as { error?: unknown; code?: unknown };
+    return {
+      code: typeof body.code === "string" ? body.code : "",
+      message:
+        typeof body.error === "string" && body.error !== ""
+          ? body.error
+          : `${res.status} ${res.statusText}`.trim(),
+    };
   } catch {
-    // not JSON; fall through to the status line
+    // not JSON; the status line is all there is
+    return { code: "", message: `${res.status} ${res.statusText}`.trim() };
   }
-  return `${res.status} ${res.statusText}`.trim();
 }
 
 async function failureFor(res: Response, settings: Settings): Promise<DaemonError> {
-  const message = await daemonMessage(res);
-  if (res.status === 401) {
+  const { code, message } = await refusal(res);
+  if (code === "unauthorized" || res.status === 401) {
     return new DaemonError(
       "token_rejected",
       `the daemon rejected the token (${message}) — check it against \`mdn token\``,
       res.status,
+      message,
     );
   }
-  if (res.status === 403) {
+  if (code === "cross_origin" || (res.status === 403 && code === "")) {
     const hint =
       settings.token === ""
         ? "no token is stored — run `mdn token` and paste it on the options page"
         : "the daemon refused the extension's origin even with a token — is it up to date?";
-    return new DaemonError("origin_refused", `${message}: ${hint}`, res.status);
+    return new DaemonError("origin_refused", `${message}: ${hint}`, res.status, message);
   }
-  return new DaemonError("refused", message, res.status);
+  return new DaemonError("refused", message, res.status, message);
 }
 
 async function call(
@@ -151,4 +172,58 @@ export async function registerRoot(
     options.fetch ?? fetch,
   );
   return asRoot(body);
+}
+
+/** The body of `POST /api/clip`, as the daemon documents it. */
+export interface ClipRequest {
+  url: string;
+  title: string;
+  markdown: string;
+  kind: ClipKind;
+}
+
+/** Where the clip landed: the notes root's slug, and the path inside it. */
+export interface ClipResult {
+  root: string;
+  path: string;
+}
+
+/**
+ * Creates a note from a clip and returns where it landed.
+ *
+ * This call must be made from the service worker. The daemon answers no CORS
+ * preflight, and an `Authorization` header makes a cross-origin fetch
+ * non-simple, so the same request from the popup or a content script dies at
+ * the preflight with an opaque browser error instead of one of the daemon's
+ * codes. A missing token is reported here rather than sent, because the
+ * refusal it would earn (`cross_origin`) reads like an origin problem.
+ */
+export async function postClip(
+  settings: Settings,
+  clip: ClipRequest,
+  options: CallOptions = {},
+): Promise<ClipResult> {
+  if (settings.token === "") {
+    throw new DaemonError("no_token", "no token is configured for this daemon");
+  }
+  const body = await call(
+    settings,
+    "/api/clip",
+    {
+      method: "POST",
+      headers: headers(settings, true, true),
+      body: JSON.stringify(clip),
+    },
+    options.fetch ?? fetch,
+  );
+  const result = body as Partial<ClipResult> | null;
+  if (
+    result === null ||
+    typeof result !== "object" ||
+    typeof result.root !== "string" ||
+    typeof result.path !== "string"
+  ) {
+    throw new DaemonError("bad_response", "the daemon did not say where the clip landed");
+  }
+  return { root: result.root, path: result.path };
 }
