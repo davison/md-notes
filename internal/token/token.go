@@ -256,13 +256,25 @@ type Store struct {
 // Valid reports whether presented is the current token, comparing in
 // constant time.
 func (s *Store) Valid(presented string) bool {
+	_, ok := s.Authenticate(presented)
+	return ok
+}
+
+// Authenticate reports whether presented is the current token and, in the
+// same read, which generation it was compared against. The two answers
+// must come from one look at the file: a caller that asked separately
+// could validate against one secret and stamp a credential with the
+// generation of another, if a rotation landed between the two calls —
+// which is precisely the case a session tied to the generation exists to
+// withdraw.
+func (s *Store) Authenticate(presented string) (generation uint64, ok bool) {
 	if presented == "" {
-		return false
+		return 0, false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.refresh()
-	return equal(presented, s.value)
+	return s.gen, equal(presented, s.value)
 }
 
 // Generation identifies the token currently held: it changes when, and

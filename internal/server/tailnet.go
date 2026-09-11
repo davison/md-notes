@@ -170,7 +170,16 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if s.token == nil || !s.validToken(strings.TrimSpace(r.PostFormValue("token"))) {
+	// One read for both answers: asking again for the generation would
+	// let a rotation landing in between stamp this session with a
+	// generation the token was never checked against, which is the one
+	// case "a rotation ends every session" has to cover.
+	var generation uint64
+	var ok bool
+	if s.token != nil {
+		generation, ok = s.token.Authenticate(strings.TrimSpace(r.PostFormValue("token")))
+	}
+	if !ok {
 		s.log.Printf("tailnet login refused from %s", clientAddr(r))
 		s.writeLoginPage(w, r, http.StatusUnauthorized, loginForm{
 			Redirect: redirect,
@@ -178,7 +187,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	id := s.sessions.Create(s.token.Generation())
+	id := s.sessions.Create(generation)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    id,
