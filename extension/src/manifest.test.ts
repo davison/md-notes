@@ -22,6 +22,7 @@ const manifest = JSON.parse(readFileSync(resolve(root, "public/manifest.json"), 
   icons: Record<string, string>;
   content_scripts?: unknown;
   web_accessible_resources?: unknown;
+  externally_connectable?: unknown;
 };
 
 describe("manifest", () => {
@@ -72,6 +73,9 @@ describe("manifest", () => {
   it("registers no content script and exposes no resource to web pages", () => {
     expect(manifest.content_scripts).toBeUndefined();
     expect(manifest.web_accessible_resources).toBeUndefined();
+    // Nothing outside the extension can reach the popup or message the
+    // worker, which is half of why the popup's `?tab=` parameter is safe.
+    expect(manifest.externally_connectable).toBeUndefined();
   });
 
   it("points at pages and icons that exist in the source tree", () => {

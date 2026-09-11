@@ -53,6 +53,7 @@ function isPendingClip(value: unknown): value is PendingClip {
     typeof c.url === "string" &&
     typeof c.title === "string" &&
     typeof c.markdown === "string" &&
-    typeof c.tabId === "number"
+    typeof c.tabId === "number" &&
+    typeof c.at === "number"
   );
 }

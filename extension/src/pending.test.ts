@@ -50,7 +50,9 @@ describe("the pending clip", () => {
 
   it("ignores a stored value of the wrong shape", async () => {
     const store = fakeStore();
-    store.items[PENDING_KEY] = { kind: "page" };
-    expect(await getPendingClip(store)).toBeNull();
+    for (const bad of [{ kind: "page" }, { ...clip, at: "now" }, { ...clip, tabId: null }]) {
+      store.items[PENDING_KEY] = bad;
+      expect(await getPendingClip(store)).toBeNull();
+    }
   });
 });
