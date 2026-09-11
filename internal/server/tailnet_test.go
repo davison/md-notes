@@ -489,6 +489,66 @@ func TestTailnetRotationEndsTheSession(t *testing.T) {
 	}
 }
 
+// The narrowing this task owns: over the network the credential reaches
+// the UI's own API and nothing else. Registering a root is the step from
+// "read my notes" to "read any file on the machine", and nothing on the
+// tailnet clips.
+func TestTailnetNarrowsWhatTheCredentialReaches(t *testing.T) {
+	ts, base := newTailnetServer(t)
+	tok := daemonToken(t, base)
+	cookie := login(t, ts, base)
+	elsewhere := t.TempDir()
+
+	for _, c := range []struct {
+		name, method, path, body string
+		hdr                      map[string]string
+	}{
+		{"register a root with the token", "POST", "/api/roots", `{"path":"` + elsewhere + `"}`,
+			bearerHeader(tok, "Content-Type", "application/json")},
+		{"register a root with the session", "POST", "/api/roots", `{"path":"` + elsewhere + `"}`,
+			map[string]string{"Cookie": cookie, "Content-Type": "application/json", "Origin": tailnetOrigin}},
+		{"clip with the token", "POST", "/api/clip", clipBody("Remote", "# x\n"),
+			bearerHeader(tok, "Content-Type", "application/json")},
+		{"clip with the session", "POST", "/api/clip", clipBody("Remote", "# x\n"),
+			map[string]string{"Cookie": cookie, "Content-Type": "application/json", "Origin": tailnetOrigin}},
+	} {
+		resp := tdo(t, ts, c.method, c.path, c.body, c.hdr)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status %d, want 403", c.name, resp.StatusCode)
+			continue
+		}
+		if code := guardCode(t, resp); code != "loopback_only" {
+			t.Errorf("%s: code %q, want loopback_only", c.name, code)
+		}
+	}
+
+	// An endpoint that does not exist yet is refused too: the rule is an
+	// allow-list, so nothing new is reachable off the machine by default.
+	for _, c := range []struct{ method, path string }{
+		{"POST", "/api/whatever"},
+		{"DELETE", "/api/r/notes/source/hello.md"},
+		{"PUT", "/api/r/notes/tree"},
+		{"POST", "/api/r/notes/search"},
+		{"POST", "/api/roots/"},
+		{"POST", "/api/r/notes/source/../../../roots"},
+	} {
+		resp := tdo(t, ts, c.method, c.path, "", bearerHeader(tok))
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s %s: status %d, want 403", c.method, c.path, resp.StatusCode)
+		}
+	}
+
+	// The same calls still work on loopback, which is where they belong.
+	if resp := do(t, ts, "POST", "/api/roots", `{"path":"`+elsewhere+`"}`,
+		bearerHeader(tok, "Content-Type", "application/json")); resp.StatusCode != http.StatusOK {
+		t.Errorf("register a root on loopback: status %d, want 200", resp.StatusCode)
+	}
+	if resp := do(t, ts, "POST", "/api/clip", clipBody("Local", "# x\n"),
+		bearerHeader(tok, "Content-Type", "application/json")); resp.StatusCode != http.StatusCreated {
+		t.Errorf("clip on loopback: status %d, want 201", resp.StatusCode)
+	}
+}
+
 // Loopback is what it was before the extra name existed, with the extra
 // name configured: same statuses, same codes, no login page, no cookie.
 func TestLoopbackIsUnchangedByATailnetHost(t *testing.T) {

@@ -66,6 +66,11 @@ func (s *Server) guardTailnet(w http.ResponseWriter, r *http.Request) bool {
 		s.challenge(w, r)
 		return false
 	}
+	if !remoteAllowed(r) {
+		writeGuardError(w, http.StatusForbidden, "loopback_only",
+			"this endpoint is served on loopback only; it is not reachable under "+s.tailnetHost)
+		return false
+	}
 	return true
 }
 
@@ -237,6 +242,39 @@ func sanitizeRedirect(raw string) string {
 		out += "?" + u.RawQuery
 	}
 	return out
+}
+
+// remoteAllowed reports whether the endpoint may be reached under the
+// tailnet name at all. It is an allow-list, not a list of exclusions: the
+// credential over the network reaches the UI's own API — reads, source
+// saves, the events stream, search and tags — and an endpoint nobody has
+// considered in this light is loopback-only until somebody does.
+func remoteAllowed(r *http.Request) bool {
+	read := r.Method == http.MethodGet || r.Method == http.MethodHead
+	p := path.Clean("/" + r.URL.Path)
+	rest, isAPI := strings.CutPrefix(p, "/api/")
+	if !isAPI {
+		// The UI bundle, and every client-side route that falls back to
+		// its index.html.
+		return read
+	}
+	switch {
+	case rest == "roots":
+		// Listing the roots, yes. Registering one, no: that is the path
+		// from this credential to any directory on the machine.
+		return read
+	case strings.HasPrefix(rest, "r/"):
+		_, sub, ok := strings.Cut(strings.TrimPrefix(rest, "r/"), "/")
+		if !ok {
+			return false
+		}
+		if r.Method == http.MethodPut {
+			return sub == "source" || strings.HasPrefix(sub, "source/")
+		}
+		return read
+	default:
+		return false
+	}
 }
 
 type loginForm struct {
