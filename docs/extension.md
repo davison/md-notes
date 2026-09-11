@@ -153,12 +153,23 @@ Worth knowing, because it is what the permissions below are for:
    DOM, and a selection exists nowhere else. This needs `scripting`, and
    access to that one tab, which is what `activeTab` grants at the moment you
    invoke the extension on it.
-2. The daemon call is made from the extension's **service worker**, never from
-   the popup. The daemon answers no CORS preflight, and an `Authorization`
-   header makes a cross-origin request one that needs a preflight; only an MV3
-   service worker holding the host permission is exempt from CORS at all. A
-   popup or a content script trying the same thing would fail with the
-   browser's opaque CORS error rather than any message the daemon wrote.
+2. The daemon call is made from the extension's **service worker**, never
+   from the popup — not because the popup could not make it, but because the
+   worker owns the clip and outlives the popup. A popup is destroyed the
+   moment it loses focus, which would take an in-flight save with it, and a
+   clip taken from the right-click menu has no popup open at that point at
+   all. Keeping the call in one context also keeps the token in one context.
+
+   CORS exemption in an extension follows `host_permissions`, and it covers
+   every **extension context** — the service worker and extension pages such
+   as the popup and the options page alike. (The options page's **Test
+   connection** is exactly such a call.) What it does *not* cover is a
+   **content script** or an ordinary **web page**: those are governed by
+   CORS, the daemon answers no preflight and sends no
+   `Access-Control-Allow-Origin`, so a page that has merely found the port
+   cannot write to your notes even if it has somehow obtained the token. That
+   is the boundary the daemon draws, and the extension's own documents are on
+   the inside of it.
 
 ### When a clip fails
 
