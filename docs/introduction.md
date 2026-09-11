@@ -222,6 +222,15 @@ daemon. This is not what stands between anyone and the notes — the token is 13
 from `crypto/rand`, and guessing it is hopeless — it bounds how much work and how
 many log lines one caller can cause.
 
+The address those tiers count against comes from `X-Forwarded-For`, which a caller
+behind a proxy that appends can write. Underneath them is a floor that key cannot
+escape: once the daemon has seen more than three failures in the window **across
+every address**, each further failure waits half a second whatever `X-Forwarded-For`
+claims — including one arriving from an address the daemon has never seen. The floor
+only ever delays and never refuses, because a refusal counted across all callers
+would let anyone the ACL admits lock you out of your own notes. So a caller varying
+the header meets the wait and never the `429`.
+
 ### Refusals
 
 | Status | Code | What happened |
@@ -301,7 +310,9 @@ the API does not promise rename durability across power loss.
 
 `POST /api/clip` creates a note from a web clipping. It is the only endpoint that
 creates a file rather than reading or replacing one, and the only one that requires
-the [token](#authentication).
+the [token](#authentication). The client it exists for is the browser extension,
+which [has its own page](extension.md) covering installation, clipping and opening
+local markdown files.
 
 ```
 POST /api/clip

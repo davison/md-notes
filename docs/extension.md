@@ -141,6 +141,14 @@ The conversion is Turndown with its GFM plugin:
 - GFM tables, strikethrough and task lists;
 - `**bold**`, `_italic_`, `` `code` `` and block quotes.
 
+Two edges of that list are worth knowing. Task-list checkboxes survive a
+**selection** clip as `- [x]`, but not a page clip: Readability's sanitiser
+removes the `input` elements before the conversion sees them, so the items come
+through as ordinary bullets. And a table with **no header row** is left as the
+page's own `<table>` HTML, because GFM has no way to write one — the app renders
+it, but the file is not markdown at that point
+([#45](https://github.com/davison/md-notes/issues/45)).
+
 Every link and image is made **absolute against the page's own URL**, so a note
 still points at something once it has left the browser. Three deliberate
 omissions: a `javascript:` link keeps its text and loses the link; a `data:`
