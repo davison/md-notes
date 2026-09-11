@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -184,5 +185,82 @@ func TestLoadParsesClipsDir(t *testing.T) {
 	}
 	if cfg.ClipsDir != "inbox" {
 		t.Fatalf("clips_dir = %q", cfg.ClipsDir)
+	}
+}
+
+// The extra Host name the guard accepts for a tailscale serve proxy is a
+// name and an optional port, and nothing else: a scheme or a path would
+// simply never match a Host header, and finding that out at runtime is
+// worse than being told at startup.
+func TestResolveTailnetHost(t *testing.T) {
+	dir := t.TempDir()
+	for given, want := range map[string]string{
+		"":                           "",
+		"   ":                        "",
+		"laptop.tailnet.ts.net":      "laptop.tailnet.ts.net",
+		"LAPTOP.Tailnet.TS.NET":      "laptop.tailnet.ts.net",
+		"  laptop.tailnet.ts.net  ":  "laptop.tailnet.ts.net",
+		"laptop.tailnet.ts.net:8443": "laptop.tailnet.ts.net:8443",
+		"laptop.tailnet.ts.net.":     "laptop.tailnet.ts.net.",
+		"laptop":                     "laptop",
+		"100.101.102.103":            "100.101.102.103",
+	} {
+		cfg, err := Config{TailnetHost: given}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
+		if err != nil {
+			t.Fatalf("tailnet_host %q: %v", given, err)
+		}
+		if cfg.TailnetHost != want {
+			t.Errorf("tailnet_host %q resolved to %q, want %q", given, cfg.TailnetHost, want)
+		}
+	}
+	for given, want := range map[string]error{
+		"https://laptop.ts.net": ErrBadTailnetHost,
+		"laptop.ts.net/notes":   ErrBadTailnetHost,
+		"user@laptop.ts.net":    ErrBadTailnetHost,
+		"laptop.ts.net:":        ErrBadTailnetHost,
+		"laptop.ts.net:0":       ErrBadTailnetHost,
+		"laptop.ts.net:99999":   ErrBadTailnetHost,
+		"laptop.ts.net:https":   ErrBadTailnetHost,
+		"laptop ts net":         ErrBadTailnetHost,
+		"laptop..ts.net":        ErrBadTailnetHost,
+		"laptop.ts.net?q=1":     ErrBadTailnetHost,
+		"localhost":             ErrLoopbackTailnetHost,
+		"localhost:7337":        ErrLoopbackTailnetHost,
+		"mdn.localhost":         ErrLoopbackTailnetHost,
+		"127.0.0.1":             ErrLoopbackTailnetHost,
+		"127.0.0.1:7337":        ErrLoopbackTailnetHost,
+		"[::1]":                 ErrLoopbackTailnetHost,
+		"[::1]:7337":            ErrLoopbackTailnetHost,
+	} {
+		if _, err := (Config{TailnetHost: given}).Resolve("cfg.yml", Overrides{NotesRoot: dir}); !errors.Is(err, want) {
+			t.Errorf("tailnet_host %q: error %v, want %v", given, err, want)
+		}
+	}
+}
+
+// --tailnet-host beats the file, like every other override.
+func TestTailnetHostOverride(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := Config{TailnetHost: "old.ts.net"}.Resolve("cfg.yml",
+		Overrides{NotesRoot: dir, TailnetHost: "NEW.ts.net"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TailnetHost != "new.ts.net" {
+		t.Errorf("tailnet_host = %q, want new.ts.net", cfg.TailnetHost)
+	}
+}
+
+func TestLoadParsesTailnetHost(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte("notes_root: /n\ntailnet_host: laptop.ts.net\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TailnetHost != "laptop.ts.net" {
+		t.Fatalf("tailnet_host = %q", cfg.TailnetHost)
 	}
 }

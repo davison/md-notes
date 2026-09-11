@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -44,6 +47,10 @@ type Config struct {
 	// root. Absent asks for DefaultClipsDir; a path that leaves the notes
 	// root is refused.
 	ClipsDir string `yaml:"clips_dir"`
+	// TailnetHost is one extra Host name the daemon answers to, for
+	// requests a `tailscale serve` proxy forwards to the loopback
+	// listener. Empty, the default, means loopback only.
+	TailnetHost string `yaml:"tailnet_host"`
 }
 
 // Overrides are the values a command line supplies, each taking precedence
@@ -54,11 +61,79 @@ type Overrides struct {
 	// MaxWatches is nil when the flag was not given; zero is a request for
 	// no budget, the same as the file's own zero.
 	MaxWatches *int
+	// TailnetHost overrides tailnet_host when it is not empty.
+	TailnetHost string
 }
 
 // ErrEscapesRoot is returned for a configured path that would leave the
 // notes root.
 var ErrEscapesRoot = errors.New("must be a relative path inside the notes root")
+
+// ErrBadTailnetHost is returned for a tailnet_host that is not a bare host
+// name, optionally with a port.
+var ErrBadTailnetHost = errors.New("must be a host name, optionally with a port, and nothing else")
+
+// ErrLoopbackTailnetHost is returned for a tailnet_host naming the loopback
+// interface. The extra name carries an authentication rule of its own, so
+// letting it collide with the names the daemon already answers to would
+// change what loopback means — which M3-R6 says it must not.
+var ErrLoopbackTailnetHost = errors.New("must not be a loopback name; loopback is already served and is deliberately left alone")
+
+// cleanTailnetHost normalises and validates the extra Host name the guard
+// accepts. What arrives in a Host header is a name and an optional port,
+// lower-cased for comparison; anything carrying a scheme, a path, a user or
+// whitespace is a configuration mistake worth refusing at startup rather
+// than silently never matching.
+func cleanTailnetHost(h string) (string, error) {
+	name := strings.ToLower(strings.TrimSpace(h))
+	if name == "" {
+		return "", nil
+	}
+	if strings.ContainsAny(name, " \t/\\@?#") {
+		return "", ErrBadTailnetHost
+	}
+	host := name
+	switch {
+	case strings.HasPrefix(name, "[") && strings.HasSuffix(name, "]"):
+		// A bare IPv6 literal, bracketed as a Host header requires.
+		host = name[1 : len(name)-1]
+	case strings.Contains(name, ":"):
+		h, p, err := net.SplitHostPort(name)
+		if err != nil {
+			return "", ErrBadTailnetHost
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 65535 {
+			return "", ErrBadTailnetHost
+		}
+		host = h
+	}
+	host = strings.TrimSuffix(host, ".")
+	if host == "" {
+		return "", ErrBadTailnetHost
+	}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if ip.IsLoopback() {
+			return "", ErrLoopbackTailnetHost
+		}
+		return name, nil
+	}
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return "", ErrLoopbackTailnetHost
+	}
+	for _, label := range strings.Split(host, ".") {
+		if label == "" {
+			return "", ErrBadTailnetHost
+		}
+		for _, r := range label {
+			if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+				continue
+			}
+			return "", ErrBadTailnetHost
+		}
+	}
+	return name, nil
+}
 
 // cleanRelative confines a configured path to the notes root lexically.
 // Symlinks are the filesystem's business and are refused at write time by
@@ -135,6 +210,9 @@ func (c Config) Resolve(configPath string, over Overrides) (Config, error) {
 	if over.MaxWatches != nil {
 		c.MaxWatches = over.MaxWatches
 	}
+	if over.TailnetHost != "" {
+		c.TailnetHost = over.TailnetHost
+	}
 	if c.Port == 0 {
 		c.Port = DefaultPort
 	}
@@ -150,6 +228,11 @@ func (c Config) Resolve(configPath string, over Overrides) (Config, error) {
 		return c, fmt.Errorf("clips_dir %q: %w", c.ClipsDir, err)
 	}
 	c.ClipsDir = clips
+	tailnet, err := cleanTailnetHost(c.TailnetHost)
+	if err != nil {
+		return c, fmt.Errorf("tailnet_host %q: %w", c.TailnetHost, err)
+	}
+	c.TailnetHost = tailnet
 	if *c.MaxWatches < 0 {
 		return c, fmt.Errorf("max_watches %d is negative; use 0 for no limit", *c.MaxWatches)
 	}
