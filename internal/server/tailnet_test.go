@@ -829,3 +829,34 @@ func TestTailnetHostMatchesItsFullyQualifiedForm(t *testing.T) {
 		t.Errorf("localhost. : status %d, want the 403 it has always had", resp.StatusCode)
 	}
 }
+
+// The one pre-authentication endpoint on the network side does not answer
+// guesses indefinitely.
+func TestLoginAttemptsAreBounded(t *testing.T) {
+	ts, base := newTailnetServer(t)
+	s := serverOf(t, ts)
+	// free == max so the refusal is reached without walking through the
+	// delayed tier, which has its own test.
+	s.logins.free, s.logins.max = 2, 2
+	for i := range 2 {
+		if resp := loginPost(t, ts, "WRONG", "/"); resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: status %d, want 401", i+1, resp.StatusCode)
+		}
+	}
+	resp := loginPost(t, ts, "WRONG", "/")
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("the attempt past the limit: status %d, want 429", resp.StatusCode)
+	}
+	if code := guardCode(t, resp); code != "too_many_attempts" {
+		t.Errorf("code %q, want too_many_attempts", code)
+	}
+	// Being throttled is not being locked out of your own daemon: the
+	// right token still works, and clears the count.
+	good := loginPost(t, ts, daemonToken(t, base), "/")
+	if good.StatusCode != http.StatusSeeOther {
+		t.Fatalf("the correct token while throttled: status %d, want 303", good.StatusCode)
+	}
+	if resp := loginPost(t, ts, "WRONG", "/"); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("after a success: status %d, want the count cleared", resp.StatusCode)
+	}
+}
