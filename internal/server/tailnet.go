@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // loginPath is where the login form posts. It exists only under the
@@ -179,14 +181,30 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if s.token != nil {
 		generation, ok = s.token.Authenticate(strings.TrimSpace(r.PostFormValue("token")))
 	}
+	addr := clientAddr(r)
 	if !ok {
-		s.log.Printf("tailnet login refused from %s", clientAddr(r))
+		wait, refuse := s.logins.failed(addr)
+		if refuse {
+			w.Header().Set("Retry-After", strconv.Itoa(int(loginWindow.Seconds())))
+			writeGuardError(w, http.StatusTooManyRequests, "too_many_attempts",
+				"too many failed logins; wait a minute and try again")
+			return
+		}
+		if wait > 0 {
+			select {
+			case <-time.After(wait):
+			case <-r.Context().Done():
+				return
+			}
+		}
+		s.log.Printf("tailnet login refused from %s", addr)
 		s.writeLoginPage(w, r, http.StatusUnauthorized, loginForm{
 			Redirect: redirect,
 			Error:    "That is not the current token. `mdn token` prints it on the machine running the daemon.",
 		})
 		return
 	}
+	s.logins.succeeded(addr)
 	id := s.sessions.Create(generation)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
@@ -197,7 +215,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	})
-	s.log.Printf("tailnet login from %s", clientAddr(r))
+	s.log.Printf("tailnet login from %s", addr)
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }

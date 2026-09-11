@@ -51,6 +51,8 @@ type Server struct {
 	tailnetHost string
 	// sessions holds the browser logins issued under tailnetHost.
 	sessions *session.Store
+	// logins bounds how fast one caller can fail to log in.
+	logins *throttle
 
 	// keepalive is how often an idle event stream sends a comment.
 	keepalive time.Duration
@@ -116,6 +118,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 		source:    source.New(reg),
 		clipsDir:  config.DefaultClipsDir,
 		sessions:  session.New(session.DefaultTTL),
+		logins:    newThrottle(),
 		keepalive: 30 * time.Second,
 		hubs:      map[string]*watch.Hub{},
 		watchers:  map[string]*watch.Watcher{},
