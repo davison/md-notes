@@ -757,10 +757,15 @@ no authentication of its own
 [#10](https://github.com/davison/md-notes/issues/10), remote access over the tailnet,
 is still waiting on the authentication path the browser extension will need.
 
-> **Superseded by milestone three, and left as written.** The two sentences above
-> were true at [`619de06`](https://github.com/davison/md-notes/commit/619de06), the
-> commit this record describes, and they are kept in the words this milestone used.
-> They are no longer true of `main`: the daemon has held a bearer token since
+> **Superseded by milestone three, and left as written.** Two claims above were true
+> at [`619de06`](https://github.com/davison/md-notes/commit/619de06), the commit this
+> record describes, and are kept in the words this milestone used: the **last clause
+> of the first sentence** — that the daemon has no authentication of its own — and
+> the sentence after it. Neither is true of `main` any more. The rest of that first
+> sentence still stands: more than about six open tabs still starve the extra ones of
+> live update, and symlinked files inside a root are still absent from the navigator
+> and from search while remaining servable by direct URL. The daemon has held a
+> bearer token since
 > [#36](https://github.com/davison/md-notes/issues/36) /
 > [#42](https://github.com/davison/md-notes/pull/42), and
 > [#10](https://github.com/davison/md-notes/issues/10) was adopted and delivered by
