@@ -208,18 +208,18 @@ export function clipTurndown(baseUrl: string): TurndownService {
  */
 function tidyOutsideCode(markdown: string): string {
   const out: string[] = [];
-  let fence: string | null = null;
+  let open: Fence | null = null;
   let blanks = 0;
   for (const line of markdown.split("\n")) {
-    if (fence !== null) {
+    if (open !== null) {
       // Inside a fence: verbatim, including trailing spaces and blank lines.
       out.push(line);
-      if (new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[ \t]*$`).test(line)) fence = null;
+      if (closesFence(line, open)) open = null;
       continue;
     }
-    const opening = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    const opening = openingFence(line);
     if (opening !== null) {
-      fence = opening[1]!;
+      open = opening;
       blanks = 0;
       out.push(line.replace(/[ \t]+$/, ""));
       continue;
@@ -234,6 +234,52 @@ function tidyOutsideCode(markdown: string): string {
     out.push(trimmed);
   }
   return out.join("\n").trim();
+}
+
+/** An open fence: what it is made of, and what it hangs off. */
+interface Fence {
+  /** Everything before the backticks: indentation, `>` markers, a list marker. */
+  prefix: string;
+  /** The run of backticks or tildes itself. */
+  fence: string;
+}
+
+/**
+ * A fence is not always at the left margin. Turndown indents a list item's
+ * continuation lines, prefixes a blockquote's lines with `> `, and puts the
+ * first line of a list item's content on the same line as its marker — so a
+ * fence can open on `    \`\`\`python`, on `> \`\`\`` or on `> 1.  \`\`\``.
+ */
+const FENCE = /^((?:[ \t]*>)*[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?[ \t]*)(`{3,}|~{3,})/;
+
+function openingFence(line: string): Fence | null {
+  const match = FENCE.exec(line);
+  return match === null ? null : { prefix: match[1]!, fence: match[2]! };
+}
+
+function quoteDepth(prefix: string): number {
+  return (prefix.match(/>/g) ?? []).length;
+}
+
+/**
+ * Whether this line closes `open`.
+ *
+ * The prefixes are compared by blockquote depth rather than character for
+ * character, because Turndown's own output does not repeat them exactly: a
+ * fenced block inside a list inside a blockquote opens on `> 1.  \`\`\`` and
+ * closes on `>     \`\`\``. What keeps a line of code from closing its own
+ * block is the fence itself — a closer must be at least as long as the
+ * opener, and `fenceFor` has already lengthened the opener past anything the
+ * code contains.
+ */
+function closesFence(line: string, open: Fence): boolean {
+  const match = FENCE.exec(line);
+  if (match === null) return false;
+  const [, prefix, fence] = match as unknown as [string, string, string];
+  if (fence[0] !== open.fence[0] || fence.length < open.fence.length) return false;
+  if (quoteDepth(prefix) !== quoteDepth(open.prefix)) return false;
+  // Nothing but the fence on the line: an info string means it opens a block.
+  return /^[ \t]*$/.test(line.slice(match[0].length));
 }
 
 /**

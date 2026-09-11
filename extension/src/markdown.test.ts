@@ -4,7 +4,7 @@
  * fragment torn out of the middle of one.
  */
 import { describe, expect, it } from "vitest";
-import { absoluteUrl, htmlToMarkdown } from "./markdown";
+import { absoluteUrl, clipTurndown, htmlToMarkdown } from "./markdown";
 
 const PAGE = "https://example.com/posts/abstraction/index.html";
 
@@ -83,6 +83,50 @@ describe("htmlToMarkdown", () => {
     expect(md).toBe("```python\n" + code.replace(/\n+$/, "") + "\n```");
     expect(md).toContain("return 1  \n");
     expect(md).toContain("\n\n\ndef b():");
+  });
+
+  // Turndown does not leave a fence at the left margin when it is inside
+  // something: a list item's continuation lines are indented four spaces, a
+  // blockquote's lines carry `> `, and the first line of a list item shares
+  // its marker's line. A tracker that only recognises a fence at the margin
+  // reflows all three — which is the shape a tutorial's numbered steps take.
+  const INDENTED_CODE = 'def one():\n    return 1  \n\n\ndef two():\n    x = 1';
+
+  /** What Turndown produced, before the tidy ran over it. */
+  const untidied = (html: string) => clipTurndown(PAGE).turndown(html);
+
+  /** The fenced region of a document, from the first fence line to the last. */
+  const fencedRegion = (markdown: string) => {
+    const lines = markdown.split("\n");
+    const fences = lines
+      .map((line, index) => (line.includes("```") ? index : -1))
+      .filter((index) => index >= 0);
+    return lines.slice(fences[0], (fences[fences.length - 1] ?? 0) + 1).join("\n");
+  };
+
+  it("leaves a fence inside a list item alone", () => {
+    const html = `<ol><li><p>Install it:</p><pre><code class="language-python">${INDENTED_CODE}</code></pre></li></ol>`;
+    const md = htmlToMarkdown(html, PAGE);
+    expect(fencedRegion(md)).toBe(fencedRegion(untidied(html)));
+    expect(md).toBe(
+      "1.  Install it:\n\n    ```python\n    def one():\n        return 1  \n    \n    \n    def two():\n        x = 1\n    ```",
+    );
+  });
+
+  it("leaves a fence inside a blockquote alone", () => {
+    const html = `<blockquote><p>Note:</p><pre><code>${INDENTED_CODE}</code></pre></blockquote>`;
+    const md = htmlToMarkdown(html, PAGE);
+    expect(fencedRegion(md)).toBe(fencedRegion(untidied(html)));
+    expect(md).toContain(">     return 1  \n> \n> \n> def two():");
+  });
+
+  it("leaves a fence inside a list inside a blockquote alone", () => {
+    // Turndown opens this one on `> 1.  ``` ` and closes it on `>     ``` `,
+    // so the two prefixes are not the same string.
+    const html = `<blockquote><ol><li><pre><code>${INDENTED_CODE}</code></pre></li></ol></blockquote>`;
+    const md = htmlToMarkdown(html, PAGE);
+    expect(fencedRegion(md)).toBe(fencedRegion(untidied(html)));
+    expect(md).toContain(">         return 1  \n>     \n>     \n>     def two():");
   });
 
   it("still tidies the prose around a fence", () => {
