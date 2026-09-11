@@ -2,14 +2,21 @@
 
 md-notes is a local service that turns folders of markdown files into a notes
 application in the browser. This page describes what exists and works today, at the
-end of [milestone two](milestones/2-editor-autosave-and-live-update.md): the daemon
-and the rendered viewer from
-[milestone one](milestones/1-daemon-and-rendered-viewer.md), and now an editor over
-the same notes. Notes are edited in place; creating, renaming and deleting them is
-still done with other tools. The daemon side of the browser clipper is now here too
-— a bearer token and a clip endpoint — but the extension that uses them, and the
-inbox, are not built yet. The daemon can also be reached from another node on the
-tailnet, behind `tailscale serve` and a login page.
+end of [milestone three](milestones/3-clipper-authentication-and-tailnet.md): the
+daemon and the rendered viewer from
+[milestone one](milestones/1-daemon-and-rendered-viewer.md), the editor from
+[milestone two](milestones/2-editor-autosave-and-live-update.md), and now the browser
+half. Notes are edited in place; creating, renaming and deleting them is still done
+with other tools.
+
+The browser half is a Chromium extension that clips a readable page or a selection
+into the notes root as markdown, and opens a local markdown file in the app instead
+of leaving the browser to render it as plain text. The daemon's side of it is a
+bearer token and a clip endpoint, both described below; the extension itself has its
+own page, [The browser extension](extension.md). The same token is what lets the
+daemon be reached from another node on the tailnet, behind `tailscale serve` and a
+login page. The inbox, which turns URLs shared from a phone into clips when the
+folder next syncs, is still later work.
 
 ## The daemon
 
@@ -149,7 +156,10 @@ reachable without it still is, over loopback, exactly as before, and the web UI
 sends no `Authorization` header at all. `POST /api/clip` is the one endpoint that
 *requires* the token, because nothing on the daemon's own origin needs to call it.
 Note that the token opens the *whole* API to the origin presenting it, not the clip
-endpoint alone: a holder can register a root and read files under it.
+endpoint alone: a holder can register a root and read files under it. That is true
+over loopback, where anything that can reach the port already runs as you. Under
+`tailnet_host` the same credential reaches less — see
+[What is reachable under that name](#what-is-reachable-under-that-name-and-what-is-not).
 
 The `Host` check is not waived by the token: DNS rebinding is a separate attack, and
 a rebound page holds no token anyway.
@@ -788,7 +798,10 @@ through the raw endpoint. On loopback that is inside the premise below — anyth
 that can reach the port runs as you and can read those files anyway. Over the
 tailnet it is not, so it stays on the machine. `POST /api/clip` is refused because
 nothing off the machine clips: the extension's daemon URL is `http://localhost:7337`
-and it runs where the notes are.
+by default, and it runs where the notes are. An extension pointed at the tailnet
+name instead reads and opens notes as any other authenticated client does, but its
+clips and its folder registrations meet the same `loopback_only` as everybody
+else's.
 
 So a remote device reads, searches, and edits the notes the daemon already serves.
 It cannot add a root, and `mdn open` remains a command for the daemon's own machine.
@@ -805,8 +818,8 @@ with `mdn open`, including any that was only ever meant to be looked at locally.
 So: keep the ACL as narrow as the notes deserve, ideally to your own devices; use
 `serve` rather than `funnel`; and treat `mdn token --rotate` as the way to revoke a
 device, since it ends every session and every stored token at once. The token is
-still a single secret shared by every client, which is the shape M3-R1 fixed and
-this milestone does not change.
+still a single secret shared by every client, which is the shape milestone three
+fixed and did not go on to narrow.
 
 ## Confinement
 
