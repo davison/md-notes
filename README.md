@@ -21,8 +21,8 @@ do a few things well and nothing else:
 ## Shape
 
 The design as a whole. Milestone one built the daemon and the reading half of
-the web UI, milestone two the editor; milestone three is building the
-extension, and the inbox is still ahead.
+the web UI, milestone two the editor, and milestone three the browser
+extension with the authentication it needed; the inbox is still ahead.
 
 - **Daemon.** One static Go binary. Serves the web UI, watches one or more
   root folders, renders markdown server-side, shells out to ripgrep for
@@ -202,29 +202,43 @@ has the details.
 
 `make extension` builds a Chromium Manifest V3 extension into
 `extension/dist`, loadable unpacked in Brave from `brave://extensions` with
-**Developer mode** on. Switch on **Allow access to file URLs** in its details
-and a local `.md` or `.markdown` file that is already inside a root the daemon
-serves opens in md-notes instead of rendering as plain text; the page is left
-alone, with a red `!` on the toolbar icon saying why, when the daemon cannot
-be reached. Opening a file from anywhere else means registering its folder as
-a new root, which the daemon will only accept from the extension with a bearer
-token — so that half waits on the token work in this same milestone. Its
-options page holds the daemon URL and the token.
-[docs/extension.md](docs/extension.md) covers loading it, the token, and each
-permission it asks for and why.
+**Developer mode** on. Paste the token from `mdn token` into its options page
+and it does two things.
+
+**Clipping.** **Clip page** and **Clip selection**, from the toolbar button or
+the page's right-click menu, turn the readable article — or just the selection
+— into markdown and post it to the daemon. The popup shows the title, editable
+before saving, and then a link that opens the new note in the app. A clip
+lands under `clips/` in the notes root with `title`, `source`, `clipped` and
+`tags: [clip]` above it, and appears in the navigator without a refresh.
+
+**Opening local files.** Switch on **Allow access to file URLs** in its
+details and a local `.md` or `.markdown` file opens in md-notes instead of
+rendering as plain text: under the root that already contains it, or under its
+own folder, which the extension registers as a new root. The page is left
+alone, with a red `!` on the toolbar icon saying why, when the daemon cannot be
+reached or no token is stored.
+
+[docs/extension.md](docs/extension.md) covers loading it, the token, clipping,
+opening local files, and each permission it asks for and why.
 
 ## Status
 
 Milestone one, the daemon and rendered viewer, is done: roots, confinement,
 navigator, rendering, live update, search, and tags. Milestone two is done
 too: the editor, autosave with explicit conflict handling, and the two
-live-update and rendering follow-ups milestone one's QA left open.
+live-update and rendering follow-ups milestone one's QA left open. So is
+milestone three: the bearer token and the clip endpoint, the extension that
+clips a page or a selection and opens local markdown files, and reaching the
+daemon from another node on the tailnet.
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
-today, and the milestone records
+today, [docs/extension.md](docs/extension.md) the extension, and the milestone
+records
 ([one](docs/milestones/1-daemon-and-rendered-viewer.md),
-[two](docs/milestones/2-editor-autosave-and-live-update.md))
-record the decisions behind it. The browser clipper and the inbox follow in
-later milestones. Progress is tracked in
+[two](docs/milestones/2-editor-autosave-and-live-update.md),
+[three](docs/milestones/3-clipper-authentication-and-tailnet.md))
+record the decisions behind them. The inbox, which turns URLs shared from a
+phone into clips, follows in a later milestone. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
 is run as a [CodeCrew](https://github.com/radiusred/gh-codecrew) project.
 
