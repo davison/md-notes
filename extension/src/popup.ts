@@ -87,9 +87,19 @@ async function prepare(kind: "page" | "selection") {
     }
     say("");
     showClip(reply.clip);
+  } catch (err) {
+    // The worker threw outside its handler, or the port closed under us.
+    // Without this the status would sit on "Reading the page…" for ever.
+    say(workerFailure(err), "error");
   } finally {
     busy(false);
   }
+}
+
+/** A worker that did not answer, in words the user can act on. */
+function workerFailure(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return `The extension's background worker did not answer (${message}). Reload the page and try again.`;
 }
 
 async function save() {
@@ -107,6 +117,9 @@ async function save() {
     // A failure the user can act on is acted on in the options page, so the
     // way there is offered rather than described.
     showLinks({ options: reply.failure.offerOptions });
+  } catch (err) {
+    // The clip is still held by the worker, so Save can be pressed again.
+    say(workerFailure(err), "error");
   } finally {
     busy(false);
   }
@@ -121,7 +134,12 @@ function showLinks(which: { note?: string; options?: boolean }) {
 }
 
 async function discard() {
-  await ask<DiscardReply>({ type: "clip:discard" });
+  try {
+    await ask<DiscardReply>({ type: "clip:discard" });
+  } catch (err) {
+    say(workerFailure(err), "error");
+    return;
+  }
   hideClip();
   say("");
   showLinks({});
