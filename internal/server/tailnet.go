@@ -294,7 +294,13 @@ func (s *Server) writeLoginPage(w http.ResponseWriter, r *http.Request, status i
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
-	h.Set("Referrer-Policy", "no-referrer")
+	// same-origin, not no-referrer: a document with the no-referrer
+	// policy makes the browser send `Origin: null` on the form it posts
+	// (Fetch, "append the Origin header"), which is indistinguishable
+	// from the cross-site post the check below exists to refuse. This
+	// policy keeps the real origin on our own POST and still nulls it on
+	// anyone else's.
+	h.Set("Referrer-Policy", "same-origin")
 	w.WriteHeader(status)
 	if r.Method == http.MethodHead {
 		return
