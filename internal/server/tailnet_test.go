@@ -860,3 +860,32 @@ func TestLoginAttemptsAreBounded(t *testing.T) {
 		t.Errorf("after a success: status %d, want the count cleared", resp.StatusCode)
 	}
 }
+
+// Logging in again finishes with the session the browser was holding.
+func TestLoggingInAgainEndsTheOldSession(t *testing.T) {
+	ts, base := newTailnetServer(t)
+	first := login(t, ts, base)
+	s := serverOf(t, ts)
+	if s.sessions.Len() != 1 {
+		t.Fatalf("%d sessions after one login", s.sessions.Len())
+	}
+	resp := loginPost(t, ts, daemonToken(t, base), "/", "Cookie", first)
+	second := cookieHeader(t, resp)
+	if second == first {
+		t.Fatal("the second login reissued the same id")
+	}
+	if s.sessions.Len() != 1 {
+		t.Errorf("%d sessions after logging in again, want the old one gone", s.sessions.Len())
+	}
+	if got := do2(t, ts, first); got != http.StatusUnauthorized {
+		t.Errorf("the superseded session: status %d, want 401", got)
+	}
+	if got := do2(t, ts, second); got != http.StatusOK {
+		t.Errorf("the new session: status %d, want 200", got)
+	}
+}
+
+func do2(t *testing.T, ts *httptest.Server, cookie string) int {
+	t.Helper()
+	return tdo(t, ts, "GET", "/api/roots", "", map[string]string{"Cookie": cookie}).StatusCode
+}

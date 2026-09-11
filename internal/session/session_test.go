@@ -133,3 +133,25 @@ func TestConcurrentUse(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestDelete(t *testing.T) {
+	s := New(time.Hour)
+	a, b := s.Create(1), s.Create(1)
+	s.Delete(a)
+	if s.Valid(a, 1) {
+		t.Error("a deleted session is still valid")
+	}
+	if !s.Valid(b, 1) {
+		t.Error("deleting one session ended another")
+	}
+	if s.Len() != 1 {
+		t.Errorf("%d sessions held, want 1", s.Len())
+	}
+	// Deleting something that was never a session is not an error and
+	// does not disturb what is there.
+	s.Delete("never-issued")
+	s.Delete("")
+	if s.Len() != 1 || !s.Valid(b, 1) {
+		t.Errorf("deleting an unknown id disturbed the store: %d sessions", s.Len())
+	}
+}

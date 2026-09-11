@@ -205,6 +205,12 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logins.succeeded(addr)
+	// The browser is logging in again, so whatever it held before is
+	// finished with; leaving it live would keep a credential alive that
+	// nothing will present.
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		s.sessions.Delete(c.Value)
+	}
 	id := s.sessions.Create(generation)
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
