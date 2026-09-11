@@ -85,10 +85,12 @@ the extension does works under such a name today**, whatever token is pasted.
   served unauthenticated, so that request is `401` and the attempt ends there. The
   badge and the popup then say **the daemon rejected the token**, which is
   misleading: the token is fine, it was simply never sent.
-
-**Test connection** is the one thing that *will* report success against such a name,
-because it is the one call that deliberately sends the token; it is therefore no
-guide to whether anything else will work.
+- **Test connection** below fails there too, with that same message and for that
+  same reason: its first question — is a daemon there at all? — is the same
+  unauthenticated roots read, so it never reaches the read that carries your token.
+  No token makes it succeed against such a name, and an empty one gives the same
+  answer. So nothing in the extension tells a tailnet daemon URL apart from a token
+  that is genuinely wrong.
 
 Reading your notes from another device is the app's job, not the extension's: open
 `https://<tailnet_host>/` in the browser there and log in. Leave the extension's
