@@ -188,6 +188,23 @@ describe("htmlToMarkdown", () => {
     ).toBe("````js\na ``` b\n````");
   });
 
+  it("takes GitHub's rendered code block, clipboard container and all", () => {
+    // The real markup: the `pre` first, a copy button beside it. The code is
+    // the `pre`'s, and the fence is long enough for what is inside it.
+    const github =
+      '<div class="highlight highlight-source-js notranslate position-relative overflow-auto" dir="auto">' +
+      "<pre>x ``` y</pre>" +
+      '<div class="zeroclipboard-container"><clipboard-copy>Copy</clipboard-copy></div>' +
+      "</div>";
+    expect(htmlToMarkdown(github, PAGE)).toBe("````js\nx ``` y\n````");
+  });
+
+  it("does not swallow a div that only happens to contain a pre", () => {
+    expect(
+      htmlToMarkdown('<div class="highlight"><p>Prose first.</p><pre>x</pre></div>', PAGE),
+    ).toBe("Prose first.\n\n```\nx\n```");
+  });
+
   it("keeps a highlight div's data-lang, which the plugin's rule ignores", () => {
     expect(
       htmlToMarkdown('<div class="highlight" data-lang="zig"><pre>x</pre></div>', PAGE),
