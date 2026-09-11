@@ -89,8 +89,9 @@ the extension does works under such a name today**, whatever token is pasted.
   same reason: its first question — is a daemon there at all? — is the same
   unauthenticated roots read, so it never reaches the read that carries your token.
   No token makes it succeed against such a name, and an empty one gives the same
-  answer. So nothing in the extension tells a tailnet daemon URL apart from a token
-  that is genuinely wrong.
+  answer. A genuinely wrong token on a *loopback* daemon does say a little more —
+  `daemon answered: 1 root, but …` before the same sentence — so the two cases differ
+  by a prefix nothing tells you to read, and on the file-URL surface not even by that.
 
 Reading your notes from another device is the app's job, not the extension's: open
 `https://<tailnet_host>/` in the browser there and log in. Leave the extension's
