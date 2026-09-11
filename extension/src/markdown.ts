@@ -42,11 +42,21 @@ const HIGHLIGHT_CLASS = /(?:^|\s)highlight(?:$|[\s-])/;
 /**
  * The `pre` a highlight wrapper is wrapping, or null when this is not one.
  *
- * The wrapper's *first* element child must be the `pre`, which is the test
- * the GFM plugin's own rule makes, and the code is taken from that `pre` and
- * not from the div: GitHub's rendered markup puts a clipboard-copy container
- * beside the code, and a div whose content starts with something other than
- * a `pre` is not a code block at all and must not be swallowed as one.
+ * The test is deliberately looser than the GFM plugin's, which asks that the
+ * div's first *node* is a `pre` and that the class carries
+ * `highlight-source-…` or `highlight-text-…`. This one accepts any
+ * `div.highlight` — a bare `highlight` with a `data-lang` is a common shape —
+ * and looks at the first *element* child, so the whitespace between
+ * `<div class="highlight">` and `<pre>` does not disqualify a block the way
+ * it would there.
+ *
+ * The code is then taken from that `pre` and not from the div, because
+ * GitHub's rendered markup puts a clipboard-copy container beside it. A div
+ * whose first element is something else is not treated as a code block at
+ * all, so its content is converted normally — but note that looking at
+ * elements means a bare text node *before* the `pre` is dropped rather than
+ * kept. That shape is rare and there is no good answer to it here; the
+ * alternative, treating the div as prose, loses the language instead.
  */
 function highlightPre(node: HTMLElement): HTMLElement | null {
   if (node.nodeName !== "DIV") return null;
@@ -175,6 +185,11 @@ export function clipTurndown(baseUrl: string): TurndownService {
   // otherwise claim that shape before this rule saw it. This one also takes
   // `lang-x`, `highlight-source-x` and `data-lang`, covers a `pre` with no
   // `code` child, and lengthens the fence when the code contains one.
+  // Note the discarded `content`: when a highlight wrapper matches, anything
+  // after its `pre` — GitHub's copy button, but also a caption or a filename
+  // strip if a page puts one there — is dropped from the note rather than
+  // converted beside the code. Telling those apart is a judgement, not a
+  // patch; a capture covers it.
   service.addRule("clipFencedCode", {
     filter: (node) => node.nodeName === "PRE" || highlightPre(node) !== null,
     replacement: (_content, node, options) => {
