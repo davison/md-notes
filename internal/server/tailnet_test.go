@@ -205,6 +205,24 @@ func TestTailnetRequiresAuthentication(t *testing.T) {
 	}
 }
 
+// The login page must not carry Referrer-Policy: no-referrer. A document
+// with that policy makes the browser send `Origin: null` on the form it
+// posts — Fetch, "append the Origin header" — which the cross-origin
+// check above then refuses, so the login form refuses its own submission
+// in a real browser while passing every test that sets Origin by hand.
+// Caught in headless Chromium, pinned here.
+func TestLoginPageKeepsItsOriginOnTheFormPost(t *testing.T) {
+	ts, _ := newTailnetServer(t)
+	resp := tdo(t, ts, "GET", loginPath, "", navigation())
+	got := resp.Header.Get("Referrer-Policy")
+	if got == "no-referrer" {
+		t.Fatal("Referrer-Policy: no-referrer nulls the Origin of the form this page posts")
+	}
+	if got != "same-origin" {
+		t.Errorf("Referrer-Policy = %q, want same-origin: it keeps the origin on our own POST and nulls it on anyone else's", got)
+	}
+}
+
 // The cookie is exactly what M3-R6 asks for: scoped to the host that set
 // it, unreadable by script, and sent only on this site's own requests.
 func TestTailnetLoginSetsAHostScopedCookie(t *testing.T) {
@@ -275,6 +293,14 @@ func TestTailnetLoginRefusals(t *testing.T) {
 	foreign := loginPost(t, ts, tok, "/", "Origin", "https://evil.example")
 	if foreign.StatusCode != http.StatusForbidden || guardCode(t, foreign) != "cross_origin" {
 		t.Errorf("cross-origin login: status %d, want 403 cross_origin", foreign.StatusCode)
+	}
+
+	// A form whose document carried no referrer policy at all posts
+	// `Origin: null`, which is what a sandboxed or cross-origin-redirected
+	// document sends too. It is not this daemon's own origin.
+	opaque := loginPost(t, ts, tok, "/", "Origin", "null")
+	if opaque.StatusCode != http.StatusForbidden {
+		t.Errorf("null origin: status %d, want 403", opaque.StatusCode)
 	}
 
 	// The form is posted, not fetched with a method of the caller's choice.
