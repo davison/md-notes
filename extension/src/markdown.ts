@@ -35,18 +35,24 @@ const LANGUAGE_PATTERNS = [
 
 /**
  * GitHub's shape — `<div class="highlight highlight-source-go"><pre>…` — and
- * the plainer `<div class="highlight" data-lang="go">` beside it. Only when
- * the div holds the `pre` and nothing else, so no other content is swallowed.
+ * the plainer `<div class="highlight" data-lang="go">` beside it.
  */
 const HIGHLIGHT_CLASS = /(?:^|\s)highlight(?:$|[\s-])/;
 
-function isHighlightDiv(node: HTMLElement): boolean {
-  return (
-    node.nodeName === "DIV" &&
-    HIGHLIGHT_CLASS.test(node.getAttribute("class") ?? "") &&
-    node.children.length === 1 &&
-    node.children[0]!.nodeName === "PRE"
-  );
+/**
+ * The `pre` a highlight wrapper is wrapping, or null when this is not one.
+ *
+ * The wrapper's *first* element child must be the `pre`, which is the test
+ * the GFM plugin's own rule makes, and the code is taken from that `pre` and
+ * not from the div: GitHub's rendered markup puts a clipboard-copy container
+ * beside the code, and a div whose content starts with something other than
+ * a `pre` is not a code block at all and must not be swallowed as one.
+ */
+function highlightPre(node: HTMLElement): HTMLElement | null {
+  if (node.nodeName !== "DIV") return null;
+  if (!HIGHLIGHT_CLASS.test(node.getAttribute("class") ?? "")) return null;
+  const first = node.children[0];
+  return first !== undefined && first.nodeName === "PRE" ? (first as HTMLElement) : null;
 }
 
 /** `value` resolved against `base`, or null when it is not a URL at all. */
@@ -83,20 +89,27 @@ function titleSuffix(node: HTMLElement): string {
   return ` "${title.replace(/"/g, '\\"')}"`;
 }
 
-/** The language of a code block, from the `pre` or its `code` child. */
-function codeLanguage(node: HTMLElement): string {
-  const code = node.querySelector("code");
+/**
+ * The language of a code block, from the element the rule matched, the `pre`
+ * inside it, or that `pre`'s `code` child.
+ */
+function codeLanguage(node: HTMLElement, pre: HTMLElement): string {
+  const code = pre.querySelector("code");
   // A class names the language inside a well-known prefix; a `data-lang` is
   // the language outright. Reading a bare class as a language would make
   // `<pre class="prettyprint">` a language of that name.
-  for (const classes of [node.getAttribute("class"), code?.getAttribute("class")]) {
+  for (const classes of [
+    node.getAttribute("class"),
+    pre.getAttribute("class"),
+    code?.getAttribute("class"),
+  ]) {
     if (classes === null || classes === undefined) continue;
     for (const pattern of LANGUAGE_PATTERNS) {
       const match = pattern.exec(classes);
       if (match !== null) return match[1] ?? "";
     }
   }
-  for (const element of [node, code]) {
+  for (const element of [node, pre, code]) {
     const named = element?.getAttribute("data-lang") ?? element?.getAttribute("data-language");
     if (named !== null && named !== undefined && named.trim() !== "") return named.trim();
   }
@@ -163,11 +176,12 @@ export function clipTurndown(baseUrl: string): TurndownService {
   // `lang-x`, `highlight-source-x` and `data-lang`, covers a `pre` with no
   // `code` child, and lengthens the fence when the code contains one.
   service.addRule("clipFencedCode", {
-    filter: (node) => node.nodeName === "PRE" || isHighlightDiv(node),
+    filter: (node) => node.nodeName === "PRE" || highlightPre(node) !== null,
     replacement: (_content, node, options) => {
-      const code = (node.textContent ?? "").replace(/\n+$/, "");
+      const pre = node.nodeName === "PRE" ? node : highlightPre(node)!;
+      const code = (pre.textContent ?? "").replace(/\n+$/, "");
       const fence = fenceFor(code, options.fence ?? "```");
-      return `\n\n${fence}${codeLanguage(node)}\n${code}\n${fence}\n\n`;
+      return `\n\n${fence}${codeLanguage(node, pre)}\n${code}\n${fence}\n\n`;
     },
   });
 
