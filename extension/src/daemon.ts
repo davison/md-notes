@@ -191,12 +191,15 @@ export interface ClipResult {
 /**
  * Creates a note from a clip and returns where it landed.
  *
- * This call must be made from the service worker. The daemon answers no CORS
- * preflight, and an `Authorization` header makes a cross-origin fetch
- * non-simple, so the same request from the popup or a content script dies at
- * the preflight with an opaque browser error instead of one of the daemon's
- * codes. A missing token is reported here rather than sent, because the
- * refusal it would earn (`cross_origin`) reads like an origin problem.
+ * Made from the service worker, which owns the clip and outlives the popup.
+ * An extension page could issue the same request — CORS exemption follows
+ * `host_permissions` for every extension context — but a popup closes the
+ * moment it loses focus and would take the save with it. A content script or
+ * a web page is a different matter: those are governed by CORS, and the
+ * daemon answers no preflight, which is the boundary it draws.
+ *
+ * A missing token is reported here rather than sent, because the refusal it
+ * would earn (`cross_origin`) reads like an origin problem and is not one.
  */
 export async function postClip(
   settings: Settings,

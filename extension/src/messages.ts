@@ -1,11 +1,14 @@
 /**
  * What the popup asks the service worker to do.
  *
- * The popup cannot talk to the daemon itself: an `Authorization` header makes
- * a cross-origin fetch non-simple, the daemon answers no preflight, and a
- * popup document is an ordinary page as far as CORS is concerned. Only the
- * MV3 service worker is exempt. So the popup sends these, and the worker does
- * the work.
+ * The popup *could* call the daemon itself — CORS exemption follows
+ * `host_permissions` and covers every extension context, pages included, as
+ * the options page's connection test demonstrates — but it should not. The
+ * worker owns the clip and outlives the popup: a popup is destroyed the
+ * moment it loses focus, taking an in-flight save with it, and a clip from
+ * the context menu has no popup open when it is taken. One context speaks to
+ * the daemon and one context holds the token. What CORS does govern is a
+ * content script or a web page, and the daemon answers neither a preflight.
  */
 
 import type { ClipFailure } from "./clip";

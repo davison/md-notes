@@ -10,9 +10,11 @@
  *
  * The clipper: the context menu and the popup both prepare a clip by injecting
  * the converter into the page, and the popup then asks for it to be saved. The
- * daemon call has to happen *here*, in the worker, and not in the popup — the
- * daemon answers no CORS preflight, and only an extension service worker
- * holding the host permission is exempt from CORS.
+ * daemon call happens *here*, in the worker, rather than in the popup —
+ * not because a popup could not make it (CORS exemption follows
+ * `host_permissions` for every extension context; only content scripts and
+ * web pages are governed by CORS) but because the worker owns the clip and
+ * outlives the popup, which is destroyed the moment it loses focus.
  */
 
 import { CLIP_MENU, buildClipRequest, describeClipFailure, menuKind } from "./clip";
