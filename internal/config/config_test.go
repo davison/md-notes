@@ -195,15 +195,16 @@ func TestLoadParsesClipsDir(t *testing.T) {
 func TestResolveTailnetHost(t *testing.T) {
 	dir := t.TempDir()
 	for given, want := range map[string]string{
-		"":                           "",
-		"   ":                        "",
-		"laptop.tailnet.ts.net":      "laptop.tailnet.ts.net",
-		"LAPTOP.Tailnet.TS.NET":      "laptop.tailnet.ts.net",
-		"  laptop.tailnet.ts.net  ":  "laptop.tailnet.ts.net",
-		"laptop.tailnet.ts.net:8443": "laptop.tailnet.ts.net:8443",
-		"laptop.tailnet.ts.net.":     "laptop.tailnet.ts.net.",
-		"laptop":                     "laptop",
-		"100.101.102.103":            "100.101.102.103",
+		"":                            "",
+		"   ":                         "",
+		"laptop.tailnet.ts.net":       "laptop.tailnet.ts.net",
+		"LAPTOP.Tailnet.TS.NET":       "laptop.tailnet.ts.net",
+		"  laptop.tailnet.ts.net  ":   "laptop.tailnet.ts.net",
+		"laptop.tailnet.ts.net:8443":  "laptop.tailnet.ts.net:8443",
+		"laptop.tailnet.ts.net.":      "laptop.tailnet.ts.net",
+		"laptop.tailnet.ts.net.:8443": "laptop.tailnet.ts.net:8443",
+		"laptop":                      "laptop",
+		"100.101.102.103":             "100.101.102.103",
 	} {
 		cfg, err := Config{TailnetHost: given}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
 		if err != nil {
