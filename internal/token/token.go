@@ -58,7 +58,7 @@ func Open(path string) (*Store, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	return &Store{path: path, value: value, info: info}, created, nil
+	return &Store{path: path, value: value, info: info, gen: 1}, created, nil
 }
 
 func load(path string) (string, os.FileInfo, bool, error) {
@@ -245,6 +245,12 @@ type Store struct {
 	// info identifies the file the held value was read from, so that a
 	// rotation is noticed without reading the file on every request.
 	info os.FileInfo
+	// gen counts the distinct token values this Store has held. It starts
+	// at 1 and moves only when a re-read finds a different secret, so
+	// anything derived from the token — a login session, in the daemon's
+	// case — can be tied to the generation that authorised it and fall
+	// with `mdn token --rotate`.
+	gen uint64
 }
 
 // Valid reports whether presented is the current token, comparing in
@@ -257,6 +263,18 @@ func (s *Store) Valid(presented string) bool {
 	defer s.mu.Unlock()
 	s.refresh()
 	return equal(presented, s.value)
+}
+
+// Generation identifies the token currently held: it changes when, and
+// only when, the secret does. A caller holding a credential minted from an
+// earlier generation can see that the token it rests on has been rotated
+// away without ever seeing the token itself. Like Valid, it notices a
+// rotation on the spot, at the cost of the same one stat.
+func (s *Store) Generation() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refresh()
+	return s.gen
 }
 
 // refresh re-reads the token when the file is no longer the one the held
@@ -287,6 +305,9 @@ func (s *Store) refresh() {
 	value, from, err := read(s.path)
 	if err != nil || value == "" {
 		return
+	}
+	if value != s.value {
+		s.gen++
 	}
 	s.value, s.info = value, from
 }

@@ -492,3 +492,54 @@ func TestWriteSweepsStaleStagingFiles(t *testing.T) {
 		}
 	}
 }
+
+// The generation is what a session cookie is tied to: it must move when
+// the secret does, and stay put otherwise, including across a re-read of
+// an identical file.
+func TestGenerationMovesOnlyWhenTheTokenDoes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	s, _, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := s.Generation()
+	if first == 0 {
+		t.Fatal("generation starts at zero; a session minted before any rotation could not be told apart from none")
+	}
+	if again := s.Generation(); again != first {
+		t.Errorf("generation moved without a rotation: %d then %d", first, again)
+	}
+	// A rewrite with the same bytes is not a rotation, even though it is
+	// a different inode and so forces a re-read.
+	value, _, err := read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := write(path, value); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Generation(); got != first {
+		t.Errorf("generation %d after rewriting the same token, want %d", got, first)
+	}
+	if _, err := Rotate(path); err != nil {
+		t.Fatal(err)
+	}
+	second := s.Generation()
+	if second == first {
+		t.Fatalf("generation still %d after a rotation", second)
+	}
+	if _, err := Rotate(path); err != nil {
+		t.Fatal(err)
+	}
+	if third := s.Generation(); third == second {
+		t.Fatalf("generation still %d after a second rotation", third)
+	}
+	// A state directory that went missing is not a revocation, so the
+	// generation stands with the held value.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Generation(); got != second+1 {
+		t.Errorf("generation %d after the file vanished, want it to stand at %d", got, second+1)
+	}
+}
