@@ -30,8 +30,24 @@ const IMAGE_SCHEMES = new Set(["http:", "https:"]);
 const LANGUAGE_PATTERNS = [
   /(?:^|\s)language-([^\s]+)/,
   /(?:^|\s)lang-([^\s]+)/,
-  /(?:^|\s)highlight-source-([^\s]+)/,
+  /(?:^|\s)highlight-(?:text|source)-([^\s]+)/,
 ];
+
+/**
+ * GitHub's shape — `<div class="highlight highlight-source-go"><pre>…` — and
+ * the plainer `<div class="highlight" data-lang="go">` beside it. Only when
+ * the div holds the `pre` and nothing else, so no other content is swallowed.
+ */
+const HIGHLIGHT_CLASS = /(?:^|\s)highlight(?:$|[\s-])/;
+
+function isHighlightDiv(node: HTMLElement): boolean {
+  return (
+    node.nodeName === "DIV" &&
+    HIGHLIGHT_CLASS.test(node.getAttribute("class") ?? "") &&
+    node.children.length === 1 &&
+    node.children[0]!.nodeName === "PRE"
+  );
+}
 
 /** `value` resolved against `base`, or null when it is not a URL at all. */
 export function absoluteUrl(base: string, value: string | null | undefined): string | null {
@@ -60,8 +76,10 @@ function inlineTarget(url: string): string {
 }
 
 function titleSuffix(node: HTMLElement): string {
-  const title = node.getAttribute("title");
-  if (title === null || title === "") return "";
+  // A newline in the attribute would split the link over two lines and it
+  // would stop being a link, so the page does not get to choose that.
+  const title = (node.getAttribute("title") ?? "").replace(/\s+/g, " ").trim();
+  if (title === "") return "";
   return ` "${title.replace(/"/g, '\\"')}"`;
 }
 
@@ -92,18 +110,29 @@ function fenceFor(code: string, marker: string): string {
   return marker[0]!.repeat(Math.max(3, longest + 1));
 }
 
+/** The first candidate of a `srcset`, which is a URL followed by a descriptor. */
+function firstCandidate(srcset: string | null): string | null {
+  const first = srcset?.split(",")[0]?.trim().split(/\s+/)[0];
+  return first === undefined || first === "" ? null : first;
+}
+
 /**
- * The image this element actually shows. A lazily loaded image often carries
- * nothing useful in `src`, so `data-src` and the first `srcset` candidate are
- * tried in turn before giving up.
+ * The image this element actually shows.
+ *
+ * A lazily loaded image usually carries a 1×1 `data:` placeholder in `src`
+ * and the real address in `data-src` or `srcset`, so a `data:` `src` is not
+ * the answer when another attribute has one — the page has told us where the
+ * image is. A `data:` URI is only returned when it is all there is, and the
+ * caller drops it.
  */
 function imageSource(node: HTMLElement): string | null {
-  const direct = node.getAttribute("src") ?? node.getAttribute("data-src");
-  if (direct !== null && direct.trim() !== "") return direct;
-  const srcset = node.getAttribute("srcset") ?? node.getAttribute("data-srcset");
-  if (srcset === null) return null;
-  const first = srcset.split(",")[0]?.trim().split(/\s+/)[0];
-  return first === undefined || first === "" ? null : first;
+  const candidates = [
+    node.getAttribute("src"),
+    node.getAttribute("data-src"),
+    firstCandidate(node.getAttribute("srcset")),
+    firstCandidate(node.getAttribute("data-srcset")),
+  ].filter((value): value is string => value !== null && value.trim() !== "");
+  return candidates.find((value) => !/^data:/i.test(value.trim())) ?? candidates[0] ?? null;
 }
 
 /**
@@ -128,11 +157,13 @@ export function clipTurndown(baseUrl: string): TurndownService {
   service.remove(["script", "style", "noscript"]);
 
   // Turndown's own fenced-code rule reads `language-x` from the `code` element
-  // only, and writes the fence at a fixed three backticks. This one also takes
-  // `lang-x`, GitHub's `highlight-source-x` and `data-lang`, covers a `pre`
-  // with no `code` child, and lengthens the fence when the code contains one.
+  // only, and writes the fence at a fixed three backticks; the GFM plugin's
+  // `highlightedCodeBlock` does the same for GitHub's wrapper div, and would
+  // otherwise claim that shape before this rule saw it. This one also takes
+  // `lang-x`, `highlight-source-x` and `data-lang`, covers a `pre` with no
+  // `code` child, and lengthens the fence when the code contains one.
   service.addRule("clipFencedCode", {
-    filter: (node) => node.nodeName === "PRE",
+    filter: (node) => node.nodeName === "PRE" || isHighlightDiv(node),
     replacement: (_content, node, options) => {
       const code = (node.textContent ?? "").replace(/\n+$/, "");
       const fence = fenceFor(code, options.fence ?? "```");

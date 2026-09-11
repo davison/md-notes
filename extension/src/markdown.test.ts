@@ -136,6 +136,20 @@ describe("htmlToMarkdown", () => {
     expect(md).toBe("````\na ``` b\n````");
   });
 
+  it("lengthens the fence inside a highlight div too", () => {
+    // The GFM plugin's own rule claims this shape and writes three backticks
+    // whatever the code contains, which is broken markdown.
+    expect(
+      htmlToMarkdown('<div class="highlight highlight-source-js"><pre>a ``` b</pre></div>', PAGE),
+    ).toBe("````js\na ``` b\n````");
+  });
+
+  it("keeps a highlight div's data-lang, which the plugin's rule ignores", () => {
+    expect(
+      htmlToMarkdown('<div class="highlight" data-lang="zig"><pre>x</pre></div>', PAGE),
+    ).toBe("```zig\nx\n```");
+  });
+
   it("fences a pre with no code child, and keeps its whitespace", () => {
     expect(htmlToMarkdown("<pre>  two  spaces\n  and a line</pre>", PAGE)).toBe(
       "```\n  two  spaces\n  and a line\n```",
@@ -169,6 +183,26 @@ describe("htmlToMarkdown", () => {
     );
     expect(htmlToMarkdown('<img srcset="/b.png 1x, /b2.png 2x" alt="b">', PAGE)).toBe(
       "![b](https://example.com/b.png)",
+    );
+  });
+
+  it("looks past a data: placeholder to the real address the page gave", () => {
+    // The dominant lazy-loading shape: a 1x1 in src, the image in data-src.
+    const placeholder = "data:image/gif;base64,R0lGOD";
+    expect(htmlToMarkdown(`<img src="${placeholder}" data-src="/real.png" alt="r">`, PAGE)).toBe(
+      "![r](https://example.com/real.png)",
+    );
+    expect(
+      htmlToMarkdown(`<img src="${placeholder}" srcset="/wide.png 2x" alt="r">`, PAGE),
+    ).toBe("![r](https://example.com/wide.png)");
+  });
+
+  it("collapses whitespace in a link or image title, which would break the link", () => {
+    expect(htmlToMarkdown('<a href="/x" title="one\ntwo">t</a>', PAGE)).toBe(
+      '[t](https://example.com/x "one two")',
+    );
+    expect(htmlToMarkdown('<img src="/i.png" alt="a" title="one\ntwo">', PAGE)).toBe(
+      '![a](https://example.com/i.png "one two")',
     );
   });
 
