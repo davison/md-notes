@@ -98,6 +98,18 @@ func (s *Store) Valid(id string, generation uint64) bool {
 	return true
 }
 
+// Delete forgets a session. A browser logging in again has finished with
+// the one it was holding, and a credential nothing will present should
+// not stay live until it lapses.
+func (s *Store) Delete(id string) {
+	if id == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.live, key(id))
+}
+
 // Len is how many sessions the store is holding, expired ones included
 // until something prunes them. For tests and for nothing else.
 func (s *Store) Len() int {
