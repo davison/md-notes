@@ -30,11 +30,17 @@ describe("manifest", () => {
     expect(manifest.background).toEqual({ service_worker: "background.js", type: "module" });
   });
 
-  it("asks for exactly one API permission of its own, and two held for the clipper", () => {
-    // storage is this milestone's: the options page and the per-tab status.
-    // contextMenus and activeTab are M3-R3's menu entries and clicked page,
-    // declared now because neither warns at install or re-prompts when used.
-    expect([...manifest.permissions].sort()).toEqual(["activeTab", "contextMenus", "storage"]);
+  it("asks for exactly the four API permissions the extension uses", () => {
+    // storage: the options page and the per-tab status. contextMenus: the two
+    // clip entries. activeTab: the page being clipped, and only at the moment
+    // the user invokes the extension on it. scripting: injecting the converter
+    // into that page, which activeTab alone does not allow.
+    expect([...manifest.permissions].sort()).toEqual([
+      "activeTab",
+      "contextMenus",
+      "scripting",
+      "storage",
+    ]);
   });
 
   it("asks for no permission that would expose every tab or navigation", () => {
