@@ -23,6 +23,10 @@ const loginPath = "/login"
 // be widened to a sibling name later, by this daemon or anything else.
 const sessionCookie = "__Host-mdn_session"
 
+// maxLoginForm bounds the body of a login post. A token and a redirect
+// path are a few hundred bytes; this is room to spare.
+const maxLoginForm = 8 << 10
+
 // WithTailnetHost gives the daemon one extra Host name to answer to, for
 // requests a `tailscale serve` proxy forwards to the loopback listener.
 // Empty, the default, leaves the daemon loopback-only.
@@ -146,6 +150,10 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		writeGuardError(w, http.StatusForbidden, "cross_origin", "cross-origin login refused")
 		return
 	}
+	// The login form is the one thing under this name that runs before
+	// anything has been proved, so it reads a form and not a megabyte:
+	// ParseForm's own default is 10 MiB.
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginForm)
 	if err := r.ParseForm(); err != nil {
 		s.writeLoginPage(w, r, http.StatusBadRequest, loginForm{Error: "That form could not be read. Try again."})
 		return
