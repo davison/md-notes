@@ -20,26 +20,36 @@ const (
 	// loginMax is how many failures in a window are answered at all.
 	loginMax = 12
 	// loginDelay is how long a failure past loginFree waits before it is
-	// answered. Small enough not to look broken, large enough that a
-	// caller cannot run through attempts as fast as it can open sockets.
+	// answered — past loginFree from one caller, or past loginFree in
+	// total. Small enough not to look broken, large enough that a caller
+	// cannot run through attempts as fast as it can open sockets.
 	loginDelay = 500 * time.Millisecond
 )
 
-// throttle counts recent failed logins per caller. The address it keys on
-// comes from X-Forwarded-For and is therefore only as trustworthy as the
-// proxy that set it; that is acceptable here, because the limit exists to
-// bound noise and work rather than to defend a secret, and the delay below
-// applies whatever the key says.
+// throttle counts recent failed logins, per caller and in total.
+//
+// The address it keys on comes from X-Forwarded-For and is therefore only
+// as trustworthy as the proxy that set it: a caller that varies the value
+// reaches no key's own limit. That is what the total is for. Once the
+// daemon has seen more than free failures in a window across every key,
+// each further failure waits, whatever key it claims — so the delay is a
+// property of the daemon rather than of a header the caller controls. The
+// total never refuses, only delays, because a refusal counted across all
+// callers would let anyone the ACL admits lock the operator out.
 type throttle struct {
 	window time.Duration
 	free   int
 	max    int
+	delay  time.Duration
 
 	// now is the clock, replaced in tests.
 	now func() time.Time
 
-	mu    sync.Mutex
-	seen  map[string]window
+	mu   sync.Mutex
+	seen map[string]window
+	// all counts failures across every key, so that varying the key
+	// escapes the count but not the delay.
+	all   window
 	limit int
 }
 
@@ -57,7 +67,7 @@ const maxThrottled = 1024
 
 func newThrottle() *throttle {
 	return &throttle{
-		window: loginWindow, free: loginFree, max: loginMax,
+		window: loginWindow, free: loginFree, max: loginMax, delay: loginDelay,
 		now: time.Now, seen: map[string]window{}, limit: maxThrottled,
 	}
 }
@@ -71,24 +81,36 @@ func (t *throttle) failed(addr string) (wait time.Duration, refuse bool) {
 	if len(t.seen) >= t.limit {
 		t.seen = map[string]window{}
 	}
-	w := t.seen[addr]
-	if w.since.IsZero() || now.Sub(w.since) >= t.window {
+	t.all = t.all.record(now, t.window)
+	w := t.seen[addr].record(now, t.window)
+	t.seen[addr] = w
+	if w.failures > t.max {
+		return 0, true
+	}
+	// The per-key tier separates one caller's mistypes from another's;
+	// the total is the floor underneath it, which no choice of key can
+	// get out from under.
+	if w.failures > t.free || t.all.failures > t.free {
+		return t.delay, false
+	}
+	return 0, false
+}
+
+// record adds one failure to a counting window, starting a fresh one when
+// the old has run out.
+func (w window) record(now time.Time, length time.Duration) window {
+	if w.since.IsZero() || now.Sub(w.since) >= length {
 		w = window{since: now}
 	}
 	w.failures++
-	t.seen[addr] = w
-	switch {
-	case w.failures > t.max:
-		return 0, true
-	case w.failures > t.free:
-		return loginDelay, false
-	default:
-		return 0, false
-	}
+	return w
 }
 
 // succeeded forgets a caller's failures, so that logging in correctly
-// clears the slate rather than leaving the next mistype throttled.
+// clears the slate rather than leaving the next mistype throttled. The
+// total is deliberately left standing: whoever is generating failures is
+// still generating them, and a successful login elsewhere is no reason to
+// stop delaying them.
 func (t *throttle) succeeded(addr string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()

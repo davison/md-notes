@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -908,6 +909,49 @@ func TestLoggingInAgainEndsTheOldSession(t *testing.T) {
 func sessionStatus(t *testing.T, ts *httptest.Server, cookie string) int {
 	t.Helper()
 	return tdo(t, ts, "GET", "/api/roots", "", map[string]string{"Cookie": cookie}).StatusCode
+}
+
+// The address the limit keys on comes from a header the caller writes,
+// so varying it walks past every per-key count. It must not walk past the
+// delay as well, or the limit bounds nothing.
+func TestVaryingTheForwardedAddressStillMeetsTheDelay(t *testing.T) {
+	ts, _ := newTailnetServer(t)
+	s := serverOf(t, ts)
+	s.logins.delay = 40 * time.Millisecond
+
+	attempt := func(addr string) time.Duration {
+		start := time.Now()
+		resp := loginPost(t, ts, "WRONG", "/", "X-Forwarded-For", addr)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("%s: status %d, want 401", addr, resp.StatusCode)
+		}
+		return time.Since(start)
+	}
+	// The free tier, each from a different address, is answered at once.
+	for i := range loginFree {
+		if took := attempt(fmt.Sprintf("10.0.0.%d", i)); took >= s.logins.delay {
+			t.Errorf("free attempt %d took %v, want an immediate answer", i+1, took)
+		}
+	}
+	// Past it, a fresh address every time still waits.
+	for i := range 3 {
+		addr := fmt.Sprintf("10.0.1.%d", i)
+		if took := attempt(addr); took < s.logins.delay {
+			t.Errorf("%s took %v, want at least %v — varying the key bypassed the delay", addr, took, s.logins.delay)
+		}
+		// And it got there without that address reaching a count of its
+		// own, which is the bypass being closed rather than not taken.
+		if w := s.logins.seen[addr]; w.failures > s.logins.free {
+			t.Fatalf("%s reached %d failures; the addresses were supposed to vary", addr, w.failures)
+		}
+	}
+	// A total counted across callers delays; it never refuses, so nobody
+	// can be shut out of their own daemon by somebody else's guessing.
+	for i := range 30 {
+		if resp := loginPost(t, ts, "WRONG", "/", "X-Forwarded-For", fmt.Sprintf("10.0.2.%d", i)); resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("attempt from 10.0.2.%d: status %d, want 401 and never 429", i, resp.StatusCode)
+		}
+	}
 }
 
 // The login page is locked down as tightly as a page with no script and
