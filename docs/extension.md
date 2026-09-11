@@ -2,11 +2,11 @@
 
 A Chromium Manifest V3 extension for Brave, in [`extension/`](../extension).
 It is the browser half of md-notes: it opens local markdown files in the app
-instead of letting the browser render them as plain text, and — with the
-clipper task — saves a page or a selection into the notes root.
+instead of letting the browser render them as plain text, and it clips a web
+page or a selection into the notes root as markdown.
 
-This page covers what exists now: building it, loading it, the file URL
-permission, the token, and every permission it asks for.
+This page covers building it, loading it, the file URL permission, the token,
+clipping, and every permission it asks for.
 
 ## Building
 
@@ -66,32 +66,111 @@ options**):
 - **Token** — the installation's bearer token, printed by `mdn token`. Paste
   it and save.
 
-> **Not yet.** `mdn token` does not exist on `main` at the time of writing:
-> the daemon's bearer token is requirement M3-R1, landing in this same
-> milestone. Until it does, the daemon has no token to print and ignores the
-> header, so everything in this page that needs the token — registering a new
-> folder as a root, and clipping — cannot work yet, and the extension says so
-> rather than failing quietly. What does work today is opening a file that is
-> already inside a root the daemon serves.
+> **Not yet.** The extension is loaded unpacked from this repository; it is
+> not in any store. The inbox clipper for URLs shared from a phone is later
+> work and is not here. Everything else on this page works against a daemon
+> built from `main`.
 
 **Test connection** asks the daemon for its roots and says what came back. If
 a token is stored it also presents one the daemon cannot have issued, to find
 out whether this daemon judges tokens at all, and only then reports yours as
-accepted or rejected — a daemon that predates M3-R1 answers everything, so a
-plain success would say nothing about your token.
+accepted or rejected — a daemon old enough to predate the token answers
+everything, so a plain success would say nothing about your token.
 
 What needs the token, and what does not:
 
-| Action | Token | Works today |
-|--------|-------|-------------|
+| Action | Token | Works |
+|--------|-------|-------|
 | Reading the list of roots | not needed — a GET from the extension's background context carries no `Origin` header, so the daemon's guard lets it through | yes |
 | Opening a file that is already inside a registered root | not needed | yes |
-| Registering a new folder as a root | **needed** — the POST carries `Origin: chrome-extension://…`, which the daemon refuses without the token | not until M3-R1 |
-| Clipping a page or a selection | **needed** | not until M3-R1 and M3-R2 |
+| Registering a new folder as a root | **needed** — the POST carries `Origin: chrome-extension://…`, which the daemon refuses without the token | yes |
+| Clipping a page or a selection | **needed** — `POST /api/clip` requires it | yes |
 
 So the extension works for notes already under a registered root before you
 paste anything, and says what is missing the first time it needs to register
 a folder.
+
+## Clipping a page or a selection
+
+Two ways in, both doing the same thing:
+
+- **The toolbar button.** Click **md-notes** and choose **Clip page** or
+  **Clip selection**.
+- **The page's right-click menu.** **Clip page to md-notes** is there on any
+  page; **Clip selection to md-notes** appears when you right-click a
+  selection. A menu click prepares the clip and opens the popup over it. On a
+  browser too old for an extension to open its own popup, the toolbar icon
+  gains a blue **1** instead — click it and the clip is waiting.
+
+Either way the popup then shows what it has: whether it is a page clip or a
+selection clip, the address it came from, and the title in a field you can
+edit. **Save to notes** writes it; **Discard** throws it away. Nothing is
+written until you press Save.
+
+On success the popup names the note and offers **Open the note**, which opens
+`/r/<root>/<path>` in the app on your configured daemon. On failure it says
+what went wrong and, where the remedy is a setting, offers **Options**. The
+clip is kept either way, so you can start the daemon or paste a token and
+press **Save to notes** again without finding the page a second time.
+
+### What ends up in the note
+
+**Clip page** runs Mozilla's Readability over the page first, so the note is
+the article rather than the navigation, the sidebar and the footer. On a page
+Readability declines — a dashboard, a search result, an index — the whole
+`<body>` is converted instead, which is worth more than a refusal. Readability
+drops the page's own `<h1>` when it is the article's title; the title is in the
+frontmatter, and it is the one the popup offers you to edit.
+
+**Clip selection** converts exactly what is selected, and nothing around it.
+
+The conversion is Turndown with its GFM plugin:
+
+- ATX headings (`#`, `##`), `-` bullets, nested and ordered lists;
+- inline links, and fenced code with its language where the page named one in
+  a `language-…`, `lang-…` or `data-lang` attribute;
+- GFM tables, strikethrough and task lists;
+- `**bold**`, `_italic_`, `` `code` `` and block quotes.
+
+Every link and image is made **absolute against the page's own URL**, so a note
+still points at something once it has left the browser. Three deliberate
+omissions: a `javascript:` link keeps its text and loses the link; a `data:`
+image is dropped rather than carrying base64 into the note; `script`, `style`
+and `noscript` never appear.
+
+Where the note lands, what it is called and what its frontmatter says are the
+daemon's doing, not the extension's — see
+[Clipping a web page](introduction.md#clipping-a-web-page). In short: under
+`clips/` in the notes root, named for the date and a slug of the title, with
+`title`, `source`, `clipped` and `tags: [clip]` above the markdown.
+
+### Where the work happens
+
+Worth knowing, because it is what the permissions below are for:
+
+1. The extension injects the extractor and the converter into the tab you are
+   clipping, and they run there — Readability and Turndown both need a live
+   DOM, and a selection exists nowhere else. This needs `scripting`, and
+   access to that one tab, which is what `activeTab` grants at the moment you
+   invoke the extension on it.
+2. The daemon call is made from the extension's **service worker**, never from
+   the popup. The daemon answers no CORS preflight, and an `Authorization`
+   header makes a cross-origin request one that needs a preflight; only an MV3
+   service worker holding the host permission is exempt from CORS at all. A
+   popup or a content script trying the same thing would fail with the
+   browser's opaque CORS error rather than any message the daemon wrote.
+
+### When a clip fails
+
+| What you see | What happened |
+|--------------|---------------|
+| `No token configured.` | Nothing is pasted on the options page, or the daemon refused the extension's origin because no token was presented. Run `mdn token` and paste it. |
+| `Token rejected: …` | The daemon has a different token. `mdn token` prints the current one; `mdn token --rotate` changed it. |
+| `Daemon not reachable at …` | Nothing is listening there. Start `mdn serve`, or correct the daemon URL. |
+| `This page cannot be clipped (…)` | Chromium does not let an extension run in browser pages (`chrome://`, `brave://`), the extensions gallery or the PDF viewer. |
+| `Nothing is selected on this page.` | **Clip selection** with no selection. |
+| `There is no text on this page to clip.` | The page converted to nothing at all. |
+| The daemon's own words, such as `markdown is too large` | The clip endpoint refused it; its message is passed through unchanged. |
 
 ## Opening a local markdown file
 
@@ -107,8 +186,8 @@ ending in `.md` or `.markdown` — from a file manager, a terminal's
    thing `mdn open DIR` does — and goes to the note there. Registering a
    directory the daemon already serves under another name hands back the
    existing root rather than duplicating it, because the daemon compares real
-   paths. **This step needs the token, so it does not work until M3-R1 lands**
-   (see the box above); the badge and popup say exactly that when you try it.
+   paths. **This step needs the token**; without one the page is left alone
+   and the badge and popup say so.
 
 The mapping in step 1 assumes POSIX paths — `file:///home/you/notes/a.md`
 becomes `/home/you/notes/a.md`. That is the daemon's world: it runs on Linux
@@ -136,8 +215,8 @@ text the browser was going to show anyway, and the toolbar icon gains a red
 | What you see | What happened |
 |--------------|---------------|
 | `daemon not reachable at http://localhost:7337` | Nothing is listening. Start `mdn serve`, or fix the daemon URL in the options. |
-| `cross-origin request refused: no token is stored` | The file is not in any registered root, and registering one needs the token. Run `mdn token` and paste it — or, until M3-R1 lands, register the folder with `mdn open DIR` instead. |
-| `the daemon refused the extension's origin even with a token` | The daemon does not know about tokens yet: it predates M3-R1. `mdn open DIR` registers the folder in the meantime. |
+| `cross-origin request refused: no token is stored` | The file is not in any registered root, and registering one needs the token. Run `mdn token` and paste it — or register the folder with `mdn open DIR` instead. |
+| `the daemon refused the extension's origin even with a token` | The daemon does not know about tokens: it predates the token, which landed with M3-R1. Rebuild it, or use `mdn open DIR`. |
 | `the daemon rejected the token` | The token is wrong or has been rotated. `mdn token` prints the current one. |
 | `path must be absolute`, `not a directory` | The daemon refused the folder; its own message is passed through. |
 
@@ -150,17 +229,15 @@ alone: it is not a path the daemon could register.
 
 ## Permissions, and why each one
 
-The manifest asks for the least that makes the above work, plus the two the
-clipper will need. Neither of those two produces an install-time warning or a
-re-prompt, so declaring them now costs the user nothing and saves reloading
-the extension mid-milestone; both are marked below. From
+The manifest asks for the least that makes the above work. From
 [`extension/public/manifest.json`](../extension/public/manifest.json):
 
 | Permission | Why |
 |------------|-----|
-| `storage` | The daemon URL and token on the options page, and the per-tab status the popup reports. |
-| `contextMenus` | Held for the clipper's right-click **Clip page** / **Clip selection** entries (M3-R3). Nothing in the file-URL work uses it yet. |
-| `activeTab` | Held for the clipper: reading the page you are on, and only at the moment you invoke the extension on it (M3-R3). Nothing uses it yet. |
+| `storage` | The daemon URL and token on the options page, the per-tab status the popup reports, and the clip waiting to be saved. |
+| `contextMenus` | The two **Clip … to md-notes** entries in the page's right-click menu. |
+| `activeTab` | Reading the page you are clipping — one tab, granted at the moment you invoke the extension on it, and gone again when that tab navigates. It is why the extension can read the page you asked it to clip and no other. |
+| `scripting` | Putting the extractor and the markdown converter into that tab. `activeTab` says *which* page may be read; `scripting` is what allows code to be run in it at all. |
 | `host_permissions: http://localhost:7337/*`, `http://127.0.0.1:7337/*` | Talking to the daemon. Chromium enforces the port, so this grants no access to any other service on your machine. |
 | `host_permissions: file:///*` | Seeing that a tab has navigated to a local markdown file. Inert until you switch **Allow access to file URLs** on. |
 | `optional_host_permissions: http://*/*`, `https://*/*` | Not granted at install. Only requested, with the browser's own prompt, if you set a daemon URL that is not the default — a different port, or a name reached over the tailnet. |
@@ -172,7 +249,7 @@ Deliberately **not** asked for:
   delivers a tab's URL on the strength of `file:///*` alone.
 - `<all_urls>` — the extension never needs to reach an arbitrary site.
 - Content scripts — none are registered, so no code of the extension's runs in
-  a page unless you invoke it.
+  a page unless you invoke a clip on it, and then only in that tab.
 - Web-accessible resources — nothing in the extension is reachable from a web
   page.
 
@@ -180,12 +257,16 @@ Deliberately **not** asked for:
 
 Unit tests (`pnpm --dir extension test`, and part of `make check`) cover the
 URL-to-path mapping, root matching, the app URL it builds, the daemon calls
-and their failures, and the manifest's permission set.
+and their failures, the HTML-to-markdown conversion on fixtures, the clip
+request built from an extraction, every failure the popup has to tell apart,
+and the manifest's permission set.
 
-There is also an end-to-end check that loads the built extension into headless
-Chromium against a real daemon on a temporary root. It needs a Chromium binary
-and a built `mdn`, so it is not part of `make check`; it skips itself, saying
-which prerequisite is missing, when they are absent:
+There are also two end-to-end checks that load the built extension into
+headless Chromium against a real daemon on a temporary root — one for the
+file-URL intercept, one for clipping a page and a selection from a local
+static page. They need a Chromium binary and a built `mdn`, so they are not
+part of `make check`; they skip themselves, saying which prerequisite is
+missing, when those are absent:
 
 ```
 make build extension
