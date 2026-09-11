@@ -316,6 +316,8 @@ func TestTailnetLoginRefusals(t *testing.T) {
 	// The form is posted, not fetched with a method of the caller's choice.
 	if resp := tdo(t, ts, "DELETE", loginPath, "", nil); resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("DELETE /login: status %d, want 405", resp.StatusCode)
+	} else if code := guardCode(t, resp); code != "method_not_allowed" {
+		t.Errorf("DELETE /login: code %q, want method_not_allowed", code)
 	}
 	// And it is reachable without credentials, which is its whole point.
 	if resp := tdo(t, ts, "GET", loginPath, "", navigation()); resp.StatusCode != http.StatusOK {

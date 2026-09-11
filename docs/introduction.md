@@ -206,6 +206,7 @@ never see the page at all.
 | 403 | `cross_origin` | A foreign `Origin` and no token: present the token to write from another origin |
 | 401 | `unauthorized` | An `Authorization` header that is not a valid `Bearer <token>` — a wrong token, a rotated-away one, or another scheme. Under `tailnet_host`, also a request that proved nothing at all |
 | 403 | `loopback_only` | The endpoint is not reachable under `tailnet_host`. See [the tailnet section](#reaching-the-daemon-over-the-tailnet) |
+| 405 | `method_not_allowed` | `/login` was reached with something other than `GET` or `POST` |
 
 The guard answers before any handler runs, and its refusals carry the same
 `{code, error}` envelope and `Cache-Control: no-store` as the handlers below, so one

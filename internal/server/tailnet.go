@@ -141,7 +141,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	case http.MethodPost:
 	default:
-		writeSourceError(w, http.StatusMethodNotAllowed, "method_not_allowed", "the login form is posted")
+		writeGuardError(w, http.StatusMethodNotAllowed, "method_not_allowed", "the login form is posted")
 		return
 	}
 	// A cross-site form post must not be able to log this browser in as
