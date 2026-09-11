@@ -185,7 +185,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		wait, refuse := s.logins.failed(addr)
 		if refuse {
-			w.Header().Set("Retry-After", strconv.Itoa(int(loginWindow.Seconds())))
+			w.Header().Set("Retry-After", strconv.Itoa(int(s.logins.window.Seconds())))
 			writeGuardError(w, http.StatusTooManyRequests, "too_many_attempts",
 				"too many failed logins; wait a minute and try again")
 			return
