@@ -334,7 +334,9 @@ func (s *Server) writeLoginPage(w http.ResponseWriter, r *http.Request, status i
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
+	// base-uri has no fallback to default-src, so it has to be named.
+	h.Set("Content-Security-Policy",
+		"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 	// same-origin, not no-referrer: a document with the no-referrer
 	// policy makes the browser send `Origin: null` on the form it posts
 	// (Fetch, "append the Origin header"), which is indistinguishable
