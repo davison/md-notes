@@ -889,3 +889,16 @@ func do2(t *testing.T, ts *httptest.Server, cookie string) int {
 	t.Helper()
 	return tdo(t, ts, "GET", "/api/roots", "", map[string]string{"Cookie": cookie}).StatusCode
 }
+
+// The login page is locked down as tightly as a page with no script and
+// no asset can be; base-uri does not fall back to default-src, so it has
+// to be named.
+func TestLoginPageCSP(t *testing.T) {
+	ts, _ := newTailnetServer(t)
+	csp := tdo(t, ts, "GET", loginPath, "", navigation()).Header.Get("Content-Security-Policy")
+	for _, want := range []string{"default-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("Content-Security-Policy %q lacks %q", csp, want)
+		}
+	}
+}
