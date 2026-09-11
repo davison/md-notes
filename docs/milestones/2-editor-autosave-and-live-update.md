@@ -757,6 +757,19 @@ no authentication of its own
 [#10](https://github.com/davison/md-notes/issues/10), remote access over the tailnet,
 is still waiting on the authentication path the browser extension will need.
 
+> **Superseded by milestone three, and left as written.** The two sentences above
+> were true at [`619de06`](https://github.com/davison/md-notes/commit/619de06), the
+> commit this record describes, and they are kept in the words this milestone used.
+> They are no longer true of `main`: the daemon has held a bearer token since
+> [#36](https://github.com/davison/md-notes/issues/36) /
+> [#42](https://github.com/davison/md-notes/pull/42), and
+> [#10](https://github.com/davison/md-notes/issues/10) was adopted and delivered by
+> [#39](https://github.com/davison/md-notes/issues/39) /
+> [#44](https://github.com/davison/md-notes/pull/44). See
+> [the M3 record](3-clipper-authentication-and-tailnet.md) for what is true now.
+> Annotated rather than rewritten, by the decision on
+> [#40](https://github.com/davison/md-notes/issues/40#issuecomment-5633326812).
+
 ## Where the record is silent
 
 - **The vim and markdown libraries were never decided in the open.**
