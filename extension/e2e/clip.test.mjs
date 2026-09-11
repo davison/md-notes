@@ -123,12 +123,42 @@ const ARTICLE = `<!doctype html>
 </body>
 </html>`;
 
+/**
+ * The same article behind a `<base href>`, which is what relative URLs in the
+ * markup resolve against — not the address the page was served from.
+ */
+const BASED_ARTICLE = ARTICLE.replace(
+  '<head><meta charset="utf-8">',
+  '<head><meta charset="utf-8"><base href="/deep/nested/">',
+  // A root-relative href ignores a base; only a document-relative one shows
+  // which URL the conversion resolved against.
+).replace('href="/other/post"', 'href="rel/link"');
+
+/**
+ * Too little prose for Readability to call it an article, so the clipper
+ * falls back to the whole body — the third path a `<base href>` has to reach.
+ */
+const THIN_PAGE = `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><base href="/deep/nested/"><title>A thin page</title></head>
+<body>
+  <nav>Navigation that is not an article</nav>
+  <p>A <a href="rel/link">relative link</a>.</p>
+</body>
+</html>`;
+
+const PAGES = {
+  "/posts/abstraction/": ARTICLE,
+  "/base/": BASED_ARTICLE,
+  "/thin/": THIN_PAGE,
+};
+
 const playwright = loadPlaywright();
 const blocker = missingPrerequisite(playwright);
 
 describe("clipping a page and a selection", { skip: blocker ?? false }, () => {
   let tmp, notesDir, clipsDir, tokenFile, token, port, daemon, context, extensionId;
-  let appOrigin, site, siteOrigin, articleUrl;
+  let appOrigin, site, siteOrigin, articleUrl, basedUrl, thinUrl;
 
   const startDaemon = async () => {
     daemon = spawn(
@@ -175,13 +205,16 @@ describe("clipping a page and a selection", { skip: blocker ?? false }, () => {
     appOrigin = `http://localhost:${port}`;
     await startDaemon();
 
-    site = createHttpServer((_req, res) => {
+    site = createHttpServer((req, res) => {
+      const { pathname } = new URL(req.url, "http://fixture.invalid");
       res.setHeader("content-type", "text/html; charset=utf-8");
-      res.end(ARTICLE);
+      res.end(PAGES[pathname] ?? ARTICLE);
     });
     await new Promise((r) => site.listen(0, "127.0.0.1", r));
     siteOrigin = `http://127.0.0.1:${site.address().port}`;
     articleUrl = `${siteOrigin}/posts/abstraction/`;
+    basedUrl = `${siteOrigin}/base/`;
+    thinUrl = `${siteOrigin}/thin/`;
 
     // A copy of dist/, so the shipped manifest keeps its narrow host
     // permission while the test grants the two ephemeral ports it needs. The
@@ -224,6 +257,16 @@ describe("clipping a page and a selection", { skip: blocker ?? false }, () => {
 
   /** The clips in the notes root, newest name last. */
   const clipFiles = () => (fs.existsSync(clipsDir) ? fs.readdirSync(clipsDir).sort() : []);
+
+  /** The text of the one clip whose name contains `slug`. */
+  const noteText = (slug) => {
+    const name = clipFiles().find((f) => f.includes(slug));
+    assert.ok(name !== undefined, `no clip named ${slug} in ${clipFiles().join(", ")}`);
+    return fs.readFileSync(path.join(clipsDir, name), "utf8");
+  };
+
+  /** The body of that clip. */
+  const readClip = (slug) => splitNote(noteText(slug))[1];
 
   /** Opens the popup as a tab, pointed at the tab it should clip. */
   async function openPopupFor(pageTab) {
@@ -330,6 +373,66 @@ describe("clipping a page and a selection", { skip: blocker ?? false }, () => {
     assert.ok(!body.includes("Three kinds"), body);
     await popup.close();
     await page.close();
+  });
+
+  it("resolves relative URLs against a base href, in all three paths", async () => {
+    // A `<base href>` is what the markup's relative URLs resolve against; the
+    // page's own address is not. Readability rewrites them itself, so a page
+    // clip came out right by accident — a selection clip and the body
+    // fallback did not, and an absolute URL that points at a page which does
+    // not exist is worse than a relative one, because it looks right.
+    const based = `${siteOrigin}/deep/nested/rel/link`;
+
+    const page = await context.newPage();
+    await page.goto(basedUrl);
+    let popup = await openPopupFor(page);
+    await popup.click("#clip-page");
+    await popup.waitForSelector("#clip:not([hidden])");
+    await popup.fill("#clip-title", "Based page");
+    await popup.click("#clip-save");
+    await popup.waitForSelector("#clip-status.ok");
+    let body = readClip("based-page");
+    assert.ok(body.includes(`[relative link](${based})`), body);
+    await popup.close();
+
+    // and the source is still where the clip came from, not the base
+    const [frontmatter] = splitNote(noteText("based-page"));
+    assert.match(frontmatter, new RegExp(`^source: ${basedUrl}$`, "m"));
+
+    await page.evaluate(() => {
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById("pick"));
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+    popup = await openPopupFor(page);
+    await popup.click("#clip-selection");
+    await popup.waitForSelector("#clip:not([hidden])");
+    await popup.fill("#clip-title", "Based selection");
+    await popup.click("#clip-save");
+    await popup.waitForSelector("#clip-status.ok");
+    body = readClip("based-selection");
+    assert.ok(body.includes(`[relative link](${based})`), body);
+    assert.ok(body.includes(`![A diagram](${siteOrigin}/deep/nested/diagram.png)`), body);
+    await popup.close();
+    await page.close();
+
+    // and the fallback, on a page too thin for Readability to accept
+    const thin = await context.newPage();
+    await thin.goto(thinUrl);
+    popup = await openPopupFor(thin);
+    await popup.click("#clip-page");
+    await popup.waitForSelector("#clip:not([hidden])");
+    await popup.fill("#clip-title", "Based fallback");
+    await popup.click("#clip-save");
+    await popup.waitForSelector("#clip-status.ok");
+    body = readClip("based-fallback");
+    assert.ok(body.includes(`[relative link](${based})`), body);
+    // the whole body, furniture included: this really is the fallback
+    assert.match(body, /Navigation that is not an article/);
+    await popup.close();
+    await thin.close();
   });
 
   it("says nothing is selected rather than clipping the page instead", async () => {
