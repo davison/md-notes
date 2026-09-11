@@ -238,7 +238,9 @@ function tidyOutsideCode(markdown: string): string {
 
 /**
  * `html` as GitHub-flavoured markdown, with every link and image absolute
- * against `baseUrl`. The result is trimmed; the trailing newline a note wants
+ * against `baseUrl` — which is the document's *base* URI, not its address: a
+ * `<base href>` is what relative URLs in the markup resolve against, and the
+ * two differ whenever a page carries one. The result is trimmed; the trailing newline a note wants
  * is added where the request is built, so there is one place that decides it.
  */
 export function htmlToMarkdown(html: string, baseUrl: string): string {

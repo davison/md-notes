@@ -8,6 +8,11 @@
  * and CSP neither see it nor constrain it.
  *
  * It publishes one function and does nothing else; the worker calls it.
+ *
+ * Two URLs matter here and they are not the same one. `document.baseURI` is
+ * what a relative URL in the markup resolves against — a `<base href>`
+ * changes it — so it is the conversion's base. `location.href` is where the
+ * clip came from, so it is the note's `source`.
  */
 
 import { Readability } from "@mozilla/readability";
@@ -41,7 +46,7 @@ function clipPage(): ExtractionResult {
   // is still worth clipping: the whole body converts to something a person can
   // read and edit, which beats refusing.
   const html = readable?.html ?? document.body?.innerHTML ?? "";
-  const markdown = htmlToMarkdown(html, location.href);
+  const markdown = htmlToMarkdown(html, document.baseURI);
   if (markdown === "") return { error: "there is no text on this page to clip" };
   return {
     kind: "page",
@@ -60,7 +65,7 @@ function clipSelection(): ExtractionResult {
   for (let i = 0; i < selection.rangeCount; i++) {
     container.appendChild(selection.getRangeAt(i).cloneContents());
   }
-  const markdown = htmlToMarkdown(container.innerHTML, location.href);
+  const markdown = htmlToMarkdown(container.innerHTML, document.baseURI);
   if (markdown === "") return { error: "the selection has no text in it" };
   return { kind: "selection", url: location.href, title: document.title, markdown };
 }
