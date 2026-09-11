@@ -25,7 +25,7 @@ importers:
         specifier: ^24.13.4
         version: 24.13.4
       '@types/turndown':
-        specifier: ^5.0.6
+        specifier: 5.0.6
         version: 5.0.6
       typescript:
         specifier: ^5.9.0
