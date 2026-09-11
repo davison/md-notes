@@ -92,7 +92,14 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
   const startDaemon = async () => {
     daemon = spawn(
       mdnBin,
-      ["serve", "--root", notesDir, "--port", String(port), "--state", path.join(tmp, "state.json")],
+      [
+        "serve",
+        "--root", notesDir,
+        "--port", String(port),
+        "--state", path.join(tmp, "state.json"),
+        // Its own token file: the default is the user's real one.
+        "--token-file", path.join(tmp, "token"),
+      ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
     await waitFor(
@@ -243,6 +250,9 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
   });
 
   it("leaves a file outside every root alone, and says the token is missing", async () => {
+    // The connection test above left a wrong token stored, and a wrong token
+    // is a different complaint from no token at all. This is the no-token case.
+    await worker.evaluate(() => chrome.storage.local.set({ token: "" }));
     const page = await context.newPage();
     const fileUrl = `file://${path.join(outsideDir, "todo.md")}`;
     await page.goto(fileUrl);
