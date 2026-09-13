@@ -784,6 +784,10 @@ var uiEncodings = []struct{ coding, suffix string }{
 // binary rather than of the binary — and it has no entry for .woff2 or .map
 // at all, so the first font or source map the bundle gains would be typed
 // one way here and another way there. The bundle is ours; so is this table.
+//
+// It is the same list the build's `compressible` pattern draws its text
+// kinds from (ui/vite.config.ts); TestUITypesCoverTheBundle holds them
+// together by failing on any extension in dist that is missing here.
 var uiTypes = map[string]string{
 	".css":   "text/css; charset=utf-8",
 	".html":  "text/html; charset=utf-8",
@@ -807,11 +811,28 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 		s.serveUIFile(w, r, name)
 		return
 	}
+	// A name under the hashed assets directory is build output or it is
+	// nothing: no client-side route lives there. Answering one the bundle
+	// does not have with the app shell is how a stale chunk URL — an
+	// upgraded daemon under an open tab, the one case where a name cannot
+	// be right — turns into a MIME-type error in the console instead of the
+	// status that says what happened.
+	if uiAsset(name) {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
 	if !s.uiFile("index.html") {
 		writeError(w, http.StatusInternalServerError, "UI bundle missing: build it with make ui")
 		return
 	}
 	s.serveUIFile(w, r, "index.html")
+}
+
+// uiAsset reports whether name addresses the build's output directory or
+// anything inside it. Nothing there is a client-side route, and everything
+// there is hashed.
+func uiAsset(name string) bool {
+	return name == strings.TrimSuffix(uiAssetsDir, "/") || strings.HasPrefix(name, uiAssetsDir)
 }
 
 // uiSibling reports whether name is one of the precompressed copies the
@@ -851,7 +872,7 @@ func (s *Server) serveUIFile(w http.ResponseWriter, r *http.Request, name string
 		ctype = "application/octet-stream"
 	}
 	cache := "no-cache"
-	if strings.HasPrefix(name, uiAssetsDir) {
+	if uiAsset(name) {
 		cache = uiImmutable
 	}
 	// Which bytes come back depends on Accept-Encoding, so every response

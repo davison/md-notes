@@ -5,8 +5,16 @@ import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { defineConfig, type Plugin } from "vite";
 import preact from "@preact/preset-vite";
 
-/** What is worth compressing: everything the daemon serves as text. */
-const compressible = /\.(css|html|js|json|map|mjs|svg|txt|webmanifest|xml)$/;
+/**
+ * What is worth compressing: the text kinds the build emits. Every
+ * extension here must also appear in the daemon's own Content-Type table
+ * (`uiTypes` in internal/server/server.go), or an asset this plugin
+ * compresses would be served as application/octet-stream — which, for a
+ * module script, is a load failure rather than a cosmetic one.
+ * `TestUITypesCoverTheBundle` fails the build's own output against that
+ * table, so the two lists cannot drift apart quietly.
+ */
+const compressible = /\.(css|html|js|json|map|svg)$/;
 
 /**
  * Below this a compressed copy buys nothing worth the bytes it adds to the
