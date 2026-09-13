@@ -13,7 +13,6 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -779,6 +778,23 @@ var uiEncodings = []struct{ coding, suffix string }{
 	{"gzip", ".gz"},
 }
 
+// uiTypes is the Content-Type for each kind of file the UI build emits.
+// mime.TypeByExtension would answer from the build host's /etc/mime.types,
+// which makes the header a property of whichever machine compiled the
+// binary rather than of the binary — and it has no entry for .woff2 or .map
+// at all, so the first font or source map the bundle gains would be typed
+// one way here and another way there. The bundle is ours; so is this table.
+var uiTypes = map[string]string{
+	".css":   "text/css; charset=utf-8",
+	".html":  "text/html; charset=utf-8",
+	".js":    "text/javascript; charset=utf-8",
+	".json":  "application/json",
+	".map":   "application/json",
+	".png":   "image/png",
+	".svg":   "image/svg+xml",
+	".woff2": "font/woff2",
+}
+
 // serveUI serves a file from the UI bundle when one matches the request
 // path, and index.html otherwise so client-side routes resolve.
 func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
@@ -787,7 +803,7 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
-	if name != "" && name != "index.html" && s.uiFile(name) {
+	if name != "" && name != "index.html" && !uiSibling(name) && s.uiFile(name) {
 		s.serveUIFile(w, r, name)
 		return
 	}
@@ -796,6 +812,19 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.serveUIFile(w, r, "index.html")
+}
+
+// uiSibling reports whether name is one of the precompressed copies the
+// build writes. They are representations of another URL, not resources of
+// their own: served directly they would be undecodable bytes, so they are
+// not addressable and fall through to the app like any other unknown path.
+func uiSibling(name string) bool {
+	for _, e := range uiEncodings {
+		if strings.HasSuffix(name, e.suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // uiFile reports whether name is a regular file in the embedded bundle.
@@ -817,7 +846,7 @@ func (s *Server) uiFile(name string) bool {
 // request is answered with the whole file; an ETag over the bytes actually
 // sent restores the 304.
 func (s *Server) serveUIFile(w http.ResponseWriter, r *http.Request, name string) {
-	ctype := mime.TypeByExtension(path.Ext(name))
+	ctype := uiTypes[strings.ToLower(path.Ext(name))]
 	if ctype == "" {
 		ctype = "application/octet-stream"
 	}
@@ -848,7 +877,7 @@ func (s *Server) serveUIFile(w http.ResponseWriter, r *http.Request, name string
 	}
 	f, err := s.ui.Open(served)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		uiError(w, http.StatusNotFound, "not found")
 		return
 	}
 	defer f.Close()
@@ -867,10 +896,24 @@ func (s *Server) serveUIFile(w http.ResponseWriter, r *http.Request, name string
 	// An fs.FS whose files do not seek: read the bytes and serve those.
 	b, err := fs.ReadFile(s.ui, served)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "not found")
+		uiError(w, http.StatusNotFound, "not found")
 		return
 	}
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(b))
+}
+
+// uiError answers a UI request that failed after the headers describing the
+// representation were already set. They describe a body that is not coming:
+// a JSON error labelled `Content-Encoding: br`, carrying another file's
+// validator and a year-long immutable cache directive, is one a cache would
+// be right to keep and wrong to serve. net/http's own serveError scrubs the
+// same set before writing.
+func uiError(w http.ResponseWriter, status int, msg string) {
+	h := w.Header()
+	for _, k := range []string{"Cache-Control", "Content-Encoding", "Content-Length", "ETag", "Vary"} {
+		h.Del(k)
+	}
+	writeError(w, status, msg)
 }
 
 // uiEncoded picks the precompressed sibling to serve for name, given what

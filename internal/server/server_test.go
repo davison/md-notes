@@ -6,13 +6,16 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -77,6 +80,13 @@ func newTestServerWith(t *testing.T, opts ...Option) (*httptest.Server, string) 
 		"assets/only-gz.css":    {Data: []byte(uiOnlyGzCSS)},
 		"assets/only-gz.css.gz": {Data: gzipBytes(uiOnlyGzCSS)},
 		"favicon.svg":           {Data: []byte("<svg/>")},
+		// One of each kind the build can emit, so the Content-Type table is
+		// answering rather than the host's mime.types.
+		"assets/main.js.map":  {Data: []byte(`{"version":3}`)},
+		"assets/logo-x.png":   {Data: []byte("PNG")},
+		"assets/font-x.woff2": {Data: []byte("wOF2")},
+		"assets/data-x.json":  {Data: []byte("{}")},
+		"assets/blob-x.bin":   {Data: []byte("bin")},
 	}
 	store, _, err := token.Open(filepath.Join(base, "token"))
 	if err != nil {
@@ -1000,6 +1010,177 @@ func TestEncodingQuality(t *testing.T) {
 	} {
 		if got := encodingQuality(tc.header, tc.coding); got != tc.want {
 			t.Errorf("encodingQuality(%q, %q) = %v, want %v", tc.header, tc.coding, got, tc.want)
+		}
+	}
+}
+
+func TestUIContentTypes(t *testing.T) {
+	ts, _ := newTestServer(t)
+	// The types are the binary's own, not the build host's /etc/mime.types.
+	for path, want := range map[string]string{
+		"/assets/app.js":        "text/javascript; charset=utf-8",
+		"/assets/only-gz.css":   "text/css; charset=utf-8",
+		"/index.html":           "text/html; charset=utf-8",
+		"/favicon.svg":          "image/svg+xml",
+		"/assets/main.js.map":   "application/json",
+		"/assets/logo-x.png":    "image/png",
+		"/assets/font-x.woff2":  "font/woff2",
+		"/assets/data-x.json":   "application/json",
+		"/assets/blob-x.bin":    "application/octet-stream",
+		"/r/notes/some/note.md": "text/html; charset=utf-8",
+	} {
+		if got := uiGet(t, ts, "GET", path, "identity", nil).Header.Get("Content-Type"); got != want {
+			t.Errorf("%s: Content-Type %q, want %q", path, got, want)
+		}
+	}
+}
+
+func TestUIPrecompressedSiblingsAreNotAddressable(t *testing.T) {
+	ts, _ := newTestServer(t)
+	// A .br or .gz URL would hand out bytes no client asked to decode. They
+	// are representations of another URL, so they fall through to the app.
+	for _, path := range []string{"/assets/main.js.br", "/assets/main.js.gz", "/assets/only-gz.css.gz"} {
+		resp := uiGet(t, ts, "GET", path, "identity", nil)
+		if resp.StatusCode != 200 || readAll(t, resp.Body) != "<html>app</html>" {
+			t.Errorf("%s: %d, want the app shell", path, resp.StatusCode)
+		}
+		if resp.Header.Get("Cache-Control") != "no-cache" {
+			t.Errorf("%s: Cache-Control %q, want the shell's", path, resp.Header.Get("Cache-Control"))
+		}
+	}
+	// The representation is still reachable the only way it should be.
+	resp := uiGet(t, ts, "GET", "/assets/main.js", "br", nil)
+	if resp.Header.Get("Content-Encoding") != "br" || readAll(t, resp.Body) != uiMainBrotli {
+		t.Errorf("negotiated brotli: Content-Encoding %q", resp.Header.Get("Content-Encoding"))
+	}
+}
+
+func TestUIRangeOverACompressedRepresentation(t *testing.T) {
+	ts, _ := newTestServer(t)
+	// The hand-written Content-Length holds only because ServeContent
+	// overwrites it for a range; a regression here would declare the whole
+	// compressed file for a partial body.
+	full := uiGet(t, ts, "GET", "/assets/main.js", "br", nil)
+	if got, want := full.Header.Get("Content-Length"), strconv.Itoa(len(uiMainBrotli)); got != want {
+		t.Errorf("full body: Content-Length %q, want %q", got, want)
+	}
+	part := uiGet(t, ts, "GET", "/assets/main.js", "br", map[string]string{"Range": "bytes=0-9"})
+	switch {
+	case part.StatusCode != http.StatusPartialContent:
+		t.Errorf("range: status %d, want 206", part.StatusCode)
+	case part.Header.Get("Content-Length") != "10":
+		t.Errorf("range: Content-Length %q, want 10", part.Header.Get("Content-Length"))
+	case part.Header.Get("Content-Range") != fmt.Sprintf("bytes 0-9/%d", len(uiMainBrotli)):
+		t.Errorf("range: Content-Range %q", part.Header.Get("Content-Range"))
+	case part.Header.Get("Content-Encoding") != "br":
+		t.Errorf("range: Content-Encoding %q, want br", part.Header.Get("Content-Encoding"))
+	case readAll(t, part.Body) != uiMainBrotli[:10]:
+		t.Error("range: wrong ten bytes")
+	}
+	// Past the end of the compressed body, not of the file it decodes to.
+	over := uiGet(t, ts, "GET", "/assets/main.js", "br", map[string]string{"Range": "bytes=900-999"})
+	if over.StatusCode != http.StatusRequestedRangeNotSatisfiable {
+		t.Errorf("unsatisfiable range: status %d, want 416", over.StatusCode)
+	}
+	if over.Header.Get("Content-Encoding") != "" || over.Header.Get("Cache-Control") != "" {
+		t.Errorf("unsatisfiable range kept Content-Encoding %q and Cache-Control %q",
+			over.Header.Get("Content-Encoding"), over.Header.Get("Cache-Control"))
+	}
+}
+
+// openFailsAfter opens its named file a fixed number of times and then
+// refuses, so the error paths serveUIFile takes once a file has already
+// vouched for itself can be reached at all.
+type openFailsAfter struct {
+	fs.FS
+	name  string
+	after int
+	opens int
+}
+
+func (f *openFailsAfter) Open(name string) (fs.File, error) {
+	if name == f.name {
+		f.opens++
+		if f.opens > f.after {
+			return nil, fs.ErrNotExist
+		}
+	}
+	return f.FS.Open(name)
+}
+
+// noSeekFS hides the io.Seeker its files implement, for the branch that
+// serves an fs.FS whose files cannot seek.
+type noSeekFS struct{ fs.FS }
+
+func (f noSeekFS) Open(name string) (fs.File, error) {
+	file, err := f.FS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return noSeekFile{file}, nil
+}
+
+type noSeekFile struct{ fs.File }
+
+func uiFixture() fstest.MapFS {
+	return fstest.MapFS{
+		"assets/main.js":    {Data: []byte(uiMainJS)},
+		"assets/main.js.br": {Data: []byte(uiMainBrotli)},
+	}
+}
+
+func TestUIErrorScrubsTheRepresentationHeaders(t *testing.T) {
+	// Both error paths: the sibling vanishing between the ETag and the
+	// body, and again between the body and the read for an FS that cannot
+	// seek, where a Content-Length has been written too. By then the reply
+	// is labelled as brotli, with a validator and a year-long immutable
+	// cache directive, for a body that is not coming.
+	for _, tc := range []struct {
+		name  string
+		ui    fs.FS
+		after int
+	}{
+		{"seeking", uiFixture(), 2},
+		{"read-it-all", noSeekFS{uiFixture()}, 3},
+	} {
+		s := &Server{ui: &openFailsAfter{FS: tc.ui, name: "assets/main.js.br", after: tc.after}}
+		r := httptest.NewRequest("GET", "/assets/main.js", nil)
+		r.Header.Set("Accept-Encoding", "br")
+		w := httptest.NewRecorder()
+		s.serveUIFile(w, r, "assets/main.js")
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", tc.name, w.Code)
+		}
+		for _, k := range []string{"Cache-Control", "Content-Encoding", "Content-Length", "ETag", "Vary"} {
+			if v := w.Header().Get(k); v != "" {
+				t.Errorf("%s: the 404 kept %s: %q", tc.name, k, v)
+			}
+		}
+		if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+			t.Errorf("%s: Content-Type %q, want the error's own", tc.name, ct)
+		}
+	}
+}
+
+func TestUIServesAnFSThatCannotSeek(t *testing.T) {
+	s := &Server{ui: noSeekFS{uiFixture()}}
+	for _, tc := range []struct{ accept, coding, body string }{
+		{"br", "br", uiMainBrotli},
+		{"identity", "", uiMainJS},
+	} {
+		r := httptest.NewRequest("GET", "/assets/main.js", nil)
+		r.Header.Set("Accept-Encoding", tc.accept)
+		w := httptest.NewRecorder()
+		s.serveUIFile(w, r, "assets/main.js")
+		switch {
+		case w.Code != 200:
+			t.Errorf("%s: status %d", tc.accept, w.Code)
+		case w.Header().Get("Content-Encoding") != tc.coding:
+			t.Errorf("%s: Content-Encoding %q, want %q", tc.accept, w.Header().Get("Content-Encoding"), tc.coding)
+		case w.Body.String() != tc.body:
+			t.Errorf("%s: wrong body", tc.accept)
+		case w.Header().Get("ETag") == "":
+			t.Errorf("%s: no ETag", tc.accept)
 		}
 	}
 }
