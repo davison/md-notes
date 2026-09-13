@@ -18,6 +18,14 @@ daemon be reached from another node on the tailnet, behind `tailscale serve` and
 login page. The inbox, which turns URLs shared from a phone into clips when the
 folder next syncs, is still later work.
 
+Syncing is not the daemon's job at all: Syncthing mirrors the notes folder between
+machines and an Android phone, and its writes reach the daemon as the ordinary
+external changes that [live update](#live-update) and [conflicts](#conflicts)
+describe below. [Sync and offline editing](sync.md) covers that arrangement —
+Syncthing setup, editing offline with any editor or a second daemon, Syncthing's
+conflict files in the navigator and how to resolve them, Android with Markor, and
+when to use the tailnet instead.
+
 ## The daemon
 
 One static Go binary, `mdn`, with the web UI compiled into it. It listens on the
