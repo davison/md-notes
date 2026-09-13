@@ -76,6 +76,48 @@ describe("listRoots", () => {
     expect((err as DaemonError).kind).toBe("token_rejected");
   });
 
+  it("presents the token to a daemon that is not on loopback without being asked", async () => {
+    // The whole of #51: under `tailnet_host` an unauthenticated read is a 401,
+    // so the intercept's own listing has to carry the token or nothing works.
+    const r = record();
+    await listRoots(
+      { daemonUrl: "https://laptop.ts.net", token: "s3cret" },
+      { fetch: r.fetcher(respond(200, { roots: [] })) },
+    );
+    expect(r.calls[0]?.url).toBe("https://laptop.ts.net/api/roots");
+    expect(r.calls[0]?.init?.headers).toEqual({ Authorization: "Bearer s3cret" });
+  });
+
+  it("sends no header to a daemon that is not on loopback when no token is stored", async () => {
+    const r = record();
+    const err = await listRoots(
+      { daemonUrl: "https://laptop.ts.net", token: "" },
+      { fetch: r.fetcher(respond(401, { code: "unauthorized", error: "a valid bearer token is required" })) },
+    ).catch((e: unknown) => e);
+    expect(r.calls[0]?.init?.headers).toBeUndefined();
+    // And the complaint is the true one: nothing was judged, because nothing
+    // was sent.
+    expect((err as DaemonError).kind).toBe("no_token");
+    expect((err as DaemonError).message).toContain("serves nothing without a token");
+  });
+
+  it("reads the tailnet allow-list's refusal of a registration as its own kind", async () => {
+    const r = record();
+    const err = await registerRoot(
+      { daemonUrl: "https://laptop.ts.net", token: "s3cret" },
+      "/n",
+      {
+        fetch: r.fetcher(
+          respond(403, {
+            code: "loopback_only",
+            error: "this endpoint is served on loopback only; it is not reachable under laptop.ts.net",
+          }),
+        ),
+      },
+    ).catch((e: unknown) => e);
+    expect((err as DaemonError).kind).toBe("loopback_only");
+  });
+
   it("refuses a reply that is not a roots list", async () => {
     const r = record();
     const err = await listRoots(settings, { fetch: r.fetcher(respond(200, { nope: 1 })) }).catch(
@@ -213,8 +255,26 @@ describe("postClip", () => {
     const err = await postClip(withToken, clip, {
       fetch: r.fetcher(respond(403, { code: "bad_host", error: "unexpected Host header" })),
     }).catch((e: unknown) => e);
-    expect((err as DaemonError).kind).toBe("refused");
+    expect((err as DaemonError).kind).toBe("bad_host");
     expect((err as DaemonError).message).toBe("unexpected Host header");
+  });
+
+  it("reads the tailnet allow-list's refusal as its own kind", async () => {
+    const r = record();
+    const err = await postClip(
+      { daemonUrl: "https://laptop.ts.net", token: "s3cret" },
+      clip,
+      {
+        fetch: r.fetcher(
+          respond(403, {
+            code: "loopback_only",
+            error: "this endpoint is served on loopback only; it is not reachable under laptop.ts.net",
+          }),
+        ),
+      },
+    ).catch((e: unknown) => e);
+    expect((err as DaemonError).kind).toBe("loopback_only");
+    expect((err as DaemonError).detail).toContain("loopback only");
   });
 
   it("passes the clip handler's own refusals through", async () => {
