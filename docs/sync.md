@@ -12,11 +12,12 @@ up, what offline editing looks like, what happens when two devices edit the
 same note, how Android fits in, when to use the tailnet instead, and the one
 shape that does not work.
 
-Everything below about *md-notes* was checked against the built daemon, and
-[Verified against the daemon](#verified-against-the-daemon) lists what was run.
+Two kinds of claim appear below and it is worth knowing which is which.
+Everything about *md-notes* was checked against a running daemon.
 Everything about *Syncthing* is summarised from
-[Syncthing's own documentation](https://docs.syncthing.net/) and is marked as
-such where it appears; nothing here installs or configures Syncthing for you.
+[Syncthing's own documentation](https://docs.syncthing.net/); nothing here
+installs or configures Syncthing for you, and each section that leans on the
+manual says so in italics before it starts.
 
 ## The arrangement
 
@@ -58,9 +59,11 @@ at all.
 
 ## Setting Syncthing up
 
-*This section is summarised from* [*Syncthing's documentation*](https://docs.syncthing.net/)
-*rather than verified here. Follow the manual for the current UI; what is below
-is what the folder needs to look like for md-notes' sake.*
+*This section and both subsections under it are summarised from*
+[*Syncthing's documentation*](https://docs.syncthing.net/) *rather than verified
+here, apart from the navigator behaviour at the end, which was. Follow the
+manual for the current UI; what is below is what the folder needs to look like
+for md-notes' sake.*
 
 Syncthing pairs devices by device ID and shares folders between them. The
 essentials:
@@ -106,11 +109,12 @@ are worth putting in it:
 (?d).DS_Store
 ```
 
-Syncthing's own bookkeeping does not need ignoring — it never syncs `.stfolder`,
-`.stignore` or `.stversions` — and neither does md-notes'. The daemon stages a
-save as a temporary file in the note's own directory and renames it into place,
-so the staging file exists for the length of one save; a `(?d).mdn-save-*` line
-costs nothing if you would rather Syncthing never saw one at all.
+Syncthing's own bookkeeping needs no help from you: it excludes `.stfolder`,
+`.stignore` and `.stversions` itself. md-notes' does not get that treatment. The
+daemon stages a save as a `.mdn-save-*` file in the note's own directory and
+renames it into place, which is an ordinary dotfile for as long as it exists —
+usually milliseconds, but a scan catching one mid-save would sync it like
+anything else. A `(?d).mdn-save-*` line costs nothing and closes that window.
 
 Do **not** ignore `clips/`. Clips from the browser extension are ordinary
 markdown files in an ordinary directory under the notes root, and they sync
@@ -123,13 +127,16 @@ your `.stignore` file, and — if you turn file versioning on — a `.stversions
 archive of superseded copies. Transfers in flight are staged in hidden
 `.syncthing.*.tmp` files.
 
-None of them appear in the navigator. The tree is built from a ripgrep listing
-that skips hidden entries, so anything whose name begins with a dot is out
-before the markdown filter is reached; and the watcher is built from the same
-listing, so a `.stversions` archive is not merely hidden but uncounted — 300
-version directories added to a root still left the daemon reporting
-`{"watched":3,"unwatched":0}`. A large version archive costs you disk, not
-[watch budget](introduction.md#the-watch-budget).
+None of them appear in the navigator. The tree comes from a ripgrep listing
+that takes ripgrep's default of skipping hidden entries, so anything whose name
+begins with a dot is out before the markdown filter is even reached.
+
+The watcher is built from a listing of its own, which *does* ask for hidden
+files — a `.gitkeep` has to be visible to it — but excludes hidden directories
+with a glob. The effect for a version archive is the same and stronger: adding
+300 directories under `.stversions` does not move the daemon's watch count at
+all, whatever that count happens to be for your root. A large version archive
+costs you disk, not [watch budget](introduction.md#the-watch-budget).
 
 ## Editing offline
 
@@ -151,18 +158,26 @@ That last sentence is where the interesting case lives.
 
 ## When two devices edit the same note
 
-Syncthing propagates whole files; it does not merge them. If a note is edited
-on two devices before they next sync, Syncthing keeps both: the newer file wins
-the original name, and the one it displaced is renamed beside it.
+*How Syncthing behaves here — the italicised paragraphs below — is summarised
+from* [*Conflicting Changes*](https://docs.syncthing.net/users/syncing.html#conflicting-changes)
+*in Syncthing's manual. What the navigator and the editor do with the result was
+checked against the daemon.*
+
+*Syncthing propagates whole files; it does not merge them. If a note is edited
+on two devices before they next sync, Syncthing keeps both: "the file with the
+older modification time will be marked as the conflicting file and thus be
+renamed", beside the note that kept its name.*
 
 ```
 readme.md
 readme.sync-conflict-20260913-101010-ABCDEFG.md
 ```
 
-The parts are the date, the time and the first characters of the device ID that
-produced the losing copy. Syncthing's manual has the rules for which side is
-renamed.
+*The parts are the date, the time and a short device ID — the manual gives the
+shape as* `<filename>.sync-conflict-<date>-<time>-<modifiedBy>.<ext>` *without
+saying which device* `modifiedBy` *names, so do not read the identity off the
+file name. The conflict copy is an ordinary file from that moment on, and
+Syncthing propagates it to the other devices like any other.*
 
 **The navigator shows a conflict file as an ordinary note**, because that is
 what it is: a markdown file in a root the daemon serves. It sorts next to the
@@ -182,8 +197,8 @@ the note pane, so the file name in the navigator is what tells them apart.
 3. Delete the conflict file with a file manager, a shell, or Markor on the
    phone. The navigator drops it as soon as it goes.
 
-Deleting it on one device deletes it everywhere once the devices sync, which is
-what you want.
+*Deleting it on one device deletes it everywhere once the devices sync*, which
+is what you want.
 
 If conflict files keep appearing, the cause is two devices editing the same note
 during a stretch when they could not see each other, and the fix is upstream of
@@ -303,43 +318,21 @@ immediately before writing: a save carrying a revision the *other* daemon has
 already superseded is caught and refused with a conflict. What is not caught is
 two saves landing at once — both read the same bytes, both check, both rename,
 and one of them silently replaces the other with each side told its save
-succeeded. Two hundred rounds of exactly that, one save through each daemon:
+succeeded. Two hundred rounds of exactly that, one save through each daemon,
+run three times across two machines:
 
 | Shape | Rounds where both saves reported success and one was lost |
 |-------|-----------------------------------------------------------|
-| Two clients, one daemon | 0 of 200 |
-| Two clients, one daemon each, same folder | 23 of 200 |
+| Two clients, one daemon | none, in any run |
+| Two clients, one daemon each, same folder | roughly one round in ten, every run |
+
+It is not a rare corner you can hope to miss.
 
 Across two machines the same race exists and does not matter, because Syncthing
 is standing between the copies: it sees the divergence and writes a conflict
 file, so the losing text is on disk under a name you can find. On one machine
-there is no Syncthing between the two daemons — they are writing to the same
-inode — so the losing text is simply gone.
+there is no Syncthing between the two daemons — they are renaming their staged
+copies over one and the same path — so the losing text is simply gone.
 
 If you want the UI twice on one machine, open a second browser tab. It is the
 same daemon, and the lock is doing its job.
-
-## Verified against the daemon
-
-These claims were checked against the daemon built from this repository, on
-temporary roots, with headless Chromium where a browser was needed:
-
-- A `readme.sync-conflict-20260913-101010-ABCDEFG.md` file placed in a served
-  root is listed in the navigator beside `readme.md`, renders in the note pane,
-  is found by search, and saves through the source API like any other note.
-- Deleting that conflict file takes it out of the navigator with no reload.
-- A note and a directory created in the root by another process appear in the
-  navigator with no reload.
-- A note open in the editor with no unsaved changes follows an external
-  rewrite, and no banner is raised.
-- The same note with an unsaved draft raises `Conflict: draft kept` and the
-  three-button banner instead.
-- `.stfolder`, `.stignore`, `.stversions` and a `.syncthing.*.tmp` staging file
-  in the root are all absent from the navigator, while `clips/` is present.
-- 300 directories under `.stversions` left the watch report at
-  `{"watched":3,"unwatched":0,"budget":8192,"overBudget":false,"failed":0,"limited":false}`.
-- Two concurrent saves through one daemon lost no update in 200 rounds; through
-  two daemons over one folder, 23 of 200 rounds lost one.
-
-The Syncthing setup instructions are the exception: they are summarised from
-Syncthing's documentation, as the section itself says.
