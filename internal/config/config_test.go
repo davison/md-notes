@@ -1,0 +1,267 @@
+package config
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestLoadMissingFileIsEmpty(t *testing.T) {
+	cfg, err := Load(filepath.Join(t.TempDir(), "nope.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg != (Config{}) {
+		t.Fatalf("cfg = %+v, want zero", cfg)
+	}
+}
+
+func TestLoadParsesYAML(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yml")
+	os.WriteFile(p, []byte("notes_root: /tmp/notes\nport: 9000\n"), 0o644)
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NotesRoot != "/tmp/notes" || cfg.Port != 9000 {
+		t.Fatalf("cfg = %+v", cfg)
+	}
+}
+
+func TestLoadBadYAMLNamesFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yml")
+	os.WriteFile(p, []byte("notes_root: [\n"), 0o644)
+	_, err := Load(p)
+	if err == nil || !strings.Contains(err.Error(), p) {
+		t.Fatalf("err = %v, want mention of %s", err, p)
+	}
+}
+
+func TestResolveDefaultsAndOverrides(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := Config{NotesRoot: "/elsewhere", Port: 1}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NotesRoot != dir {
+		t.Fatalf("root = %q, want flag override %q", cfg.NotesRoot, dir)
+	}
+	if cfg.Port != 1 {
+		t.Fatalf("port = %d, want file value kept", cfg.Port)
+	}
+	cfg, err = Config{}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Port != DefaultPort {
+		t.Fatalf("port = %d, want default %d", cfg.Port, DefaultPort)
+	}
+}
+
+func TestResolveRequiresRoot(t *testing.T) {
+	_, err := Config{}.Resolve("/x/config.yml", Overrides{})
+	if err == nil || !strings.Contains(err.Error(), "/x/config.yml") {
+		t.Fatalf("err = %v, want error naming config file", err)
+	}
+}
+
+func TestResolveRejectsMissingOrFileRoot(t *testing.T) {
+	if _, err := (Config{}).Resolve("c", Overrides{NotesRoot: filepath.Join(t.TempDir(), "missing")}); err == nil {
+		t.Fatal("want error for missing root")
+	}
+	f := filepath.Join(t.TempDir(), "file")
+	os.WriteFile(f, nil, 0o644)
+	if _, err := (Config{}).Resolve("c", Overrides{NotesRoot: f}); err == nil {
+		t.Fatal("want error for non-directory root")
+	}
+}
+
+func TestResolveRejectsBadPort(t *testing.T) {
+	if _, err := (Config{}).Resolve("c", Overrides{NotesRoot: t.TempDir(), Port: 70000}); err == nil {
+		t.Fatal("want error for port out of range")
+	}
+}
+
+func TestPathsHonourXDG(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/xc")
+	t.Setenv("XDG_STATE_HOME", "/xs")
+	if got := Path(); got != "/xc/mdn/config.yml" {
+		t.Fatalf("Path() = %q", got)
+	}
+	if got := StatePath(); got != "/xs/mdn/roots.json" {
+		t.Fatalf("StatePath() = %q", got)
+	}
+	if got := TokenPath(); got != "/xs/mdn/token" {
+		t.Fatalf("TokenPath() = %q", got)
+	}
+}
+
+func TestResolveMaxWatches(t *testing.T) {
+	dir := t.TempDir()
+	n := func(v int) *int { return &v }
+	cases := []struct {
+		name string
+		file *int
+		flag *int
+		want int
+	}{
+		{"absent everywhere is the default", nil, nil, DefaultMaxWatches},
+		{"the file's value stands", n(100), nil, 100},
+		{"the flag beats the file", n(100), n(7), 7},
+		{"zero in the file is no budget", n(0), nil, 0},
+		{"zero on the flag is no budget", n(100), n(0), 0},
+	}
+	for _, c := range cases {
+		cfg, err := Config{MaxWatches: c.file}.Resolve("cfg.yml", Overrides{NotesRoot: dir, MaxWatches: c.flag})
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if cfg.MaxWatches == nil || *cfg.MaxWatches != c.want {
+			t.Fatalf("%s: max_watches = %v, want %d", c.name, cfg.MaxWatches, c.want)
+		}
+	}
+	if _, err := (Config{MaxWatches: n(-1)}).Resolve("cfg.yml", Overrides{NotesRoot: dir}); err == nil {
+		t.Fatal("a negative max_watches should be refused, not read as no limit")
+	}
+}
+
+func TestLoadParsesMaxWatches(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yml")
+	os.WriteFile(p, []byte("notes_root: /tmp/notes\nmax_watches: 42\n"), 0o644)
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxWatches == nil || *cfg.MaxWatches != 42 {
+		t.Fatalf("cfg = %+v", cfg)
+	}
+	os.WriteFile(p, []byte("notes_root: /tmp/notes\n"), 0o644)
+	cfg, err = Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxWatches != nil {
+		t.Fatalf("max_watches = %v, want nil when the key is absent", *cfg.MaxWatches)
+	}
+}
+
+func TestResolveClipsDir(t *testing.T) {
+	dir := t.TempDir()
+	for given, want := range map[string]string{
+		"":           DefaultClipsDir,
+		"  ":         DefaultClipsDir,
+		"clips":      "clips",
+		"inbox/web":  "inbox/web",
+		"./clips/":   "clips",
+		".":          ".",
+		"a/../clips": "clips",
+	} {
+		cfg, err := Config{ClipsDir: given}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
+		if err != nil {
+			t.Fatalf("clips_dir %q: %v", given, err)
+		}
+		if cfg.ClipsDir != want {
+			t.Errorf("clips_dir %q resolved to %q, want %q", given, cfg.ClipsDir, want)
+		}
+	}
+	for _, given := range []string{"/etc", "../outside", "..", "clips/../..", "/"} {
+		cfg, err := (Config{ClipsDir: given}).Resolve("cfg.yml", Overrides{NotesRoot: dir})
+		if err == nil {
+			t.Errorf("clips_dir %q resolved to %q, want a refusal", given, cfg.ClipsDir)
+		}
+	}
+}
+
+func TestLoadParsesClipsDir(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte("notes_root: /n\nclips_dir: inbox\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ClipsDir != "inbox" {
+		t.Fatalf("clips_dir = %q", cfg.ClipsDir)
+	}
+}
+
+// The extra Host name the guard accepts for a tailscale serve proxy is a
+// name and an optional port, and nothing else: a scheme or a path would
+// simply never match a Host header, and finding that out at runtime is
+// worse than being told at startup.
+func TestResolveTailnetHost(t *testing.T) {
+	dir := t.TempDir()
+	for given, want := range map[string]string{
+		"":                            "",
+		"   ":                         "",
+		"laptop.tailnet.ts.net":       "laptop.tailnet.ts.net",
+		"LAPTOP.Tailnet.TS.NET":       "laptop.tailnet.ts.net",
+		"  laptop.tailnet.ts.net  ":   "laptop.tailnet.ts.net",
+		"laptop.tailnet.ts.net:8443":  "laptop.tailnet.ts.net:8443",
+		"laptop.tailnet.ts.net.":      "laptop.tailnet.ts.net",
+		"laptop.tailnet.ts.net.:8443": "laptop.tailnet.ts.net:8443",
+		"laptop":                      "laptop",
+		"100.101.102.103":             "100.101.102.103",
+	} {
+		cfg, err := Config{TailnetHost: given}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
+		if err != nil {
+			t.Fatalf("tailnet_host %q: %v", given, err)
+		}
+		if cfg.TailnetHost != want {
+			t.Errorf("tailnet_host %q resolved to %q, want %q", given, cfg.TailnetHost, want)
+		}
+	}
+	for given, want := range map[string]error{
+		"https://laptop.ts.net": ErrBadTailnetHost,
+		"laptop.ts.net/notes":   ErrBadTailnetHost,
+		"user@laptop.ts.net":    ErrBadTailnetHost,
+		"laptop.ts.net:":        ErrBadTailnetHost,
+		"laptop.ts.net:0":       ErrBadTailnetHost,
+		"laptop.ts.net:99999":   ErrBadTailnetHost,
+		"laptop.ts.net:https":   ErrBadTailnetHost,
+		"laptop ts net":         ErrBadTailnetHost,
+		"laptop..ts.net":        ErrBadTailnetHost,
+		"laptop.ts.net?q=1":     ErrBadTailnetHost,
+		"localhost":             ErrLoopbackTailnetHost,
+		"localhost:7337":        ErrLoopbackTailnetHost,
+		"mdn.localhost":         ErrLoopbackTailnetHost,
+		"127.0.0.1":             ErrLoopbackTailnetHost,
+		"127.0.0.1:7337":        ErrLoopbackTailnetHost,
+		"[::1]":                 ErrLoopbackTailnetHost,
+		"[::1]:7337":            ErrLoopbackTailnetHost,
+	} {
+		if _, err := (Config{TailnetHost: given}).Resolve("cfg.yml", Overrides{NotesRoot: dir}); !errors.Is(err, want) {
+			t.Errorf("tailnet_host %q: error %v, want %v", given, err, want)
+		}
+	}
+}
+
+// --tailnet-host beats the file, like every other override.
+func TestTailnetHostOverride(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := Config{TailnetHost: "old.ts.net"}.Resolve("cfg.yml",
+		Overrides{NotesRoot: dir, TailnetHost: "NEW.ts.net"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TailnetHost != "new.ts.net" {
+		t.Errorf("tailnet_host = %q, want new.ts.net", cfg.TailnetHost)
+	}
+}
+
+func TestLoadParsesTailnetHost(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(path, []byte("notes_root: /n\ntailnet_host: laptop.ts.net\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TailnetHost != "laptop.ts.net" {
+		t.Fatalf("tailnet_host = %q", cfg.TailnetHost)
+	}
+}

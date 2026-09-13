@@ -1,0 +1,611 @@
+/*
+ * Application styles. Class names beginning with "mdn-" are reserved for
+ * sanitised note content — chroma's syntax-highlighting classes, in the
+ * generated chroma.css — and nothing here may use that prefix: the
+ * renderer's sanitiser admits no other class on a note's code elements,
+ * which is what stops a note restyling the app. See internal/render.
+ */
+
+:root {
+  --bg: #fbfbfa;
+  --fg: #1f1f1f;
+  --muted: #6b6b6b;
+  --line: #e2e2df;
+  --accent: #2a6db0;
+  --pane: #ffffff;
+  --error: #b3261e;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b1b;
+    --fg: #e6e6e3;
+    --muted: #9a9a96;
+    --line: #333331;
+    --accent: #7fb0e6;
+    --pane: #202020;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code {
+  font-family: ui-monospace, "JetBrains Mono", Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.page {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--error);
+}
+
+.notice {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+.roots {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.roots li {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.path {
+  color: var(--muted);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell {
+  display: grid;
+  height: 100vh;
+  grid-template-columns: 16rem minmax(0, 1fr) 18rem;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "top top top"
+    "nav note side";
+}
+
+.shell > .topbar {
+  grid-area: top;
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--pane);
+}
+
+.shell .brand {
+  font-weight: 600;
+}
+
+.shell .root-name {
+  font-weight: 500;
+}
+
+.shell > .nav {
+  grid-area: nav;
+  border-right: 1px solid var(--line);
+  overflow: auto;
+  padding: 0.75rem;
+}
+
+.shell > .note {
+  grid-area: note;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--pane);
+}
+
+.note-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.note-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1.5rem 2rem;
+}
+
+/* Mode and save state */
+.note-bar {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.35rem 1rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.note-bar button,
+.conflict button {
+  font: inherit;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.note-bar button:hover,
+.conflict button:hover {
+  border-color: var(--accent);
+}
+
+.mode-name {
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.save-status {
+  margin-left: auto;
+}
+
+.unsaved-drafts {
+  margin-left: auto;
+  font-size: 0.85em;
+  color: var(--error);
+}
+
+.conflict {
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--error) 10%, var(--pane));
+  font-size: 0.9em;
+}
+
+.conflict p {
+  margin: 0 0 0.5rem;
+}
+
+.conflict-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.conflict .conflict-actions {
+  margin-bottom: 0;
+}
+
+/* Editor */
+.editor-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-body .pad {
+  padding: 1.5rem 2rem;
+}
+
+.editor,
+.editor .cm-editor {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.shell > .side {
+  grid-area: side;
+  border-left: 1px solid var(--line);
+  overflow: auto;
+  padding: 0.75rem;
+}
+
+@media (max-width: 60rem) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "top"
+      "nav"
+      "note"
+      "side";
+  }
+  .shell > .nav,
+  .shell > .side {
+    border: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+/* Navigator tree */
+.tree,
+.tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree ul {
+  padding-left: 1rem;
+}
+
+.tree li {
+  margin: 0;
+}
+
+.tree .dir,
+.tree .file {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.15rem 0.35rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree .dir:hover,
+.tree .file:hover {
+  background: var(--line);
+  text-decoration: none;
+}
+
+.tree .file.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.twisty {
+  display: inline-block;
+  width: 1rem;
+  color: var(--muted);
+}
+
+.note-title {
+  margin-top: 0;
+}
+
+/* Rendered note */
+.note-article {
+  max-width: 48rem;
+}
+
+.metadata {
+  margin: 0 0 1.5rem;
+  font-size: 0.9em;
+}
+
+.metadata summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.metadata table {
+  margin-top: 0.5rem;
+  border-collapse: collapse;
+}
+
+.metadata th {
+  text-align: left;
+  padding: 0.15rem 1rem 0.15rem 0;
+  color: var(--muted);
+  font-weight: 500;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.metadata td {
+  padding: 0.15rem 0;
+}
+
+.markdown {
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 1.6em 0 0.6em;
+  line-height: 1.25;
+}
+
+.markdown h1 {
+  font-size: 1.6em;
+}
+
+.markdown h2 {
+  font-size: 1.35em;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.2em;
+}
+
+.markdown h3 {
+  font-size: 1.15em;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown table,
+.markdown pre {
+  margin: 0 0 1em;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.6em;
+}
+
+.markdown li > ul,
+.markdown li > ol {
+  margin-bottom: 0;
+}
+
+.markdown li input[type="checkbox"] {
+  margin-right: 0.4em;
+}
+
+.markdown blockquote {
+  border-left: 3px solid var(--line);
+  padding-left: 1em;
+  color: var(--muted);
+}
+
+.markdown table {
+  border-collapse: collapse;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--line);
+  padding: 0.3em 0.7em;
+}
+
+.markdown th {
+  background: var(--bg);
+}
+
+.markdown code {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0.05em 0.3em;
+}
+
+.markdown pre {
+  overflow-x: auto;
+  padding: 0.8em 1em;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  line-height: 1.45;
+  background: var(--bg);
+}
+
+.markdown pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.9em;
+}
+
+.markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 2em 0;
+}
+
+.markdown .footnotes {
+  font-size: 0.9em;
+  color: var(--muted);
+}
+
+.markdown a.footnote-ref,
+.markdown a.footnote-backref {
+  text-decoration: none;
+}
+
+.markdown a.outside-root {
+  color: var(--muted);
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
+
+.markdown kbd {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.85em;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 0 0.3em;
+}
+
+/* Search pane */
+.search input {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--pane);
+  color: var(--fg);
+  font: inherit;
+  margin-bottom: 0.75rem;
+}
+
+.hit-group {
+  margin-bottom: 0.75rem;
+}
+
+.hit-path {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.8em;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hit {
+  display: block;
+  padding: 0.2rem 0.35rem;
+  border-radius: 4px;
+  color: var(--fg);
+  font-size: 0.9em;
+  line-height: 1.35;
+}
+
+.hit:hover {
+  background: var(--line);
+  text-decoration: none;
+}
+
+.hit .ctx {
+  display: block;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hit .hit-line {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hit .ln {
+  color: var(--muted);
+  font-size: 0.8em;
+  margin-right: 0.4em;
+}
+
+.hit mark {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* Tag panel */
+.tags {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+
+.tags ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tag {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  color: var(--fg);
+}
+
+.tag:hover {
+  background: var(--line);
+  text-decoration: none;
+}
+
+.tag.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tag-count {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.tag.active .tag-count {
+  color: inherit;
+}
+
+.tag-clear {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.9em;
+}
+
+/* Scroll-to-match highlight */
+.markdown .flash {
+  animation: flash 1.5s ease-out;
+}
+
+@keyframes flash {
+  from {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}

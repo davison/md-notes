@@ -1,0 +1,12 @@
+/**
+ * `turndown-plugin-gfm` ships no types. The four plugins it exports all have
+ * the same shape as any other Turndown plugin.
+ */
+declare module "turndown-plugin-gfm" {
+  import type TurndownService from "turndown";
+  export const gfm: TurndownService.Plugin;
+  export const highlightedCodeBlock: TurndownService.Plugin;
+  export const strikethrough: TurndownService.Plugin;
+  export const tables: TurndownService.Plugin;
+  export const taskListItems: TurndownService.Plugin;
+}
