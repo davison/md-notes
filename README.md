@@ -38,7 +38,9 @@ extension with the authentication it needed; the inbox is still ahead.
   folder mirrored between machines and an Android phone, where any markdown
   editor reads the same files. An inbox file lets URLs shared from the
   phone become proper clips when the folder next syncs to a machine running
-  the daemon.
+  the daemon. [docs/sync.md](docs/sync.md) describes the whole
+  arrangement: Syncthing setup, offline editing, conflict files in the
+  navigator, Android with Markor, and the tailnet alternative.
 
 ## Building
 
