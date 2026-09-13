@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { noteURL } from "./api";
+import { fetchNote, noteURL } from "./api";
 import { Editor } from "./editor";
 import { NoteView } from "./note-view";
 import { flushAll, getSession, hasStoredDraft, hasUnsaved, subscribeSessions, unsavedSessions, type Session, type SessionState } from "./session";
@@ -74,13 +74,44 @@ export function NotePane({ slug, path, version = 0, line = null }: Props) {
     lastRevision.current = revision;
   }, [revision]);
 
-  // The tab says which note is open. The rendered view is what learns the
-  // note's own title from the daemon, so the last one it reported is kept
-  // here: the editor shows no title of its own, and a live update
-  // refreshes it through the same path. Until one arrives the file name
-  // stands in, and the marker follows the session live.
+  // The tab says which note is open. The note's own title comes from the
+  // daemon, so the last one reported for this note is kept here; until one
+  // arrives the file name stands in, and the marker follows the session
+  // live. The pane is keyed by note, so a kept title never outlives it.
   const [title, setTitle] = useState<string | null>(null);
   useDocumentTitle(noteTabTitle(path, title, state));
+
+  // In view mode the rendered view reports the title, refetching whenever
+  // the note changes. In the editor it is unmounted and reports nothing, so
+  // the pane asks for itself — through the same endpoint — whenever the text
+  // under the editor is replaced from outside it: the first read, a live
+  // update, a conflict resolved by loading the file. That is what the
+  // session's generation counts, and a save of the reader's own typing does
+  // not bump it, so this does not fire on every autosave.
+  const generation = state.generation;
+  const unread = state.base === null;
+  const lost = state.status === "error";
+  useEffect(() => {
+    if (mode !== "edit") return;
+    if (unread) {
+      // A note the session read and then lost has no title left to keep;
+      // before a first read the rendered view's last one still stands.
+      if (lost) setTitle(null);
+      return;
+    }
+    let cancelled = false;
+    fetchNote(slug, path).then(
+      (n) => {
+        if (!cancelled) setTitle(n.title);
+      },
+      () => {
+        if (!cancelled) setTitle(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, slug, path, generation, unread, lost]);
 
   const toggle = useCallback(() => setMode((m) => (m === "view" ? "edit" : "view")), []);
 
