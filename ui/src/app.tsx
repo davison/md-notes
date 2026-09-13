@@ -1,8 +1,10 @@
 import { LocationProvider, Router, Route } from "preact-iso";
 import { Home } from "./home";
 import { RootView } from "./root-view";
+import { FALLBACK_TITLE, useDocumentTitle } from "./title";
 
 function NotFound() {
+  useDocumentTitle(FALLBACK_TITLE);
   return (
     <main class="page">
       <h1>Not found</h1>

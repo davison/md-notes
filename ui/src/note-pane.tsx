@@ -3,6 +3,7 @@ import { noteURL } from "./api";
 import { Editor } from "./editor";
 import { NoteView } from "./note-view";
 import { flushAll, getSession, hasStoredDraft, hasUnsaved, subscribeSessions, unsavedSessions, type Session, type SessionState } from "./session";
+import { noteTabTitle, useDocumentTitle } from "./title";
 
 export type Mode = "view" | "edit";
 
@@ -73,6 +74,14 @@ export function NotePane({ slug, path, version = 0, line = null }: Props) {
     lastRevision.current = revision;
   }, [revision]);
 
+  // The tab says which note is open. The rendered view is what learns the
+  // note's own title from the daemon, so the last one it reported is kept
+  // here: the editor shows no title of its own, and a live update
+  // refreshes it through the same path. Until one arrives the file name
+  // stands in, and the marker follows the session live.
+  const [title, setTitle] = useState<string | null>(null);
+  useDocumentTitle(noteTabTitle(path, title, state));
+
   const toggle = useCallback(() => setMode((m) => (m === "view" ? "edit" : "view")), []);
 
   useEffect(() => {
@@ -104,7 +113,7 @@ export function NotePane({ slug, path, version = 0, line = null }: Props) {
         </main>
       ) : (
         <main class="note-body">
-          <NoteView slug={slug} path={path} version={version + saved} line={line} />
+          <NoteView slug={slug} path={path} version={version + saved} line={line} onTitle={setTitle} />
         </main>
       )}
     </div>

@@ -6,6 +6,7 @@ import { Navigator } from "./navigator";
 import { NotePane, UnsavedDrafts, useUnsavedGuard } from "./note-pane";
 import { SearchPane } from "./search-pane";
 import { TagPanel } from "./tag-panel";
+import { FALLBACK_TITLE, useDocumentTitle } from "./title";
 
 /**
  * The three-pane shell for one root: navigator, note, and the search and
@@ -74,6 +75,14 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
   }, [root, slug, treeVersion]);
 
   useUnsavedGuard();
+
+  // With a note open the pane below owns the tab title, since it is the
+  // side that knows the note's title and its save state; this view names
+  // the root itself when no note is open, and an unknown root is a page
+  // without a note like any other.
+  useDocumentTitle(
+    root === null ? FALLBACK_TITLE : root === undefined ? slug : current ? null : root.slug,
+  );
 
   useEvents(
     slug,
