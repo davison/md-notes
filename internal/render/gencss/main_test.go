@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/styles"
 )
 
 // appStylesheetPath and generatedPath are the files the generator reads
@@ -39,10 +40,16 @@ func readFile(t *testing.T, path string) []byte {
 // the dark block a style nobody chose: chroma's styles.Get answers a name
 // it does not know with its fallback rather than with nothing.
 func TestNamedStyleRefusesASubstitute(t *testing.T) {
-	if _, err := namedStyle("github-dark"); err == nil {
+	// chroma does ship a fallback for this name; which style it is does not
+	// matter here, and naming it would tie the test to a chroma release.
+	missing := "github-dark"
+	if got := styles.Get(missing); got == nil || got.Name == missing {
+		t.Fatalf("chroma now has a style called %q; this test has lost its subject", missing)
+	}
+	if _, err := namedStyle(missing); err == nil {
 		t.Fatal("namedStyle accepted a style chroma does not ship")
-	} else if !strings.Contains(err.Error(), "swapoff") {
-		t.Errorf("the error should name the substitute chroma returned, got %v", err)
+	} else if !strings.Contains(err.Error(), missing) {
+		t.Errorf("the error should name the style asked for, got %v", err)
 	}
 	s, err := namedStyle(baseStyle)
 	if err != nil {
@@ -144,29 +151,127 @@ func TestToLuminanceBrackets(t *testing.T) {
 	}
 }
 
-// TestTintKeepsItsSeparationFromThePage is the fix for the invisible
-// line highlight: a tint one step off the light page background comes
-// back one step off the dark one, not as the near-black that shares it.
-func TestTintKeepsItsSeparationFromThePage(t *testing.T) {
+// TestTintStaysVisible is the fix for the invisible tints. A tint carries
+// its separation from the page across schemes, but never falls below the
+// perceptibility floor — which is where matching the ratio alone left the
+// inserted-line green, and the line highlight before it.
+func TestTintStaysVisible(t *testing.T) {
 	light := chroma.MustParseColour("#fbfbfa")
 	dark := chroma.MustParseColour("#1b1b1b")
 	for _, name := range []string{"#e5e5e5", "#ffdddd", "#ddffdd", "#e3d2d2"} {
 		c := chroma.MustParseColour(name)
 		if got := tint(c, light, light); got != c {
-			t.Errorf("tint(%s) within one scheme returned %s", c, got)
+			t.Errorf("tint(%s) within one scheme returned %s; the light palette is above the floor", c, got)
 		}
 		got := tint(c, light, dark)
-		if luminance(got) <= luminance(dark) {
-			t.Errorf("tint(%s) for the dark scheme gave %s, no lighter than the page", c, got)
+		if delta := luminance(got) - luminance(dark); delta < minTintDelta-1e-9 {
+			t.Errorf("tint(%s) = %s, %.4f of luminance off the dark page, want %.4f", c, got, delta, minTintDelta)
 		}
+		// Above the floor the tint still carries the separation it had.
 		want := contrast(c, light)
-		if r := contrast(got, dark); math.Abs(r-want) > 0.05 {
-			t.Errorf("tint(%s) = %s at %.3f:1, want the %.3f:1 it had", c, got, r, want)
+		if r := contrast(got, dark); r < want-0.05 {
+			t.Errorf("tint(%s) = %s at %.3f:1, less separated than the %.3f:1 it had", c, got, r, want)
+		}
+		h, _, _ := toHSL(c)
+		gh, _, _ := toHSL(got)
+		if s := func() float64 { _, x, _ := toHSL(c); return x }(); s > 0.02 && math.Abs(h-gh) > 0.02 {
+			t.Errorf("tint(%s) = %s moved the hue from %.3f to %.3f", c, got, h, gh)
 		}
 	}
-	// The old dark line highlight was #191919 on #1b1b1b — indistinguishable.
-	if got := tint(chroma.MustParseColour("#e5e5e5"), light, dark); contrast(got, dark) < 1.1 {
-		t.Errorf("the dark line highlight %s is no more visible than the one it replaces", got)
+	// The inserted-line tint is the one that matching the ratio left
+	// invisible: #ddffdd stands 0.0365 off a near-white page and the same
+	// ratio bought 0.0029 on the dark one.
+	gi := tint(chroma.MustParseColour("#ddffdd"), light, dark)
+	if d := luminance(gi) - luminance(dark); d < minTintDelta {
+		t.Errorf("the dark inserted-line tint %s is %.4f off the page", gi, d)
+	}
+	// A tint already below the floor within its own scheme is lifted too.
+	if got := floorTint(chroma.MustParseColour("#191919"), dark); luminance(got)-luminance(dark) < minTintDelta {
+		t.Errorf("floorTint left %s indistinguishable from the page", got)
+	}
+}
+
+// TestCarryableCapsTheWashOut covers the second half of the toning rule:
+// a saturated hue may not be pushed so far that it stops being that hue.
+// NameTag #000080 used to reach for the 16.9:1 it holds on white and land
+// at #f2f2ff, which flattened YAML, HTML and XML fences to one near-white.
+func TestCarryableCapsTheWashOut(t *testing.T) {
+	dark := chroma.MustParseColour("#1b1b1b")
+	light := chroma.MustParseColour("#fbfbfa")
+	navy := chroma.MustParseColour("#000080")
+	cap := carryable(navy, dark)
+	if cap > 8 {
+		t.Errorf("carryable(%s) = %.2f:1, too much room to keep a hue", navy, cap)
+	}
+	got := readable(navy, dark, math.Max(math.Min(contrast(navy, light), cap), minContrast))
+	if contrast(got, dark) < minContrast {
+		t.Errorf("the capped %s is %.2f:1, below AA", got, contrast(got, dark))
+	}
+	_, s, _ := toHSL(got)
+	if s < 0.5 {
+		t.Errorf("the capped %s has drained to saturation %.2f", got, s)
+	}
+	if chromaOf(got) < chromaOf(navy)-0.01 {
+		t.Errorf("the capped %s carries less colour (%.2f) than the source (%.2f)", got, chromaOf(got), chromaOf(navy))
+	}
+	// A grey has no hue to lose, so black keywords still reach white.
+	if c := carryable(chroma.MustParseColour("#000000"), dark); !math.IsInf(c, 1) {
+		t.Errorf("carryable capped a grey at %.2f", c)
+	}
+}
+
+// chromaOf is the sRGB colourfulness of a colour: the spread between its
+// brightest and dimmest channel.
+func chromaOf(c chroma.Colour) float64 {
+	r, g, b := float64(c.Red()), float64(c.Green()), float64(c.Blue())
+	return (math.Max(r, math.Max(g, b)) - math.Min(r, math.Min(g, b))) / 255
+}
+
+// TestSeparateTellsCollapsedColoursApart covers the distinctness pass on
+// the pair it exists for: the AA floor pushes #009999 numbers up onto
+// #008080 variables, one unit apart.
+func TestSeparateTellsCollapsedColoursApart(t *testing.T) {
+	base, err := namedStyle(baseStyle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	light := chroma.MustParseColour("#fbfbfa")
+	dark := chroma.MustParseColour("#1b1b1b")
+	for _, bg := range []chroma.Colour{light, dark} {
+		toned, err := tone(base, light, bg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		number := toned.Get(chroma.LiteralNumber).Colour
+		variable := toned.Get(chroma.NameVariable).Colour
+		want := required(chroma.MustParseColour("#009999"), chroma.MustParseColour("#008080"))
+		if got := distance(number, variable); got < want {
+			t.Errorf("against %s: numbers %s and variables %s are %.3f apart, want %.3f",
+				bg, number, variable, got, want)
+		}
+		for _, tt := range []chroma.TokenType{chroma.LiteralNumber, chroma.NameVariable} {
+			if r := contrast(toned.Get(tt).Colour, bg); r < minContrast {
+				t.Errorf("against %s: %s came out at %.2f:1 after separating", bg, tt, r)
+			}
+		}
+	}
+}
+
+// TestRequiredAsksForNothingWhereTheSourceAgrees keeps the rule honest at
+// its edges: identical sources never have to be told apart, and a pair
+// the source barely separates is not held to more than it had.
+func TestRequiredAsksForNothingWhereTheSourceAgrees(t *testing.T) {
+	teal := chroma.MustParseColour("#008080")
+	if got := required(teal, teal); got != 0 {
+		t.Errorf("required for one colour with itself is %.3f", got)
+	}
+	near := chroma.MustParseColour("#008081")
+	if got, src := required(teal, near), distance(teal, near); got > src {
+		t.Errorf("required %.4f exceeds the %.4f the source had", got, src)
+	}
+	far := required(chroma.MustParseColour("#000000"), chroma.MustParseColour("#ffffff"))
+	if math.Abs(far-distinctFloor) > 1e-9 {
+		t.Errorf("required for black and white is %.3f, want the floor %.3f", far, distinctFloor)
 	}
 }
 
@@ -275,46 +380,90 @@ func TestEveryColourClearsAA(t *testing.T) {
 }
 
 // TestVerifyRefusesAStylesheetThatFails checks the generator's own gate
-// rejects the two shapes it exists to catch, so a future palette change
-// cannot reintroduce them unnoticed.
+// rejects every shape it exists to catch, so a future palette change
+// cannot reintroduce one unnoticed.
 func TestVerifyRefusesAStylesheetThatFails(t *testing.T) {
 	light := chroma.MustParseColour("#fbfbfa")
 	dark := chroma.MustParseColour("#1b1b1b")
-	good := "/* K */ .mdn-chroma .mdn-k { color: #000000 }\n" +
-		"@media (prefers-color-scheme: dark) {\n/* K */ .mdn-chroma .mdn-k { color: #ffffff }\n}\n"
-	if err := verify([]byte(good), light, dark); err != nil {
+	none := map[string]chroma.Colour{}
+	both := func(light, dark string) []byte {
+		return []byte(light + "\n@media (prefers-color-scheme: dark) {\n" + dark + "\n}\n")
+	}
+	if err := verify(both("/* K */ .mdn-chroma .mdn-k { color: #000000 }",
+		"/* K */ .mdn-chroma .mdn-k { color: #ffffff }"), light, dark, none); err != nil {
 		t.Fatalf("verify rejected a sound stylesheet: %v", err)
 	}
-	gap := "/* K */ .mdn-chroma .mdn-k { color: #000000 }\n" +
-		"/* C */ .mdn-chroma .mdn-nc { color: #445588 }\n" +
-		"@media (prefers-color-scheme: dark) {\n/* K */ .mdn-chroma .mdn-k { color: #ffffff }\n}\n"
-	if err := verify([]byte(gap), light, dark); err == nil {
+	if err := verify(both("/* K */ .mdn-chroma .mdn-k { color: #000000 }\n"+
+		"/* C */ .mdn-chroma .mdn-nc { color: #445588 }",
+		"/* K */ .mdn-chroma .mdn-k { color: #ffffff }"), light, dark, none); err == nil {
 		t.Error("verify accepted a class the dark scheme does not style")
 	} else if !strings.Contains(err.Error(), "mdn-nc") {
 		t.Errorf("the error should name the class, got %v", err)
 	}
-	dim := "/* K */ .mdn-chroma .mdn-k { color: #000000 }\n" +
-		"@media (prefers-color-scheme: dark) {\n/* K */ .mdn-chroma .mdn-k { color: #445588 }\n}\n"
-	if err := verify([]byte(dim), light, dark); err == nil {
+	if err := verify(both("/* K */ .mdn-chroma .mdn-k { color: #000000 }",
+		"/* K */ .mdn-chroma .mdn-k { color: #445588 }"), light, dark, none); err == nil {
 		t.Error("verify accepted dark blue on the dark code background")
 	} else if !strings.Contains(err.Error(), "dark scheme") {
 		t.Errorf("the error should name the scheme, got %v", err)
 	}
-	onOwnBackground := "/* E */ .mdn-chroma .mdn-err { color: #a61717; background-color: #e3d2d2 }\n" +
-		"@media (prefers-color-scheme: dark) {\n" +
-		"/* E */ .mdn-chroma .mdn-err { color: #a61717; background-color: #423131 }\n}\n"
-	if err := verify([]byte(onOwnBackground), light, dark); err == nil {
+	if err := verify(both("/* E */ .mdn-chroma .mdn-err { color: #a61717; background-color: #e3d2d2 }",
+		"/* E */ .mdn-chroma .mdn-err { color: #a61717; background-color: #423131 }"), light, dark, none); err == nil {
 		t.Error("verify ignored a token's own background")
 	}
-	// The dark line highlight the generator replaces: #191919 on #1b1b1b,
-	// a separation of 1.02 where the light highlight has 1.19.
-	invisible := "/* H */ .mdn-chroma .mdn-hl { background-color: #e5e5e5 }\n" +
-		"@media (prefers-color-scheme: dark) {\n" +
-		"/* H */ .mdn-chroma .mdn-hl { background-color: #191919 }\n}\n"
-	if err := verify([]byte(invisible), light, dark); err == nil {
-		t.Error("verify accepted a line highlight indistinguishable from the page")
-	} else if !strings.Contains(err.Error(), "mdn-hl") {
-		t.Errorf("the error should name the class, got %v", err)
+	// The two tints the generator replaces: the line highlight #191919 and
+	// the inserted-line green #1a211a, both on #1b1b1b.
+	for _, tint := range []struct{ class, colour string }{{"hl", "#191919"}, {"gi", "#1a211a"}} {
+		css := both("/* T */ .mdn-chroma .mdn-"+tint.class+" { background-color: #e5e5e5 }",
+			"/* T */ .mdn-chroma .mdn-"+tint.class+" { background-color: "+tint.colour+" }")
+		if err := verify(css, light, dark, none); err == nil {
+			t.Errorf("verify accepted %s, indistinguishable from the page", tint.colour)
+		} else if !strings.Contains(err.Error(), "mdn-"+tint.class) {
+			t.Errorf("the error should name the class, got %v", err)
+		}
+	}
+	// Two classes the source palette tells apart, landing on one colour.
+	source := map[string]chroma.Colour{
+		"mdn-m":  chroma.MustParseColour("#009999"),
+		"mdn-nv": chroma.MustParseColour("#008080"),
+	}
+	collapsed := both("/* M */ .mdn-chroma .mdn-m { color: #008181 }\n"+
+		"/* V */ .mdn-chroma .mdn-nv { color: #008080 }",
+		"/* M */ .mdn-chroma .mdn-m { color: #009999 }\n"+
+			"/* V */ .mdn-chroma .mdn-nv { color: #009494 }")
+	if err := verify(collapsed, light, dark, source); err == nil {
+		t.Error("verify accepted numbers and variables on the same colour")
+	} else if !strings.Contains(err.Error(), "mdn-m") || !strings.Contains(err.Error(), "mdn-nv") {
+		t.Errorf("the error should name both classes, got %v", err)
+	} else if strings.Count(err.Error(), "are ") != 2 {
+		t.Errorf("both schemes should be reported, got %v", err)
+	}
+	apart := both("/* M */ .mdn-chroma .mdn-m { color: #008181 }\n"+
+		"/* V */ .mdn-chroma .mdn-nv { color: #006b6b }",
+		"/* M */ .mdn-chroma .mdn-m { color: #009999 }\n"+
+			"/* V */ .mdn-chroma .mdn-nv { color: #00b9b9 }")
+	if err := verify(apart, light, dark, source); err != nil {
+		t.Errorf("verify rejected a separated pair: %v", err)
+	}
+}
+
+// TestSourceColoursCoversTheSyntaxTokensOnly checks what the distinctness
+// rule is asked about: the tokens that sit beside another token on a line,
+// not the line-level furniture.
+func TestSourceColoursCoversTheSyntaxTokensOnly(t *testing.T) {
+	base, err := namedStyle(baseStyle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := sourceColours(base)
+	for _, class := range []string{"mdn-k", "mdn-nc", "mdn-nv", "mdn-m", "mdn-s", "mdn-c", "mdn-o"} {
+		if _, ok := source[class]; !ok {
+			t.Errorf("%s should be held to the distinctness rule", class)
+		}
+	}
+	for _, class := range []string{"mdn-w", "mdn-ln", "mdn-lnt", "mdn-hl", "mdn-go", "mdn-gu", "mdn-gh", "mdn-err"} {
+		if _, ok := source[class]; ok {
+			t.Errorf("%s is line-level furniture and should be exempt", class)
+		}
 	}
 }
 
@@ -343,9 +492,13 @@ func TestToneGivesBothSchemesTheSameTokens(t *testing.T) {
 			t.Errorf("%s is styled in the light scheme only", tt)
 		}
 	}
-	// The light scheme is the source palette with only its sub-AA
-	// colours moved, so the tokens that already cleared AA are untouched.
-	for _, tt := range []chroma.TokenType{chroma.Keyword, chroma.LiteralString, chroma.NameClass} {
+	// The light scheme is the source palette with only its sub-AA colours
+	// moved, and the one pair the AA floor brought together, so everything
+	// else is untouched.
+	for _, tt := range []chroma.TokenType{
+		chroma.Keyword, chroma.LiteralString, chroma.NameClass, chroma.NameNamespace,
+		chroma.NameDecorator, chroma.NameTag, chroma.NameException, chroma.GenericPrompt,
+	} {
 		if got, want := a.Get(tt).Colour, base.Get(tt).Colour; got != want {
 			t.Errorf("%s changed in the light scheme: %s, want %s", tt, got, want)
 		}
@@ -385,7 +538,60 @@ func TestTheCommittedStylesheetPassesTheGeneratorsChecks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verify(readFile(t, generatedPath), lightBG, darkBG); err != nil {
+	base, err := namedStyle(baseStyle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verify(readFile(t, generatedPath), lightBG, darkBG, sourceColours(base)); err != nil {
 		t.Error(err)
+	}
+}
+
+// TestTheDarkSchemeKeepsItsColours names the three regressions the review
+// of this work turned up, so the committed stylesheet is checked for them
+// by name and not only by the rules that catch their shape.
+func TestTheDarkSchemeKeepsItsColours(t *testing.T) {
+	_, darkBG, err := codeBackgrounds(readFile(t, appStylesheetPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	light, dark := blocks(readFile(t, generatedPath))
+
+	// The inserted-line tint has to be as visible as the deleted-line one;
+	// matching the light ratio left it 0.003 of luminance off the page.
+	for _, class := range []string{"mdn-gi", "mdn-gd", "mdn-hl"} {
+		r, ok := dark[class]
+		if !ok || !r.background.IsSet() {
+			t.Fatalf("%s has no dark background", class)
+		}
+		if d := luminance(r.background) - luminance(darkBG); d < minTintDelta {
+			t.Errorf("the dark %s tint %s is %.4f of luminance off the page, want %.4f",
+				class, r.background, d, minTintDelta)
+		}
+	}
+
+	// NameTag carries YAML keys, HTML and XML tags. Reaching for the
+	// contrast navy holds on white washed it out to #f2f2ff.
+	tag := dark["mdn-nt"].colour
+	if !tag.IsSet() {
+		t.Fatal("mdn-nt has no dark colour")
+	}
+	if chromaOf(tag) < chromaOf(light["mdn-nt"].colour)-0.01 {
+		t.Errorf("the dark tag colour %s carries less colour than the light %s",
+			tag, light["mdn-nt"].colour)
+	}
+	body := chroma.MustParseColour("#e6e6e3") // --fg in the dark scheme
+	if distance(tag, body) < distinctFloor {
+		t.Errorf("the dark tag colour %s is %.3f from the body text %s; a YAML fence would read as one colour",
+			tag, distance(tag, body), body)
+	}
+
+	// Numbers and variables, the pair the AA floor brought together.
+	for name, rules := range map[string]map[string]rule{"light": light, "dark": dark} {
+		want := required(chroma.MustParseColour("#009999"), chroma.MustParseColour("#008080"))
+		if got := distance(rules["mdn-m"].colour, rules["mdn-nv"].colour); got < want {
+			t.Errorf("%s scheme: numbers %s and variables %s are %.3f apart, want %.3f",
+				name, rules["mdn-m"].colour, rules["mdn-nv"].colour, got, want)
+		}
 	}
 }
