@@ -20,11 +20,19 @@ let loadedEditor: EditorComponent | null = null;
  * The editor component once wanted and arrived, and whether the attempt to
  * fetch it failed. The chunk can genuinely go missing: upgrade the daemon
  * under an open tab and the hashed name this page asks for is no longer in
- * the bundle, so the request lands on the single-page fallback and the
- * import rejects. Without a rejection path the pane would wait for it for
- * ever, which is worse than the static import this replaced.
+ * the bundle, so the request is answered 404 and the import rejects.
+ * Without a rejection path the pane would wait for it for ever, which is
+ * worse than the static import this replaced.
+ *
+ * There is deliberately nothing here that tries again. A module script
+ * whose fetch fails leaves a null entry in the browser's module map, and
+ * every later `import()` of that URL rejects against that entry without
+ * making a request at all — so a retry button would be a button that does
+ * nothing, however healthy the network had become. Reloading is what cures
+ * this: a new document gets a new module map, and asks for whatever the
+ * daemon's current index.html names.
  */
-function useEditor(wanted: boolean): { Editor: EditorComponent | null; failed: boolean; retry: () => void } {
+function useEditor(wanted: boolean): { Editor: EditorComponent | null; failed: boolean } {
   // The initialiser is a thunk because the state *is* a function, which a
   // bare value would be mistaken for a lazy initialiser.
   const [editor, setEditor] = useState<EditorComponent | null>(() => loadedEditor);
@@ -45,10 +53,7 @@ function useEditor(wanted: boolean): { Editor: EditorComponent | null; failed: b
       live = false;
     };
   }, [wanted, editor, failed]);
-  // Clearing the failure re-runs the effect, and the browser refetches: a
-  // module that never loaded was never registered.
-  const retry = useCallback(() => setFailed(false), []);
-  return { Editor: editor, failed, retry };
+  return { Editor: editor, failed };
 }
 
 /** Re-renders the caller whenever the session changes. */
@@ -202,10 +207,11 @@ function EditorBody({ editor, session }: { editor: ReturnType<typeof useEditor>;
   if (!editor.failed) return <p class="muted pad">Loading the editor…</p>;
   return (
     <p class="error pad" role="alert">
-      The editor could not be loaded. If the daemon was updated while this page was open, reloading the page will
-      fetch the current one.{" "}
-      <button type="button" onClick={editor.retry}>
-        Try again
+      The editor could not be loaded. The daemon was most likely updated while this page was open, so the bundle
+      this page is asking for is no longer the one being served. Reloading fetches the current one; the note is
+      unaffected and any unsaved draft is kept.{" "}
+      <button type="button" onClick={() => location.reload()}>
+        Reload the page
       </button>
     </p>
   );

@@ -508,9 +508,12 @@ for every later toggle in it. On loopback the first `Ctrl+E` of a page takes abo
 second figure: the browser has the chunk cached, so nothing is fetched, but that first
 toggle still takes about 55 ms, because what the time buys is compiling CodeMirror and
 building the editor rather than getting hold of it. If the daemon is upgraded while a
-page is open, the chunk that page would ask for is no longer in the bundle: `Ctrl+E`
-then says the editor could not be loaded and offers to try again, and reloading the
-page fetches the current one. The per-language parsers for fenced
+page is open, the chunk that page would ask for is no longer in the bundle and the
+daemon answers 404: `Ctrl+E` then says the editor could not be loaded and offers to
+reload, which is the only thing that cures it — a browser that failed to fetch a module
+will not ask for that URL again, however healthy the network becomes, but a reloaded
+page asks for whatever the current `index.html` names. The note and any unsaved draft
+survive the reload. The per-language parsers for fenced
 code are separate chunks again, one per language, fetched when a note containing such
 a block is opened in the editor — not when the block is typed in.
 
