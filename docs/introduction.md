@@ -544,6 +544,11 @@ daemon refused for such a revision is sent again, once, against the new one. A c
 note simply follows the file: it refreshes from disk in both the rendered view and
 the editor.
 
+A write arriving from Syncthing lands here like any other external change, and is a
+different thing from a Syncthing *conflict file*, which arrives as a new note beside
+the old one. [Sync and offline editing](sync.md#when-two-devices-edit-the-same-note)
+covers both and how to deal with each.
+
 A note **changed** on disk under a draft raises a banner offering three ways out:
 
 - **Keep my draft** saves the draft over the file as it now is;
@@ -597,6 +602,10 @@ shows up without a refresh. Events are debounced into one batch per root — 150
 of quiet, or one second at the outside. The page
 refetches the tree on any batch that could change it, and refetches the open note
 when the batch names its path or a directory above it.
+
+This is also how a synced folder stays current: the daemon does not know Syncthing
+exists, and Syncthing's writes reach it as ordinary changes on disk. See
+[Sync and offline editing](sync.md).
 
 ### Which directories are watched
 
