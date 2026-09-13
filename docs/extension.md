@@ -103,12 +103,18 @@ needed from the first action, and two of the three stay refused.
 
 ### A daemon reached over the tailnet
 
-The daemon URL may name a daemon reached over the tailnet — `https://laptop.ts.net`,
-or `http://laptop.ts.net:7337` if you reach the daemon's own port rather than a
-`tailscale serve` proxy — rather than one on this machine. The browser asks for
-permission for that address when you save, and **the token is not optional
-there**: under a `tailnet_host` name the daemon serves nothing at all without it,
-so paste the token before anything else.
+The daemon URL may name a daemon reached over the tailnet rather than one on this
+machine. That address is always the `https://` name `tailscale serve` gives you —
+`https://laptop.ts.net`, or `https://laptop.ts.net:8443` if `serve` was told a port
+other than 443, in which case the daemon's `tailnet_host` has to carry that port
+too. There is no `http://` form and no daemon-port form: the daemon binds
+`127.0.0.1` and nothing else, so its own port is not reachable under the tailnet
+name at all, and `serve` is what puts the name in front of it. See
+[Reaching the daemon over the tailnet](introduction.md#reaching-the-daemon-over-the-tailnet).
+
+The browser asks for permission for that address when you save, and **the token is
+not optional there**: under a `tailnet_host` name the daemon serves nothing at all
+without it, so paste the token before anything else.
 
 With the token pasted, one of the extension's three actions works and two do not:
 
@@ -136,7 +142,9 @@ that.
 > **Not yet.** Clipping over the tailnet is not offered. Widening the allow-list
 > for `POST /api/clip` is a security decision that has not been taken, so the
 > refusal is reported honestly rather than worked around
-> ([#60](https://github.com/davison/md-notes/issues/60)).
+> ([the reasoning](https://github.com/davison/md-notes/issues/60#issuecomment-5656174981)).
+> If it is wanted later it is a task of its own, decided next to
+> [#39](https://github.com/davison/md-notes/issues/39)'s.
 
 If the daemon answers `unexpected Host header`, the address and the daemon's
 `tailnet_host` disagree — almost always the port, which `tailnet_host` has to carry
