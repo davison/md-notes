@@ -12,8 +12,12 @@ interface NoteProps {
   version?: number;
   /** Source line to scroll to, from a search hit. */
   line?: number | null;
-  /** Called with the daemon's title for the note whenever a fetch lands. */
-  onTitle?: (title: string) => void;
+  /**
+   * Called with the daemon's title for the note whenever a fetch lands, and
+   * with null when one fails: a note that no longer renders has no title
+   * for the caller to go on holding.
+   */
+  onTitle?: (title: string | null) => void;
 }
 
 export function NoteView({ slug, path, version = 0, line = null, onTitle }: NoteProps) {
@@ -40,7 +44,9 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
         onTitle?.(n.title);
       },
       (e: Error) => {
-        if (!cancelled) setError(e.message);
+        if (cancelled) return;
+        setError(e.message);
+        onTitle?.(null);
       },
     );
     return () => {
