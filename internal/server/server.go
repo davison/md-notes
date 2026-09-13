@@ -3,12 +3,17 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -68,6 +73,12 @@ type Server struct {
 	starting map[string]chan struct{}
 	// closing is closed by Close so event streams end promptly.
 	closing chan struct{}
+
+	// etags memoises the validator of each embedded UI file, keyed by the
+	// name served — a compressed sibling is its own representation and so
+	// its own entry. The bundle is in the binary, so one hash lasts.
+	etagMu sync.Mutex
+	etags  map[string]string
 }
 
 // Option adjusts a Server before it starts watching its roots.
@@ -751,6 +762,23 @@ func (s *Server) rawFile(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 }
 
+// uiAssetsDir is where the UI build writes its hashed output. A file under
+// it is immutable by construction: its content hash is part of its name, so
+// a changed file is a changed URL and the old one is never asked for again.
+const uiAssetsDir = "assets/"
+
+// uiImmutable is a year — the longest age a cache is asked to treat as
+// sensible — plus the token that stops even a reload revalidating.
+const uiImmutable = "public, max-age=31536000, immutable"
+
+// uiEncodings are the content codings the daemon can answer from a file the
+// build precompressed, most preferred first. Nothing is compressed here at
+// request time: the bundle ships its own `.br` and `.gz` copies.
+var uiEncodings = []struct{ coding, suffix string }{
+	{"br", ".br"},
+	{"gzip", ".gz"},
+}
+
 // serveUI serves a file from the UI bundle when one matches the request
 // path, and index.html otherwise so client-side routes resolve.
 func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
@@ -759,23 +787,167 @@ func (s *Server) serveUI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
-	if name != "" && name != "index.html" {
-		if f, err := s.ui.Open(name); err == nil {
-			defer f.Close()
-			if info, err := f.Stat(); err == nil && !info.IsDir() {
-				http.ServeFileFS(w, r, s.ui, name)
-				return
-			}
-		}
+	if name != "" && name != "index.html" && s.uiFile(name) {
+		s.serveUIFile(w, r, name)
+		return
 	}
-	index, err := fs.ReadFile(s.ui, "index.html")
-	if err != nil {
+	if !s.uiFile("index.html") {
 		writeError(w, http.StatusInternalServerError, "UI bundle missing: build it with make ui")
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Write(index)
+	s.serveUIFile(w, r, "index.html")
+}
+
+// uiFile reports whether name is a regular file in the embedded bundle.
+func (s *Server) uiFile(name string) bool {
+	f, err := s.ui.Open(name)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	return err == nil && !info.IsDir()
+}
+
+// serveUIFile serves one embedded file with the caching and compression a
+// built asset deserves. The hashed assets get an immutable year and
+// everything else, index.html included, gets no-cache, which means
+// revalidate rather than do not store. embed.FS carries a zero modification
+// time, so http.ServeFileFS can offer no validator at all and a conditional
+// request is answered with the whole file; an ETag over the bytes actually
+// sent restores the 304.
+func (s *Server) serveUIFile(w http.ResponseWriter, r *http.Request, name string) {
+	ctype := mime.TypeByExtension(path.Ext(name))
+	if ctype == "" {
+		ctype = "application/octet-stream"
+	}
+	cache := "no-cache"
+	if strings.HasPrefix(name, uiAssetsDir) {
+		cache = uiImmutable
+	}
+	// Which bytes come back depends on Accept-Encoding, so every response
+	// says so — the uncompressed one too, or a cache holding the brotli copy
+	// would hand it to a client that cannot read it.
+	w.Header().Set("Vary", "Accept-Encoding")
+	w.Header().Set("Cache-Control", cache)
+	// Set before ServeContent, which would otherwise guess from the name it
+	// is given; the compressed siblings end in .br and .gz and would sniff
+	// as binary.
+	w.Header().Set("Content-Type", ctype)
+
+	served, encoded := name, false
+	if coding, file, ok := s.uiEncoded(name, r.Header.Get("Accept-Encoding")); ok {
+		w.Header().Set("Content-Encoding", coding)
+		served, encoded = file, true
+	}
+	// The ETag names the representation rather than the file: the brotli,
+	// gzip and identity forms of one asset are three different bodies, and
+	// sharing a tag across them is how a cache serves the wrong one.
+	if tag, err := s.uiETag(served); err == nil {
+		w.Header().Set("ETag", tag)
+	}
+	f, err := s.ui.Open(served)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	defer f.Close()
+	// ServeContent leaves out the Content-Length once Content-Encoding is
+	// set, guarding against a handler that meant the writer to do the
+	// compressing. This body is already compressed and its length is known,
+	// so say it rather than fall back to chunked framing; a range request
+	// still overwrites this with the length of the range.
+	if info, err := f.Stat(); err == nil && encoded {
+		w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	}
+	if rs, ok := f.(io.ReadSeeker); ok {
+		http.ServeContent(w, r, name, time.Time{}, rs)
+		return
+	}
+	// An fs.FS whose files do not seek: read the bytes and serve those.
+	b, err := fs.ReadFile(s.ui, served)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(b))
+}
+
+// uiEncoded picks the precompressed sibling to serve for name, given what
+// the client said it accepts. Missing siblings are not an error: the build
+// skips a file it could not shrink, and the identity bytes always answer.
+func (s *Server) uiEncoded(name, accept string) (coding, file string, ok bool) {
+	if accept == "" {
+		return "", "", false
+	}
+	best := 0.0
+	for _, e := range uiEncodings {
+		q := encodingQuality(accept, e.coding)
+		if q <= best || !s.uiFile(name+e.suffix) {
+			continue
+		}
+		coding, file, ok, best = e.coding, name+e.suffix, true, q
+	}
+	return coding, file, ok
+}
+
+// encodingQuality is the weight an Accept-Encoding header gives one coding.
+// A named coding beats the wildcard, an unmentioned coding is unacceptable,
+// and q=0 is the only way a client can refuse one by name.
+func encodingQuality(header, coding string) float64 {
+	named, wildcard := -1.0, -1.0
+	for _, part := range strings.Split(header, ",") {
+		spec, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		q := 1.0
+		for params != "" {
+			var param string
+			param, params, _ = strings.Cut(params, ";")
+			k, v, ok := strings.Cut(param, "=")
+			if !ok || !strings.EqualFold(strings.TrimSpace(k), "q") {
+				continue
+			}
+			if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+				q = f
+			}
+		}
+		switch strings.ToLower(strings.TrimSpace(spec)) {
+		case coding:
+			named = q
+		case "*":
+			wildcard = q
+		}
+	}
+	switch {
+	case named >= 0:
+		return named
+	case wildcard >= 0:
+		return wildcard
+	}
+	return 0
+}
+
+// uiETag is the validator for one embedded file, hashed once and kept: the
+// bundle is baked into the binary, so its bytes cannot change under us.
+func (s *Server) uiETag(name string) (string, error) {
+	s.etagMu.Lock()
+	tag, ok := s.etags[name]
+	s.etagMu.Unlock()
+	if ok {
+		return tag, nil
+	}
+	b, err := fs.ReadFile(s.ui, name)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(b)
+	tag = `"` + base64.RawURLEncoding.EncodeToString(sum[:16]) + `"`
+	s.etagMu.Lock()
+	if s.etags == nil {
+		s.etags = map[string]string{}
+	}
+	s.etags[name] = tag
+	s.etagMu.Unlock()
+	return tag, nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

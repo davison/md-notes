@@ -2,6 +2,8 @@ package server
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"io"
@@ -61,9 +63,20 @@ func newTestServerWith(t *testing.T, opts ...Option) (*httptest.Server, string) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The four shapes the asset path has to tell apart: a hashed asset the
+	// build precompressed both ways, one it could only shrink with gzip, one
+	// with no compressed sibling at all, and a file outside the hashed
+	// directory. Nothing in the daemon decodes brotli, so a stand-in for the
+	// brotli stream is enough to prove the right bytes are chosen.
 	ui := fstest.MapFS{
-		"index.html":    {Data: []byte("<html>app</html>")},
-		"assets/app.js": {Data: []byte("console.log(1)")},
+		"index.html":            {Data: []byte("<html>app</html>")},
+		"assets/app.js":         {Data: []byte("console.log(1)")},
+		"assets/main.js":        {Data: []byte(uiMainJS)},
+		"assets/main.js.br":     {Data: []byte(uiMainBrotli)},
+		"assets/main.js.gz":     {Data: gzipBytes(uiMainJS)},
+		"assets/only-gz.css":    {Data: []byte(uiOnlyGzCSS)},
+		"assets/only-gz.css.gz": {Data: gzipBytes(uiOnlyGzCSS)},
+		"favicon.svg":           {Data: []byte("<svg/>")},
 	}
 	store, _, err := token.Open(filepath.Join(base, "token"))
 	if err != nil {
@@ -769,5 +782,224 @@ func TestUIFallback(t *testing.T) {
 	resp := do(t, ts, "GET", "/api/nope", "", nil)
 	if resp.StatusCode != 404 {
 		t.Errorf("/api/nope: status %d, want 404", resp.StatusCode)
+	}
+}
+
+// The UI fixtures. uiMainBrotli stands in for a brotli stream: the daemon
+// serves the file's bytes without reading them, so what matters is that
+// they are distinct from every other representation.
+const (
+	uiMainJS     = "export const main = 1;\n"
+	uiMainBrotli = "\x1b\x15\x00brotli(main.js)"
+	uiOnlyGzCSS  = "body { color: red }\n"
+)
+
+func gzipBytes(s string) []byte {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	zw.Write([]byte(s))
+	zw.Close()
+	return buf.Bytes()
+}
+
+// uiGet fetches a UI path sending exactly the Accept-Encoding given — the
+// empty string meaning none at all. The default client fills that header in
+// with gzip and then transparently decodes the reply, which would hide both
+// the negotiation and the headers under test.
+func uiGet(t *testing.T, ts *httptest.Server, method, path, accept string, hdr map[string]string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, ts.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = "localhost:7337"
+	if accept != "" {
+		req.Header.Set("Accept-Encoding", accept)
+	}
+	for k, v := range hdr {
+		req.Header.Set(k, v)
+	}
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	return resp
+}
+
+func TestUICaching(t *testing.T) {
+	ts, _ := newTestServer(t)
+	for _, tc := range []struct {
+		path, cache, ctype string
+	}{
+		{"/assets/app.js", uiImmutable, "javascript"},
+		{"/assets/only-gz.css", uiImmutable, "css"},
+		{"/index.html", "no-cache", "html"},
+		{"/favicon.svg", "no-cache", "svg"},
+		{"/r/notes/some/note.md", "no-cache", "html"}, // the client-side route falls back to index.html
+		{"/", "no-cache", "html"},
+	} {
+		resp := uiGet(t, ts, "GET", tc.path, "identity", nil)
+		h := resp.Header
+		switch {
+		case resp.StatusCode != 200:
+			t.Errorf("%s: status %d, want 200", tc.path, resp.StatusCode)
+		case h.Get("Cache-Control") != tc.cache:
+			t.Errorf("%s: Cache-Control %q, want %q", tc.path, h.Get("Cache-Control"), tc.cache)
+		case h.Get("Vary") != "Accept-Encoding":
+			t.Errorf("%s: Vary %q, want Accept-Encoding", tc.path, h.Get("Vary"))
+		case h.Get("ETag") == "":
+			t.Errorf("%s: no ETag", tc.path)
+		case h.Get("Content-Encoding") != "":
+			t.Errorf("%s: Content-Encoding %q under identity, want none", tc.path, h.Get("Content-Encoding"))
+		case !strings.Contains(h.Get("Content-Type"), tc.ctype):
+			t.Errorf("%s: Content-Type %q, want it to mention %q", tc.path, h.Get("Content-Type"), tc.ctype)
+		}
+	}
+}
+
+func TestUIConditionalRequest(t *testing.T) {
+	ts, _ := newTestServer(t)
+	for _, tc := range []struct{ path, accept string }{
+		{"/assets/app.js", "identity"},
+		{"/assets/main.js", "br, gzip"}, // the brotli representation
+		{"/assets/main.js", "gzip"},     // and the gzip one, under its own tag
+		{"/index.html", "identity"},
+		{"/r/notes/some/note.md", "identity"},
+	} {
+		first := uiGet(t, ts, "GET", tc.path, tc.accept, nil)
+		tag := first.Header.Get("ETag")
+		body := readAll(t, first.Body)
+		if first.StatusCode != 200 || tag == "" || body == "" {
+			t.Fatalf("%s (%s): status %d tag %q body %q", tc.path, tc.accept, first.StatusCode, tag, body)
+		}
+		again := uiGet(t, ts, "GET", tc.path, tc.accept, map[string]string{"If-None-Match": tag})
+		if again.StatusCode != http.StatusNotModified {
+			t.Errorf("%s (%s): status %d, want 304", tc.path, tc.accept, again.StatusCode)
+		}
+		if b := readAll(t, again.Body); b != "" {
+			t.Errorf("%s (%s): 304 carried %q", tc.path, tc.accept, b)
+		}
+		stale := uiGet(t, ts, "GET", tc.path, tc.accept, map[string]string{"If-None-Match": `"stale"`})
+		if stale.StatusCode != 200 || readAll(t, stale.Body) != body {
+			t.Errorf("%s (%s): a stale validator got %d, want the body again", tc.path, tc.accept, stale.StatusCode)
+		}
+	}
+}
+
+func TestUIEncodingNegotiation(t *testing.T) {
+	ts, _ := newTestServer(t)
+	for _, tc := range []struct{ name, accept, coding, body string }{
+		{"brotli preferred", "gzip, deflate, br, zstd", "br", uiMainBrotli},
+		{"gzip when brotli is not offered", "gzip, deflate", "gzip", string(gzipBytes(uiMainJS))},
+		{"brotli refused by name", "br;q=0, gzip", "gzip", string(gzipBytes(uiMainJS))},
+		{"weights honoured over preference order", "br;q=0.2, gzip;q=0.9", "gzip", string(gzipBytes(uiMainJS))},
+		{"the wildcard accepts brotli", "*", "br", uiMainBrotli},
+		{"identity only", "identity", "", uiMainJS},
+		{"everything refused but identity", "gzip;q=0, br;q=0", "", uiMainJS},
+		{"no Accept-Encoding at all", "", "", uiMainJS},
+	} {
+		resp := uiGet(t, ts, "GET", "/assets/main.js", tc.accept, nil)
+		h := resp.Header
+		switch {
+		case resp.StatusCode != 200:
+			t.Errorf("%s: status %d, want 200", tc.name, resp.StatusCode)
+		case h.Get("Content-Encoding") != tc.coding:
+			t.Errorf("%s: Content-Encoding %q, want %q", tc.name, h.Get("Content-Encoding"), tc.coding)
+		case readAll(t, resp.Body) != tc.body:
+			t.Errorf("%s: wrong body for %q", tc.name, tc.coding)
+		case !strings.Contains(h.Get("Content-Type"), "javascript"):
+			t.Errorf("%s: Content-Type %q, want the source type not the sibling's", tc.name, h.Get("Content-Type"))
+		case h.Get("Vary") != "Accept-Encoding":
+			t.Errorf("%s: Vary %q", tc.name, h.Get("Vary"))
+		case h.Get("Cache-Control") != uiImmutable:
+			t.Errorf("%s: Cache-Control %q", tc.name, h.Get("Cache-Control"))
+		}
+	}
+
+	// The gzip representation must arrive intact, not merely be labelled.
+	resp := uiGet(t, ts, "GET", "/assets/main.js", "gzip", nil)
+	zr, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		t.Fatalf("gzip reader: %v", err)
+	}
+	if got := readAll(t, zr); got != uiMainJS {
+		t.Errorf("gzip body decoded to %q, want %q", got, uiMainJS)
+	}
+
+	// One tag per representation: a cache keyed on Vary must never be able
+	// to answer a gzip request from the brotli entry.
+	tags := map[string]string{}
+	for _, accept := range []string{"br", "gzip", "identity"} {
+		tag := uiGet(t, ts, "GET", "/assets/main.js", accept, nil).Header.Get("ETag")
+		if tag == "" {
+			t.Fatalf("%s: no ETag", accept)
+		}
+		if prev, ok := tags[tag]; ok {
+			t.Errorf("%s and %s share the ETag %s", accept, prev, tag)
+		}
+		tags[tag] = accept
+	}
+}
+
+func TestUIEncodingFallsBackWhenNotPrecompressed(t *testing.T) {
+	ts, _ := newTestServer(t)
+	// No sibling at all: the identity bytes answer rather than a 404.
+	resp := uiGet(t, ts, "GET", "/assets/app.js", "br, gzip", nil)
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Encoding") != "" || readAll(t, resp.Body) != "console.log(1)" {
+		t.Errorf("uncompressed asset: %d %q", resp.StatusCode, resp.Header.Get("Content-Encoding"))
+	}
+	if resp.Header.Get("Vary") != "Accept-Encoding" {
+		t.Errorf("uncompressed asset: Vary %q", resp.Header.Get("Vary"))
+	}
+	// Only gzip was written: brotli is preferred but must not be invented.
+	resp = uiGet(t, ts, "GET", "/assets/only-gz.css", "br, gzip", nil)
+	if resp.Header.Get("Content-Encoding") != "gzip" || readAll(t, resp.Body) != string(gzipBytes(uiOnlyGzCSS)) {
+		t.Errorf("gzip-only asset: Content-Encoding %q", resp.Header.Get("Content-Encoding"))
+	}
+	// index.html is below the build's compression threshold in practice, so
+	// the same fallback carries the page itself.
+	resp = uiGet(t, ts, "GET", "/index.html", "br, gzip", nil)
+	if resp.Header.Get("Content-Encoding") != "" || readAll(t, resp.Body) != "<html>app</html>" {
+		t.Errorf("index.html: Content-Encoding %q", resp.Header.Get("Content-Encoding"))
+	}
+}
+
+func TestUIHead(t *testing.T) {
+	ts, _ := newTestServer(t)
+	resp := uiGet(t, ts, "HEAD", "/assets/main.js", "br", nil)
+	switch {
+	case resp.StatusCode != 200:
+		t.Errorf("status %d, want 200", resp.StatusCode)
+	case resp.Header.Get("Content-Encoding") != "br":
+		t.Errorf("Content-Encoding %q, want br", resp.Header.Get("Content-Encoding"))
+	case resp.ContentLength != int64(len(uiMainBrotli)):
+		t.Errorf("Content-Length %d, want %d", resp.ContentLength, len(uiMainBrotli))
+	case readAll(t, resp.Body) != "":
+		t.Error("HEAD carried a body")
+	}
+}
+
+func TestEncodingQuality(t *testing.T) {
+	for _, tc := range []struct {
+		header, coding string
+		want           float64
+	}{
+		{"gzip, deflate, br, zstd", "br", 1},
+		{"gzip, deflate", "br", 0},
+		{"", "gzip", 0},
+		{"identity", "gzip", 0},
+		{"*", "br", 1},
+		{"*;q=0", "br", 0},
+		{"*, br;q=0", "br", 0}, // the named coding beats the wildcard
+		{"br;q=0.5", "br", 0.5},
+		{" BR ;Q=0.25 ", "br", 0.25},  // case and spacing are not significant
+		{"gzip;q=abc", "gzip", 1},     // an unparseable weight is not a refusal
+		{"gzip;foo=1;q=0", "gzip", 0}, // other parameters are skipped, not misread
+	} {
+		if got := encodingQuality(tc.header, tc.coding); got != tc.want {
+			t.Errorf("encodingQuality(%q, %q) = %v, want %v", tc.header, tc.coding, got, tc.want)
+		}
 	}
 }
