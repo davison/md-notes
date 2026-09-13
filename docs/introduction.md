@@ -430,7 +430,8 @@ for good rather than reconnecting.
 
 ## The web UI
 
-A Preact application, three panes per root:
+A Preact application, three panes per root on a wide screen and a note with a
+drawer on a narrow one — see [On a phone](#on-a-phone) below:
 
 - **Navigator.** The markdown tree, with collapsible directories whose expansion is
   remembered per root in `localStorage`. The current note is highlighted and its
@@ -458,6 +459,28 @@ A Preact application, three panes per root:
   line, flashing it. Below it, the tag panel lists each tag with its count; selecting
   one sets `?tag=` and prunes the navigator to the notes carrying it, with a link to
   clear the filter.
+
+### On a phone
+
+Below 60rem of window width — a phone in either orientation, and a narrow desktop
+window — the note takes the whole viewport under a compact top bar, in the rendered
+view and in the editor alike. The two side panes move into one drawer:
+
+- The **burger** at the left of the top bar opens the drawer on its **Notes** tab,
+  which is the navigator, with the expanded directories and the tag filter it has at
+  any other width.
+- The **magnifier** at the right opens the same drawer on its **Search & tags** tab,
+  with the cursor already in the search box. Selecting a hit scrolls the note to the
+  line as it does on a wide screen.
+- The drawer closes when you choose a note or a search hit — it covers the note that
+  the choice just opened — and on `Escape`, on the close button, and on a tap outside
+  it. Focus moves into the drawer when it opens and back to the button that opened it
+  when it closes. Choosing a **tag** instead moves to the Notes tab, since the filter
+  prunes the tree the tab is showing.
+- An active tag filter shows as a chip in the top bar, which names the tag and clears
+  the filter when tapped: the tag panel that would otherwise say so is behind the
+  drawer. The root's path leaves the top bar at these widths, being the longest and
+  least useful of its labels on a phone.
 
 Search is a literal, case-insensitive phrase — what you type is what is matched.
 Tags come from a frontmatter `tags` value (a list, or one string split on commas and
