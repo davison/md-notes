@@ -273,6 +273,14 @@ func carryable(c, bg chroma.Colour) float64 {
 // by sitting next to a neighbour; holding them to the same rule would
 // spread the source palette's grey ramp across the light scheme, which is
 // not this milestone's business.
+//
+// The exemption is from *causing* a move, not from being moved. The
+// result is keyed by source colour and the caller applies it to every
+// token type that shares that colour, so one source colour stays one
+// output colour: GenericPrompt and NameNamespace are both #555555 in the
+// palette, and the prompt follows the namespace when the namespace is
+// pushed. Splitting them would invent a distinction the palette does not
+// make.
 func separate(entries map[chroma.TokenType]chroma.StyleEntry, from map[chroma.TokenType]chroma.Colour, bg chroma.Colour) (map[chroma.Colour]chroma.Colour, error) {
 	out := map[chroma.Colour]chroma.Colour{}
 	for tt, e := range entries {
@@ -629,34 +637,42 @@ func fromHSL(h, s, l float64) chroma.Colour {
 	return chroma.NewColour(channel(h+1.0/3), channel(h), channel(h-1.0/3))
 }
 
-// bgPattern matches the --bg custom property the application stylesheet
-// declares for each colour scheme; darkPattern finds where the dark one
-// begins.
-var (
-	bgPattern   = regexp.MustCompile(`--bg:\s*(#[0-9a-fA-F]{6})\s*;`)
-	darkPattern = regexp.MustCompile(`@media\s*\(\s*prefers-color-scheme:\s*dark\s*\)`)
-)
+// darkPattern finds where the dark colour scheme begins in the
+// application stylesheet.
+var darkPattern = regexp.MustCompile(`@media\s*\(\s*prefers-color-scheme:\s*dark\s*\)`)
 
 // codeBackgrounds reads the code block background of each colour scheme
 // out of the application stylesheet, where `.markdown pre` takes
 // `var(--bg)`. Reading them keeps the contrast the generator asserts tied
 // to the background the browser actually paints.
 func codeBackgrounds(app []byte) (light, dark chroma.Colour, err error) {
-	found := bgPattern.FindAllSubmatchIndex(app, -1)
+	return schemeColours(app, "bg")
+}
+
+// schemeColours reads one custom property's value for each colour scheme.
+// The stylesheet declares each of them exactly twice, once before the
+// dark media query and once inside it; anything else is refused rather
+// than guessed at, and ui/src/style.css says so where the values are.
+func schemeColours(app []byte, property string) (light, dark chroma.Colour, err error) {
+	pattern, err := regexp.Compile(`--` + regexp.QuoteMeta(property) + `:\s*(#[0-9a-fA-F]{6})\s*;`)
+	if err != nil {
+		return 0, 0, err
+	}
+	found := pattern.FindAllSubmatchIndex(app, -1)
 	if len(found) != 2 {
-		return 0, 0, fmt.Errorf("expected two --bg declarations in %s, found %d", appStylesheet, len(found))
+		return 0, 0, fmt.Errorf("expected two --%s declarations in %s, found %d", property, appStylesheet, len(found))
 	}
 	at := darkPattern.FindIndex(app)
 	if at == nil {
 		return 0, 0, fmt.Errorf("no dark colour scheme media query in %s", appStylesheet)
 	}
 	if found[0][0] > at[0] || found[1][0] < at[1] {
-		return 0, 0, fmt.Errorf("the two --bg declarations in %s do not straddle the dark media query", appStylesheet)
+		return 0, 0, fmt.Errorf("the two --%s declarations in %s do not straddle the dark media query", property, appStylesheet)
 	}
 	light = chroma.ParseColour(string(app[found[0][2]:found[0][3]]))
 	dark = chroma.ParseColour(string(app[found[1][2]:found[1][3]]))
 	if !light.IsSet() || !dark.IsSet() {
-		return 0, 0, fmt.Errorf("unparsable --bg in %s", appStylesheet)
+		return 0, 0, fmt.Errorf("unparsable --%s in %s", property, appStylesheet)
 	}
 	return light, dark, nil
 }
