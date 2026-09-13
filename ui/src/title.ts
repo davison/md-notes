@@ -27,19 +27,28 @@ export function marker(state: SessionState): string {
   return hasUnsaved(state) ? UNSAVED_MARKER + " " : "";
 }
 
-/** The last segment of a note's path, which is the file's own name. */
-export function fileName(path: string): string {
-  return path.split("/").pop() || path;
+/**
+ * A note's file name without its extension, which is what the daemon falls
+ * back to when a note has neither a frontmatter title nor an H1
+ * (internal/render). Matching it keeps the stand-in the pane shows before
+ * the daemon answers from changing under the reader a moment later. A name
+ * that is all extension — a dotfile — keeps its own name rather than
+ * becoming nothing.
+ */
+export function fileTitle(path: string): string {
+  const name = path.split("/").pop() || path;
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(0, dot) : name;
 }
 
 /**
  * The tab title for an open note: the daemon's title for it — the
  * rendered H1 or the frontmatter title — behind any marker for the
- * editing session. Until the daemon has answered, and while an editor is
- * open over a note that was never rendered, the file name stands in.
+ * editing session. Until the daemon has answered, and for a note that no
+ * longer renders at all, the file name stands in.
  */
 export function noteTabTitle(path: string, title: string | null, state: SessionState): string {
-  return marker(state) + (title?.trim() || fileName(path));
+  return marker(state) + (title?.trim() || fileTitle(path));
 }
 
 /**
