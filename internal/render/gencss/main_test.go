@@ -286,6 +286,18 @@ func TestCodeBackgroundsComeFromTheAppStylesheet(t *testing.T) {
 	if !lightenAgainst(dark) || lightenAgainst(light) {
 		t.Errorf("text should be lightened against %s and darkened against %s", dark, light)
 	}
+	// The body text colour is read the same way, so the assertions about
+	// it cannot drift from what the browser paints either.
+	lightFG, darkFG, err := schemeColours(readFile(t, appStylesheetPath), "fg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contrast(lightFG, light) < minContrast || contrast(darkFG, dark) < minContrast {
+		t.Errorf("the app's own body text is below AA: %s on %s, %s on %s", lightFG, light, darkFG, dark)
+	}
+	if _, _, err := schemeColours(readFile(t, appStylesheetPath), "no-such-property"); err == nil {
+		t.Error("schemeColours invented a property the stylesheet does not declare")
+	}
 	for _, bad := range []struct {
 		name, css string
 	}{
@@ -580,7 +592,10 @@ func TestTheDarkSchemeKeepsItsColours(t *testing.T) {
 		t.Errorf("the dark tag colour %s carries less colour than the light %s",
 			tag, light["mdn-nt"].colour)
 	}
-	body := chroma.MustParseColour("#e6e6e3") // --fg in the dark scheme
+	_, body, err := schemeColours(readFile(t, appStylesheetPath), "fg")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if distance(tag, body) < distinctFloor {
 		t.Errorf("the dark tag colour %s is %.3f from the body text %s; a YAML fence would read as one colour",
 			tag, distance(tag, body), body)
