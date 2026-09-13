@@ -115,6 +115,10 @@ code {
 .shell {
   display: grid;
   height: 100vh;
+  /* The dynamic unit where it is understood: on a phone 100vh is the
+     viewport with the browser's chrome retracted, which leaves the bottom
+     of the shell under the address bar. */
+  height: 100dvh;
   grid-template-columns: 16rem minmax(0, 1fr) 18rem;
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
@@ -140,7 +144,23 @@ code {
   font-weight: 500;
 }
 
-.shell > .nav {
+/*
+ * Both side panes live inside .panes. Here it is not a box at all, so they
+ * are grid items of the shell exactly as they were; below the narrow
+ * breakpoint it becomes the drawer that holds them as tabs.
+ */
+.panes {
+  display: contents;
+}
+
+/* The drawer and the controls that open it exist only at narrow widths. */
+.drawer-backdrop,
+.drawer-head,
+.drawer-toggle {
+  display: none;
+}
+
+.shell .nav {
   grid-area: nav;
   border-right: 1px solid var(--line);
   overflow: auto;
@@ -251,27 +271,176 @@ code {
   height: 100%;
 }
 
-.shell > .side {
+.shell .side {
   grid-area: side;
   border-left: 1px solid var(--line);
   overflow: auto;
   padding: 0.75rem;
 }
 
+/*
+ * Phones, and any window this narrow. The note has the viewport under a
+ * compact top bar in both modes; the two side panes are tabs of an
+ * off-canvas drawer that the top bar's burger and magnifier open. Stacking
+ * the three panes, which is what this breakpoint used to do, gave the note
+ * a content-sized row's leftovers — nothing at all on an iPhone 14 (#34).
+ */
 @media (max-width: 60rem) {
   .shell {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
       "top"
-      "nav"
-      "note"
-      "side";
+      "note";
   }
-  .shell > .nav,
-  .shell > .side {
+
+  .shell > .topbar {
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.15rem 0.4rem;
+  }
+
+  /* The root's path is the first thing to go: it is the longest and the
+     least useful of the top bar's labels on a phone. */
+  .shell .path {
+    display: none;
+  }
+
+  .shell .root-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .drawer-toggle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    /* The root font is 15px, so 2.75rem is a little over the 40 px a thumb
+       wants; the top bar's own padding stays small to pay for it. */
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
     border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--fg);
+    cursor: pointer;
+  }
+
+  .drawer-toggle:hover {
+    background: var(--line);
+  }
+
+  .find-toggle {
+    margin-left: auto;
+  }
+
+  .shell .panes {
+    display: flex;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    flex-direction: column;
+    width: min(20rem, 85vw);
+    background: var(--pane);
+    border-right: 1px solid var(--line);
+    box-shadow: 0.25rem 0 1.5rem rgb(0 0 0 / 25%);
+    /* Closed, the drawer is not merely off screen: visibility takes it out
+       of the tab order and out of the accessibility tree, and the delayed
+       transition holds that until it has slid away. */
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 160ms ease-out, visibility 0s linear 160ms;
+  }
+
+  .shell .panes.open {
+    transform: none;
+    visibility: visible;
+    transition: transform 160ms ease-out;
+  }
+
+  .drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    background: rgb(0 0 0 / 45%);
+  }
+
+  .drawer-head {
+    display: flex;
+    flex: none;
+    gap: 0.25rem;
+    align-items: center;
+    padding: 0.4rem 0.5rem;
     border-bottom: 1px solid var(--line);
+  }
+
+  .drawer-tab {
+    flex: 1;
+    min-width: 0;
+    padding: 0.5rem 0.4rem;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .drawer-tab.on {
+    border-color: var(--line);
+    background: var(--bg);
+    color: var(--fg);
+    font-weight: 500;
+  }
+
+  .drawer-close {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--fg);
+    cursor: pointer;
+  }
+
+  .shell .nav,
+  .shell .side {
+    flex: 1;
+    min-height: 0;
+    border: 0;
+  }
+
+  /* Only the tab on show is laid out, so the other one's controls are out
+     of the drawer's tab cycle. */
+  .shell .panes[data-tab="notes"] > .side,
+  .shell .panes[data-tab="find"] > .nav {
+    display: none;
+  }
+
+  .note-body {
+    padding: 1rem;
+  }
+
+  .editor-body .pad {
+    padding: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell .panes,
+  .shell .panes.open {
+    transition: none;
   }
 }
 
