@@ -1,11 +1,39 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { fetchNote, noteURL } from "./api";
-import { Editor } from "./editor";
 import { NoteView } from "./note-view";
 import { flushAll, getSession, hasStoredDraft, hasUnsaved, subscribeSessions, unsavedSessions, type Session, type SessionState } from "./session";
 import { noteTabTitle, useDocumentTitle } from "./title";
 
 export type Mode = "view" | "edit";
+
+/**
+ * The editor is the larger half of the bundle — CodeMirror and its table of
+ * languages — and a page that is only reading a note never touches it, so
+ * its chunk is fetched on the first toggle rather than with the page. Once
+ * fetched it is held here, so every later toggle in this page is instant.
+ */
+const loadEditor = () => import("./editor");
+type EditorComponent = Awaited<ReturnType<typeof loadEditor>>["Editor"];
+let loadedEditor: EditorComponent | null = null;
+
+/** The editor component, once wanted and arrived; null until then. */
+function useEditor(wanted: boolean): EditorComponent | null {
+  // The initialiser is a thunk because the state *is* a function, which a
+  // bare value would be mistaken for a lazy initialiser.
+  const [editor, setEditor] = useState<EditorComponent | null>(() => loadedEditor);
+  useEffect(() => {
+    if (!wanted || editor) return;
+    let live = true;
+    void loadEditor().then((mod) => {
+      loadedEditor = mod.Editor;
+      if (live) setEditor(() => mod.Editor);
+    });
+    return () => {
+      live = false;
+    };
+  }, [wanted, editor]);
+  return editor;
+}
 
 /** Re-renders the caller whenever the session changes. */
 export function useSession(session: Session): SessionState {
@@ -112,6 +140,7 @@ export function NotePane({ slug, path, version = 0, line = null }: Props) {
       cancelled = true;
     };
   }, [mode, slug, path, generation, unread, lost]);
+  const Editor = useEditor(mode === "edit");
 
   const toggle = useCallback(() => setMode((m) => (m === "view" ? "edit" : "view")), []);
 
@@ -140,7 +169,8 @@ export function NotePane({ slug, path, version = 0, line = null }: Props) {
         <main class="editor-body">
           {state.status === "loading" && <p class="muted pad">Loading…</p>}
           {state.status === "error" && <p class="error pad">{state.error?.message}</p>}
-          {state.status !== "loading" && state.status !== "error" && <Editor session={session} />}
+          {state.status !== "loading" && state.status !== "error" && !Editor && <p class="muted pad">Loading the editor…</p>}
+          {state.status !== "loading" && state.status !== "error" && Editor && <Editor session={session} />}
         </main>
       ) : (
         <main class="note-body">
