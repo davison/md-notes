@@ -59,7 +59,7 @@ at all.
 
 ## Setting Syncthing up
 
-*This section and both subsections under it are summarised from*
+*This section and the subsections under it are summarised from*
 [*Syncthing's documentation*](https://docs.syncthing.net/) *rather than verified
 here, apart from the navigator behaviour at the end, which was. Follow the
 manual for the current UI; what is below is what the folder needs to look like
@@ -80,22 +80,27 @@ essentials:
    give it a **folder ID** you will recognise, and share it with the other
    devices. They pick their own local path for it; the folder ID is what makes
    them the same folder.
-4. **Leave the folder type at Send & Receive on every device, the phone
-   included.** This is the default, and it is the only type that matches this
-   page's premise that anything may edit the notes. The temptation on a phone
-   you think of as read-mostly is **Receive Only**, and it is a trap: in a
-   receive-only folder "Local changes are however not distributed to other
-   devices", so the occasional Markor edit never reaches your machines, and the
-   *Revert Local Changes* button the UI then offers "will cause the local
-   modifications to be undone"
-   ([folder types](https://docs.syncthing.net/users/foldertypes.html)). An edit
-   you meant to keep is one tap from being discarded.
+4. **Leave the folder type at Send & Receive on every device**, the phone
+   included. It is the default, and the one setting on this list that loses
+   work when it is wrong — see [Folder type](#folder-type) below.
 5. **Keep one peer always on** if you want a laptop and a phone that are rarely
    awake together to converge. Sync itself is peer-to-peer, so two devices
    exchange files only while both are running. A machine that is always up — or a
    Syncthing binary on whatever box you already leave on, reached over SSH to
    configure — closes that gap. It does not need the notes daemon; it only
    needs to hold a copy.
+
+### Folder type
+
+*Summarised from* [*folder types*](https://docs.syncthing.net/users/foldertypes.html).
+
+Send & Receive is the default, and it is the only type that matches this page's
+premise that anything may edit the notes. The temptation on a phone you think of
+as read-mostly is **Receive Only**, and it is a trap: in a receive-only folder
+"Local changes are however not distributed to other devices", so the occasional
+Markor edit never reaches your machines, and the *Revert Local Changes* button
+the UI then offers "will cause the local modifications to be undone". An edit you
+meant to keep is one tap from being discarded.
 
 ### Ignore patterns
 
@@ -145,8 +150,8 @@ thing a network absence stops is Syncthing catching up with the other devices,
 which it does when it can.
 
 **On a machine with no daemon** — a laptop on a train — edit the files with
-whatever you like. Syncthing propagates them when the machine is next online
-alongside a peer. This is the common case and it needs no thought.
+whatever you like. *Syncthing propagates them when the machine is next online
+alongside a peer.* This is the common case and it needs no thought.
 
 **On a machine with its own daemon** — a laptop you want the browser UI on —
 run `mdn serve` against the synced folder and use the application normally. Two
@@ -217,12 +222,14 @@ directory whether versioning is on or off, so turning it on leaves you with the
 
 *`maxConflicts: 0` does stop them, by throwing the text away.* The
 [folder configuration](https://docs.syncthing.net/users/config.html#config-option-folder.maxconflicts)
-says setting it to `0` "disables conflict copies altogether"; what that means in
-practice is that the losing copy is deleted rather than renamed, so the edit one
-of your devices made is gone with nothing on disk to recover it from. Do not set
-it on a folder of notes. It is also per folder, per device, and conflict copies
-propagate like ordinary files — so a peer still on the default of `10` goes on
-delivering them to you anyway.
+says setting it to `0` "disables conflict copies altogether", that the default is
+`10`, and that it is a per-folder setting; conflict copies propagate like
+ordinary files, so a peer still on the default goes on delivering them to you
+whatever you set here. What "disables" means for the losing text the manual does
+not say, so this part is read from Syncthing's source rather than its
+documentation: at zero, the copy that would have been renamed is **deleted**
+instead, leaving nothing on disk to recover the edit from. Do not set it on a
+folder of notes.
 
 ### What the daemon does with a write that arrives while you are looking
 
@@ -258,7 +265,7 @@ Read-mostly, with the occasional edit, over the same folder:
 
 "Read-mostly" describes how you will use it, not how to configure it. The
 phone's folder is **Send & Receive** like every other — see
-[step 4](#setting-syncthing-up) — because the whole point of Markor being there
+[Folder type](#folder-type) — because the whole point of Markor being there
 is the edit you occasionally make, and a receive-only folder would strand it on
 the phone.
 
@@ -324,13 +331,16 @@ run three times across two machines:
 | Shape | Rounds where both saves reported success and one was lost |
 |-------|-----------------------------------------------------------|
 | Two clients, one daemon | none, in any run |
-| Two clients, one daemon each, same folder | roughly one round in ten, every run |
+| Two clients, one daemon each, same folder | 19, 23 and 29 of 200 — between one round in seven and one in ten |
 
 It is not a rare corner you can hope to miss.
 
 Across two machines the same race exists and does not matter, because Syncthing
-is standing between the copies: it sees the divergence and writes a conflict
-file, so the losing text is on disk under a name you can find. On one machine
+is standing between the copies: *it sees the divergence and writes a conflict
+file* — the behaviour
+[When two devices edit the same note](#when-two-devices-edit-the-same-note)
+describes and attributes, not anything measured here — so the losing text is on
+disk under a name you can find. On one machine
 there is no Syncthing between the two daemons — they are renaming their staged
 copies over one and the same path — so the losing text is simply gone.
 
