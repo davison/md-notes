@@ -2,6 +2,12 @@
 
 import { DaemonError, listRoots } from "./daemon";
 import {
+  TAILNET_LIMITS,
+  badHostMessage,
+  daemonHost,
+  isLoopbackUrl,
+} from "./reach";
+import {
   DEFAULT_DAEMON_URL,
   loadSettings,
   normaliseDaemonUrl,
@@ -73,6 +79,11 @@ async function test() {
   }
   say("testing…");
 
+  if (!isLoopbackUrl(settings.daemonUrl)) {
+    await testRemote(settings);
+    return;
+  }
+
   // Two questions with different answers: an unauthenticated read says
   // whether the daemon is there at all, and only a read carrying the token
   // says whether the token is any good.
@@ -80,10 +91,10 @@ async function test() {
   try {
     roots = await listRoots(settings);
   } catch (err) {
-    say(err instanceof Error ? err.message : String(err), "error");
+    say(failureText(err, settings), "error");
     return;
   }
-  const reached = `daemon answered: ${roots.length} root${roots.length === 1 ? "" : "s"}`;
+  const reached = countRoots(roots.length);
 
   if (settings.token === "") {
     say(`${reached}; no token stored, so registering a folder or clipping will be refused`, "ok");
@@ -102,8 +113,59 @@ async function test() {
     await listRoots(settings, { authenticated: true });
     say(`${reached}, and the token was accepted`, "ok");
   } catch (err) {
-    say(`${reached}, but ${err instanceof Error ? err.message : String(err)}`, "error");
+    say(`${reached}, but ${failureText(err, settings)}`, "error");
   }
+}
+
+/**
+ * The same button against a daemon that is not on this machine.
+ *
+ * The loopback sequence above cannot tell the truth here, and used to tell a
+ * specific lie: its first question is an unauthenticated read, which under
+ * `tailnet_host` is a 401 whatever the token is, so the button reported "the
+ * daemon rejected the token" for a perfectly good one and never reached the
+ * read that would have said so ([#51](https://github.com/davison/md-notes/issues/51)).
+ *
+ * So the authenticated read comes first and is the only one: it is the single
+ * question such a daemon can answer. The "does this daemon judge tokens?"
+ * probe is dropped with it — a daemon serving nothing unauthenticated has
+ * demonstrably answered that already — and the success says what the tailnet
+ * allow-list leaves working, because a bare "the token was accepted" here is
+ * true and still misleading.
+ */
+async function testRemote(settings: { daemonUrl: string; token: string }) {
+  if (settings.token === "") {
+    say(
+      `no token stored, and a daemon reached at ${daemonHost(settings.daemonUrl)} serves ` +
+        "nothing without one — paste the token `mdn token` prints",
+      "error",
+    );
+    return;
+  }
+  let roots;
+  try {
+    roots = await listRoots(settings, { authenticated: true });
+  } catch (err) {
+    say(failureText(err, settings), "error");
+    return;
+  }
+  say(`${countRoots(roots.length)}, and the token was accepted; ${TAILNET_LIMITS}`, "ok");
+}
+
+function countRoots(n: number): string {
+  return `daemon answered: ${n} root${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * A failure in the words the surface needs. `bad_host` is the one the daemon
+ * cannot phrase usefully by itself: "unexpected Host header" is true and says
+ * nothing about the `tailnet_host` that has to match this URL.
+ */
+function failureText(err: unknown, settings: { daemonUrl: string }): string {
+  if (err instanceof DaemonError && err.kind === "bad_host") {
+    return badHostMessage(settings.daemonUrl, err.detail);
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
