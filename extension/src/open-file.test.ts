@@ -136,6 +136,32 @@ describe("resolveOpen", () => {
     expect((result as { message: string }).message).not.toContain("mdn token");
   });
 
+  it("does not call a refused listing a refused registration", async () => {
+    // The allow-list permits GET /api/roots, so this cannot happen today. If
+    // it ever did, "Registering a folder is refused" would be the same
+    // misattribution this module exists to stop: the listing gets the
+    // daemon's own words instead.
+    const remote: Settings = { daemonUrl: "https://laptop.ts.net", token: "s3cret" };
+    const a: RootsApi = {
+      async listRoots() {
+        throw new DaemonError(
+          "loopback_only",
+          "this endpoint is served on loopback only; it is not reachable under laptop.ts.net",
+          403,
+          "this endpoint is served on loopback only; it is not reachable under laptop.ts.net",
+        );
+      },
+      async registerRoot() {
+        throw new Error("not reached");
+      },
+    };
+    expect(await resolveOpen("file:///home/you/notes/a.md", remote, a)).toEqual({
+      status: "failed",
+      kind: "loopback_only",
+      message: "this endpoint is served on loopback only; it is not reachable under laptop.ts.net",
+    });
+  });
+
   it("blames the port when the daemon does not answer to the address", async () => {
     const remote: Settings = { daemonUrl: "http://laptop.ts.net:7337", token: "s3cret" };
     const a: RootsApi = {
