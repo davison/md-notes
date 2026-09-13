@@ -50,7 +50,10 @@ const mdnBin = process.env.MDN_BIN ?? path.join(repoRoot, "mdn");
  * address mean anything at all.
  */
 const TAILNET_NAME = "mdn-e2e.tailnet.test";
-/** A second such name, which the daemon is *not* configured to answer to. */
+/**
+ * A second such name, resolving to the same listener, which the daemon is not
+ * configured to answer to — a daemon URL naming the wrong node of the tailnet.
+ */
 const OTHER_NAME = "elsewhere.tailnet.test";
 
 function loadPlaywright() {
@@ -370,24 +373,50 @@ describe("against a daemon under a tailnet name", { skip: blocker ?? false }, ()
     await page.close();
   });
 
-  it("blames the port when the name carries one the daemon does not answer to", async () => {
-    // A `tailnet_host` of the bare name while the daemon is reached on its own
-    // port: every request under `<name>:<port>` is `403 bad_host`, which used
-    // to reach the user as an unexplained "unexpected Host header".
-    await stopDaemon();
-    await startDaemon(TAILNET_NAME);
-
+  it("blames the address when the daemon URL names another node of the tailnet", async () => {
+    // The name resolves and the listener answers; the daemon simply is not
+    // configured to be it. `403 bad_host`, which used to reach the user as an
+    // unexplained "unexpected Host header".
     const page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/options.html`);
-    await page.fill("#daemon-url", tailnetOrigin);
+    await page.fill("#daemon-url", otherOrigin);
     await page.fill("#token", token);
     await page.click("#test");
     await page.waitForFunction(() => document.querySelector("#status").textContent !== "testing…");
     const message = await page.textContent("#status");
-    assert.match(message, /does not answer to mdn-e2e\.tailnet\.test:\d+/);
+    assert.match(message, /does not answer to elsewhere\.tailnet\.test:\d+/);
     assert.match(message, /unexpected Host header/);
     assert.match(message, /tailnet_host/);
     await page.close();
+  });
+
+  it("blames the port when the name carries one the daemon does not answer to", async () => {
+    // A `tailnet_host` of the bare name while the browser reaches the daemon
+    // under `<name>:<port>`: the same `403 bad_host` from the other direction,
+    // and the case the docs warn about, since `tailnet_host` must carry a
+    // non-443 port.
+    await stopDaemon();
+    await startDaemon(TAILNET_NAME);
+    // Whatever this test asserts, the next one starts against a daemon on the
+    // right name: the order of the suite should not be load-bearing.
+    try {
+      const page = await context.newPage();
+      await page.goto(`chrome-extension://${extensionId}/options.html`);
+      await page.fill("#daemon-url", tailnetOrigin);
+      await page.fill("#token", token);
+      await page.click("#test");
+      await page.waitForFunction(
+        () => document.querySelector("#status").textContent !== "testing…",
+      );
+      const message = await page.textContent("#status");
+      assert.match(message, /does not answer to mdn-e2e\.tailnet\.test:\d+/);
+      assert.match(message, /unexpected Host header/);
+      assert.match(message, /tailnet_host/);
+      await page.close();
+    } finally {
+      await stopDaemon();
+      await startDaemon(`${TAILNET_NAME}:${port}`);
+    }
   });
 });
 
