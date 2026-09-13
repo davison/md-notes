@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"github.com/davison/md-notes/internal/token"
 	"github.com/davison/md-notes/internal/tree"
 	"github.com/davison/md-notes/internal/watch"
+	"github.com/davison/md-notes/ui"
 )
 
 const port = 7337
@@ -1038,14 +1040,12 @@ func TestUIContentTypes(t *testing.T) {
 func TestUIPrecompressedSiblingsAreNotAddressable(t *testing.T) {
 	ts, _ := newTestServer(t)
 	// A .br or .gz URL would hand out bytes no client asked to decode. They
-	// are representations of another URL, so they fall through to the app.
+	// are representations of another URL, not resources, so nothing under
+	// the assets directory answers for them.
 	for _, path := range []string{"/assets/main.js.br", "/assets/main.js.gz", "/assets/only-gz.css.gz"} {
 		resp := uiGet(t, ts, "GET", path, "identity", nil)
-		if resp.StatusCode != 200 || readAll(t, resp.Body) != "<html>app</html>" {
-			t.Errorf("%s: %d, want the app shell", path, resp.StatusCode)
-		}
-		if resp.Header.Get("Cache-Control") != "no-cache" {
-			t.Errorf("%s: Cache-Control %q, want the shell's", path, resp.Header.Get("Cache-Control"))
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("%s: %d, want 404", path, resp.StatusCode)
 		}
 	}
 	// The representation is still reachable the only way it should be.
@@ -1182,5 +1182,67 @@ func TestUIServesAnFSThatCannotSeek(t *testing.T) {
 		case w.Header().Get("ETag") == "":
 			t.Errorf("%s: no ETag", tc.accept)
 		}
+	}
+}
+
+func TestUIUnknownAssetIs404(t *testing.T) {
+	ts, _ := newTestServer(t)
+	// A stale hashed name is the case this exists for: after an upgrade the
+	// page asks for a chunk that is not there, and 200 text/html turns that
+	// into a MIME error in the console rather than a status anyone can read.
+	for _, path := range []string{"/assets/index-gone.js", "/assets/nested/deeper.css", "/assets/"} {
+		resp := uiGet(t, ts, "GET", path, "identity", nil)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("%s: %d, want 404", path, resp.StatusCode)
+		}
+		if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "json") {
+			t.Errorf("%s: Content-Type %q, want the error envelope", path, ct)
+		}
+	}
+	// Everywhere else the client-side routes still resolve.
+	for _, path := range []string{"/r/notes/some/note.md", "/nothing/like/an/asset", "/asset-ish.js"} {
+		resp := uiGet(t, ts, "GET", path, "identity", nil)
+		if resp.StatusCode != 200 || readAll(t, resp.Body) != "<html>app</html>" {
+			t.Errorf("%s: %d, want the app shell", path, resp.StatusCode)
+		}
+	}
+}
+
+// TestUITypesCoverTheBundle holds the build and the daemon to one list. The
+// build precompresses by extension and the daemon types by extension; if
+// either list gains a kind the other does not know, a real asset goes out as
+// application/octet-stream, which for a module script is a load failure.
+// Only `make check` populates dist, so run it that way to mean anything.
+func TestUITypesCoverTheBundle(t *testing.T) {
+	bundle := ui.FS()
+	if _, err := fs.Stat(bundle, "index.html"); err != nil {
+		t.Skip("no built UI to check; make ui")
+	}
+	files := 0
+	err := fs.WalkDir(bundle, ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		// A dotfile the build carries rather than serves, .gitkeep among them.
+		if strings.HasPrefix(d.Name(), ".") {
+			return nil
+		}
+		files++
+		// A compressed sibling is typed from the file it is a copy of.
+		source := name
+		for _, e := range uiEncodings {
+			source = strings.TrimSuffix(source, e.suffix)
+		}
+		if _, ok := uiTypes[strings.ToLower(path.Ext(source))]; !ok {
+			t.Errorf("%s: uiTypes has no entry for %q, so it would be served as application/octet-stream",
+				name, path.Ext(source))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files == 0 {
+		t.Fatal("walked the bundle and found nothing")
 	}
 }

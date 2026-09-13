@@ -33,7 +33,10 @@ extension: extension-dist
 	pnpm --dir extension run zip
 
 ## test: run Go, UI and extension tests
-test: ui-deps extension-deps
+# Depends on ui, not ui-deps: TestUITypesCoverTheBundle checks the daemon's
+# Content-Type table against the build's actual output, and skips when dist
+# is empty.
+test: ui extension-deps
 	go test ./...
 	pnpm --dir ui test
 	pnpm --dir extension test
