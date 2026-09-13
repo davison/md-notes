@@ -143,7 +143,8 @@ describe("RootView tag filter", () => {
     await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
     expect(screen.queryByText("docs")).toBeNull();
     expect(screen.getByText("Clear filter: x")).toBeTruthy();
-    expect(screen.getByText("#x").closest("a")!.classList.contains("active")).toBe(true);
+    // The tag panel's own entry, not the top bar's chip, which says "#x" too.
+    expect(document.querySelector(".tags .tag.active .tag-name")!.textContent).toBe("#x");
   });
 
   it("passes the line query to the note view", async () => {
@@ -337,5 +338,21 @@ describe("RootView drawer at narrow widths", () => {
     expect(document.activeElement).toBe(inside[0]);
     fireEvent.keyDown(panes(), { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(last);
+  });
+});
+
+describe("RootView tag chip", () => {
+  it("is absent with no filter and names the active tag, clearing it", async () => {
+    mount("/r/n/docs/a.md");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+    expect(document.querySelector(".tag-chip")).toBeNull();
+    cleanup();
+
+    mount("/r/n/docs/a.md?tag=x");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+    const chip = document.querySelector<HTMLAnchorElement>(".topbar .tag-chip")!;
+    expect(chip.textContent).toContain("#x");
+    expect(chip.getAttribute("aria-label")).toBe("Clear the tag filter x");
+    expect(chip.getAttribute("href")).toBe("/r/n/docs/a.md");
   });
 });
