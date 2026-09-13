@@ -1,9 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 import { listRoots, type Root } from "./api";
+import { FALLBACK_TITLE, useDocumentTitle } from "./title";
 
 export function Home() {
   const [roots, setRoots] = useState<Root[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useDocumentTitle(FALLBACK_TITLE);
 
   useEffect(() => {
     listRoots().then(setRoots, (e: Error) => setError(e.message));

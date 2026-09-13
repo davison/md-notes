@@ -12,9 +12,11 @@ interface NoteProps {
   version?: number;
   /** Source line to scroll to, from a search hit. */
   line?: number | null;
+  /** Called with the daemon's title for the note whenever a fetch lands. */
+  onTitle?: (title: string) => void;
 }
 
-export function NoteView({ slug, path, version = 0, line = null }: NoteProps) {
+export function NoteView({ slug, path, version = 0, line = null, onTitle }: NoteProps) {
   const [note, setNote] = useState<Note | null>(null);
   const [error, setError] = useState<string | null>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -35,6 +37,7 @@ export function NoteView({ slug, path, version = 0, line = null }: NoteProps) {
         if (cancelled) return;
         setNote(n);
         setError(null);
+        onTitle?.(n.title);
       },
       (e: Error) => {
         if (!cancelled) setError(e.message);
@@ -43,6 +46,9 @@ export function NoteView({ slug, path, version = 0, line = null }: NoteProps) {
     return () => {
       cancelled = true;
     };
+    // onTitle is deliberately not a dependency: it is reported from the
+    // fetch, and refetching because the caller passed a fresh closure
+    // would be a loop.
   }, [slug, path, version]);
 
   // Scroll to the top of a newly opened note, or to its fragment. A live
