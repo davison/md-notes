@@ -3,6 +3,7 @@
 import type { ClipKind } from "./extraction";
 import type { Root } from "./paths";
 import { trimSlash } from "./paths";
+import { presentsBearer } from "./reach";
 import type { Settings } from "./settings";
 
 /** Why a call failed, in terms the popup can explain to the user. */
@@ -11,6 +12,10 @@ export type FailureKind =
   | "no_token"
   | "origin_refused"
   | "token_rejected"
+  /** The tailnet allow-list: this endpoint is served on loopback only. */
+  | "loopback_only"
+  /** The daemon does not answer to the name the request arrived under. */
+  | "bad_host"
   | "refused"
   | "bad_response";
 
@@ -37,11 +42,16 @@ export type Fetch = typeof fetch;
 
 export interface CallOptions {
   /**
-   * Present the bearer token. A GET without it carries no `Origin` header
+   * Insist on the bearer token. A GET without it carries no `Origin` header
    * from the extension's background context and passes the daemon's guard
-   * unauthenticated, which is what the intercept relies on; adding the header
-   * makes the request one the daemon must accept on the token's merit, which
-   * is what the options page's connection test wants.
+   * unauthenticated, which is what the intercept relies on over loopback;
+   * adding the header makes the request one the daemon must accept on the
+   * token's merit, which is what the options page's connection test wants.
+   *
+   * A GET to a daemon that is *not* on loopback carries the token whether or
+   * not this is set — under `tailnet_host` nothing at all is served without
+   * it — so this only ever adds the header, never removes one. See
+   * `presentsBearer` in `reach.ts`.
    */
   authenticated?: boolean;
   fetch?: Fetch;
@@ -81,6 +91,18 @@ async function refusal(res: Response): Promise<{ code: string; message: string }
 async function failureFor(res: Response, settings: Settings): Promise<DaemonError> {
   const { code, message } = await refusal(res);
   if (code === "unauthorized" || res.status === 401) {
+    // A daemon that answers 401 wanted a token. Which complaint that is
+    // depends on whether there was one to send: with nothing stored the
+    // token was never judged, and "the daemon rejected the token" would be
+    // a lie — the one a tailnet daemon URL used to tell on every call.
+    if (settings.token === "") {
+      return new DaemonError(
+        "no_token",
+        `the daemon serves nothing without a token (${message}) — paste the one \`mdn token\` prints`,
+        res.status,
+        message,
+      );
+    }
     return new DaemonError(
       "token_rejected",
       `the daemon rejected the token (${message}) — check it against \`mdn token\``,
@@ -88,6 +110,11 @@ async function failureFor(res: Response, settings: Settings): Promise<DaemonErro
       message,
     );
   }
+  // The tailnet allow-list, and a name the daemon does not answer to. Both
+  // are refusals of the *endpoint* or the *address*, and reading either as a
+  // token problem sends the user to fix something that is not broken.
+  if (code === "loopback_only") return new DaemonError("loopback_only", message, res.status, message);
+  if (code === "bad_host") return new DaemonError("bad_host", message, res.status, message);
   if (code === "cross_origin" || (res.status === 403 && code === "")) {
     const hint =
       settings.token === ""
@@ -135,14 +162,20 @@ function asRoot(value: unknown): Root {
 }
 
 /**
- * The roots the daemon serves. A GET from the extension's background context
- * carries no Origin header, so by default this call needs no token; pass
- * `authenticated` to make the daemon judge the token instead.
+ * The roots the daemon serves.
+ *
+ * A GET from the extension's background context carries no Origin header, so
+ * against a daemon on this machine it needs no token and is sent without one:
+ * the file-URL intercept works for someone who has pasted none. Against a
+ * daemon that is not on loopback the token goes with it, because under
+ * `tailnet_host` an unauthenticated read is a 401 and nothing downstream ever
+ * gets to decide anything. `authenticated` forces the header on either.
  */
 export async function listRoots(settings: Settings, options: CallOptions = {}): Promise<Root[]> {
-  const authenticated = options.authenticated === true;
   const init: RequestInit = { method: "GET" };
-  if (authenticated && settings.token !== "") init.headers = headers(settings, false, true);
+  if (presentsBearer(settings, options.authenticated === true)) {
+    init.headers = headers(settings, false, true);
+  }
   const body = await call(settings, "/api/roots", init, options.fetch ?? fetch);
   const roots = (body as { roots?: unknown }).roots;
   if (!Array.isArray(roots)) {
