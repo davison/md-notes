@@ -5,6 +5,7 @@
 
 import { DaemonError, listRoots, registerRoot, type FailureKind } from "./daemon";
 import { localMarkdownFile, noteUrl, relativeTo, rootContaining, type Root } from "./paths";
+import { badHostMessage, registerRefusedRemotely } from "./reach";
 import type { Settings } from "./settings";
 
 /** What the background worker should do about a navigation. */
@@ -61,9 +62,30 @@ export async function resolveOpen(
       note,
     };
   } catch (err) {
-    if (err instanceof DaemonError) {
-      return { status: "failed", kind: err.kind, message: err.message };
-    }
+    return describeOpenFailure(err, settings);
+  }
+}
+
+/**
+ * A failed attempt, in terms that name what actually refused it.
+ *
+ * The two refusals a tailnet daemon URL produces are the ones worth
+ * translating. `loopback_only` is the allow-list refusing `POST /api/roots`,
+ * which only ever happens here on the registration step, and it is not a
+ * token problem however much the previous wording implied one; `bad_host` is
+ * the daemon not answering to the address at all, usually a `tailnet_host`
+ * missing its port. Everything else keeps the daemon's own words.
+ */
+function describeOpenFailure(err: unknown, settings: Settings): OpenResult & { status: "failed" } {
+  if (!(err instanceof DaemonError)) {
     return { status: "failed", kind: "bad_response", message: String(err) };
+  }
+  switch (err.kind) {
+    case "loopback_only":
+      return { status: "failed", kind: err.kind, message: registerRefusedRemotely(settings.daemonUrl) };
+    case "bad_host":
+      return { status: "failed", kind: err.kind, message: badHostMessage(settings.daemonUrl, err.detail) };
+    default:
+      return { status: "failed", kind: err.kind, message: err.message };
   }
 }

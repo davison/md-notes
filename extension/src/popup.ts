@@ -9,6 +9,7 @@
 
 import { ask, type DiscardReply, type PrepareReply, type SaveReply } from "./messages";
 import { getPendingClip, type PendingClip } from "./pending";
+import { describeDaemonReach } from "./reach";
 import { loadSettings } from "./settings";
 import { getTabStatus } from "./status";
 
@@ -164,7 +165,9 @@ optionsLink.addEventListener("click", (event) => {
 
 async function init() {
   const settings = await loadSettings();
-  el("daemon").textContent = `Daemon: ${settings.daemonUrl}`;
+  // Under a tailnet daemon URL the line says what this daemon will and will
+  // not do before anything is pressed, rather than leaving Clip to find out.
+  el("daemon").textContent = describeDaemonReach(settings);
 
   const status = el("status");
   const tabId = await targetTab();

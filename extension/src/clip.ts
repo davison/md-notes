@@ -5,6 +5,7 @@
 
 import { DaemonError, type ClipRequest, type FailureKind } from "./daemon";
 import type { ClipKind, Extraction } from "./extraction";
+import { badHostMessage, clipRefusedRemotely } from "./reach";
 import type { Settings } from "./settings";
 
 /**
@@ -70,6 +71,9 @@ export interface ClipFailure {
  * which the daemon reports as `cross_origin`, because without the header it
  * never sees a token to judge, and which the extension also knows before
  * asking when its own settings are empty.
+ *
+ * M4-R6 adds a fourth: a daemon reached over the tailnet, where the token is
+ * fine and the *endpoint* is what is refused.
  */
 export function describeClipFailure(error: unknown, settings: Settings): ClipFailure {
   if (!(error instanceof DaemonError)) {
@@ -106,6 +110,21 @@ export function describeClipFailure(error: unknown, settings: Settings): ClipFai
           settings.token === ""
             ? "No token configured. Run `mdn token` and paste it on the options page; clipping cannot work without it."
             : `The daemon refused this extension's origin even with a token: ${error.detail}.`,
+        offerOptions: true,
+      };
+    case "loopback_only":
+      // The tailnet allow-list, not the token: the token was accepted and the
+      // endpoint still is not served under that name. Pointing the user at
+      // `mdn token` here would waste their afternoon.
+      return {
+        kind: error.kind,
+        message: clipRefusedRemotely(settings.daemonUrl),
+        offerOptions: true,
+      };
+    case "bad_host":
+      return {
+        kind: error.kind,
+        message: badHostMessage(settings.daemonUrl, error.detail),
         offerOptions: true,
       };
     default:

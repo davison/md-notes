@@ -113,6 +113,36 @@ describe("describeClipFailure", () => {
     expect(failure.message).toContain("cross-origin request refused");
   });
 
+  it("names the tailnet allow-list, not the token, when clipping is refused", () => {
+    const remote = { daemonUrl: "https://laptop.ts.net", token: "s3cret" };
+    const failure = describeClipFailure(
+      new DaemonError(
+        "loopback_only",
+        "this endpoint is served on loopback only; it is not reachable under laptop.ts.net",
+        403,
+        "this endpoint is served on loopback only; it is not reachable under laptop.ts.net",
+      ),
+      remote,
+    );
+    expect(failure.kind).toBe("loopback_only");
+    expect(failure.message).toContain("Clipping is refused over laptop.ts.net");
+    expect(failure.message).toContain("`POST /api/clip`");
+    expect(failure.message).not.toContain("mdn token");
+    expect(failure.offerOptions).toBe(true);
+  });
+
+  it("blames the port when the daemon does not answer to the address", () => {
+    const remote = { daemonUrl: "http://laptop.ts.net:7337", token: "s3cret" };
+    const failure = describeClipFailure(
+      new DaemonError("bad_host", "unexpected Host header", 403, "unexpected Host header"),
+      remote,
+    );
+    expect(failure.kind).toBe("bad_host");
+    expect(failure.message).toContain("does not answer to laptop.ts.net:7337");
+    expect(failure.message).toContain("`tailnet_host`");
+    expect(failure.offerOptions).toBe(true);
+  });
+
   it("passes any other refusal through in the daemon's own words", () => {
     const failure = describeClipFailure(
       new DaemonError("refused", "wrapped", 413, "markdown is larger than 8 MiB"),
