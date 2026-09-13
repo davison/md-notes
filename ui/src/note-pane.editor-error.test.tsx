@@ -4,13 +4,10 @@ import { NotePane } from "./note-pane";
 import { resetSessions } from "./session";
 
 // The chunk that is not there. Upgrading the daemon under an open tab is the
-// real case: the hashed name this page asks for has gone, the single-page
-// fallback answers with index.html, and the import rejects.
-const chunk = vi.hoisted(() => ({ fails: true, attempts: 0 }));
+// real case: the hashed name this page asks for has gone from the bundle,
+// the daemon answers 404, and the import rejects.
 vi.mock("./editor", () => {
-  chunk.attempts++;
-  if (chunk.fails) throw new Error("Failed to fetch dynamically imported module");
-  return { Editor: () => <div class="cm-editor">editor</div> };
+  throw new Error("Failed to fetch dynamically imported module");
 });
 
 beforeEach(() => {
@@ -36,12 +33,15 @@ it("surfaces a failed editor chunk instead of waiting for it for ever", async ()
 
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toContain("The editor could not be loaded");
-  expect(alert.textContent).toContain("reloading the page");
   expect(document.body.textContent).not.toContain("Loading the editor…");
   expect(document.querySelector(".cm-editor")).toBeNull();
 
-  // Retrying asks for the chunk again rather than reusing the failure.
-  const before = chunk.attempts;
-  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-  await waitFor(() => expect(chunk.attempts).toBeGreaterThan(before));
+  // Reloading is the only offer, and the only thing that works: a module
+  // script whose fetch failed leaves a null entry in the browser's module
+  // map, so importing the same URL again rejects without a request. A
+  // "Try again" here would be a button that cannot succeed — and vitest,
+  // which re-invokes a mock factory per import, is the one environment that
+  // would have let such a test pass.
+  expect(screen.getByRole("button", { name: "Reload the page" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
 });
