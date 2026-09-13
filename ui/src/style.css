@@ -6,6 +6,16 @@
  * which is what stops a note restyling the app. See internal/render.
  */
 
+/*
+ * --bg is the code block background as well as the page's: internal/render/gencss
+ * reads these two declarations out of this file — the one before the dark
+ * media query and the one inside it — and tones the syntax highlighting
+ * against them so every token clears WCAG AA on the background it is drawn
+ * on. It expects exactly two, in that order, as six-digit hex. A third
+ * scheme (an explicit light override, say) means teaching gencss which of
+ * them is which; it refuses to generate rather than guess.
+ */
+
 :root {
   --bg: #fbfbfa;
   --fg: #1f1f1f;
