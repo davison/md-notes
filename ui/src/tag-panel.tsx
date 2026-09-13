@@ -8,7 +8,12 @@ interface Props {
   current: string;
 }
 
-function url(slug: string, current: string, tag: string | null): string {
+/**
+ * The URL for a note with a tag filter applied, or with it cleared when
+ * `tag` is null. Exported for the top bar's filter chip at narrow widths,
+ * which clears the filter from outside this panel.
+ */
+export function tagURL(slug: string, current: string, tag: string | null): string {
   const base = `/r/${encodeURIComponent(slug)}/${current
     .split("/")
     .filter(Boolean)
@@ -27,7 +32,7 @@ export function TagPanel({ slug, tags, active, current }: Props) {
   return (
     <section class="tags" aria-label="Tags">
       {active && (
-        <a class="tag-clear" href={url(slug, current, null)}>
+        <a class="tag-clear" href={tagURL(slug, current, null)}>
           Clear filter: {active}
         </a>
       )}
@@ -36,7 +41,7 @@ export function TagPanel({ slug, tags, active, current }: Props) {
           <li key={t.name}>
             <a
               class={t.name === active ? "tag active" : "tag"}
-              href={url(slug, current, t.name === active ? null : t.name)}
+              href={tagURL(slug, current, t.name === active ? null : t.name)}
               aria-current={t.name === active ? "true" : undefined}
             >
               <span class="tag-name">#{t.name}</span>

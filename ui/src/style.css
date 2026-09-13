@@ -156,7 +156,8 @@ code {
 /* The drawer and the controls that open it exist only at narrow widths. */
 .drawer-backdrop,
 .drawer-head,
-.drawer-toggle {
+.drawer-toggle,
+.tag-chip {
   display: none;
 }
 
@@ -335,6 +336,34 @@ code {
 
   .find-toggle {
     margin-left: auto;
+  }
+
+  .tag-chip {
+    display: inline-flex;
+    flex: none;
+    gap: 0.3rem;
+    align-items: center;
+    max-width: 9rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.85em;
+  }
+
+  .tag-chip:hover {
+    text-decoration: none;
+  }
+
+  .tag-chip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tag-chip-x {
+    font-size: 1.1em;
+    line-height: 1;
   }
 
   .shell .panes {

@@ -6,7 +6,7 @@ import { affects, affectsTree, type LiveUpdate, useEvents } from "./events";
 import { Navigator } from "./navigator";
 import { NotePane, UnsavedDrafts, useUnsavedGuard } from "./note-pane";
 import { SearchPane } from "./search-pane";
-import { TagPanel } from "./tag-panel";
+import { TagPanel, tagURL } from "./tag-panel";
 import { rootTabTitle, useDocumentTitle } from "./title";
 
 /**
@@ -119,6 +119,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
         <a href="/" class="brand">mdn</a>
         <span class="root-name">{root.slug}</span>
         <span class="path">{root.path}</span>
+        <TagChip slug={slug} current={current} active={activeTag} />
         <UnsavedDrafts slug={slug} current={current} />
         <FindToggle state={drawer} />
       </header>
@@ -152,6 +153,25 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The active tag filter, in the top bar. At narrow widths the tag panel is
+ * behind a drawer, so the filter that is pruning the navigator would
+ * otherwise be invisible and its only escape two taps away; the chip both
+ * says which tag is filtering and clears it. At wide widths the panel is on
+ * screen with its own clear link and the stylesheet hides this.
+ */
+function TagChip({ slug, current, active }: { slug: string; current: string; active: string | null }) {
+  if (!active) return null;
+  return (
+    <a class="tag-chip" href={tagURL(slug, current, null)} aria-label={`Clear the tag filter ${active}`}>
+      <span class="tag-chip-name">#{active}</span>
+      <span class="tag-chip-x" aria-hidden="true">
+        ×
+      </span>
+    </a>
   );
 }
 
