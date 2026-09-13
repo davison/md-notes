@@ -77,7 +77,17 @@ essentials:
    give it a **folder ID** you will recognise, and share it with the other
    devices. They pick their own local path for it; the folder ID is what makes
    them the same folder.
-4. **Keep one peer always on** if you want a laptop and a phone that are rarely
+4. **Leave the folder type at Send & Receive on every device, the phone
+   included.** This is the default, and it is the only type that matches this
+   page's premise that anything may edit the notes. The temptation on a phone
+   you think of as read-mostly is **Receive Only**, and it is a trap: in a
+   receive-only folder "Local changes are however not distributed to other
+   devices", so the occasional Markor edit never reaches your machines, and the
+   *Revert Local Changes* button the UI then offers "will cause the local
+   modifications to be undone"
+   ([folder types](https://docs.syncthing.net/users/foldertypes.html)). An edit
+   you meant to keep is one tap from being discarded.
+5. **Keep one peer always on** if you want a laptop and a phone that are rarely
    awake together to converge. Sync itself is peer-to-peer, so two devices
    exchange files only while both are running. A machine that is always up — or a
    Syncthing binary on whatever box you already leave on, reached over SSH to
@@ -175,11 +185,29 @@ the note pane, so the file name in the navigator is what tells them apart.
 Deleting it on one device deletes it everywhere once the devices sync, which is
 what you want.
 
-If conflict files keep appearing, the usual cause is two devices editing the
-same note during a stretch when they could not see each other. Syncthing's
-docs describe file versioning, which keeps the displaced copies in
-`.stversions` instead of beside the note, if you would rather the navigator
-never showed them.
+If conflict files keep appearing, the cause is two devices editing the same note
+during a stretch when they could not see each other, and the fix is upstream of
+Syncthing: sync more often, or stop editing the same note in two places at once.
+Two settings look like they might help instead, and neither does what you would
+want.
+
+*File versioning does not touch conflicts.* It archives copies superseded by
+changes **received from other devices** — "if Alice has versioning turned on and
+Bob changes a file, the old version will be archived on Alice's computer when
+that change is synced from Bob"
+([file versioning](https://docs.syncthing.net/users/versioning.html)) — and the
+conflict rename is not on that path. The losing copy is renamed in the note's own
+directory whether versioning is on or off, so turning it on leaves you with the
+`sync-conflict-` files you already had **and** a `.stversions` tree beside them.
+
+*`maxConflicts: 0` does stop them, by throwing the text away.* The
+[folder configuration](https://docs.syncthing.net/users/config.html#config-option-folder.maxconflicts)
+says setting it to `0` "disables conflict copies altogether"; what that means in
+practice is that the losing copy is deleted rather than renamed, so the edit one
+of your devices made is gone with nothing on disk to recover it from. Do not set
+it on a folder of notes. It is also per folder, per device, and conflict copies
+propagate like ordinary files — so a peer still on the default of `10` goes on
+delivering them to you anyway.
 
 ### What the daemon does with a write that arrives while you are looking
 
@@ -212,6 +240,12 @@ Read-mostly, with the occasional edit, over the same folder:
 - [**Markor**](https://github.com/gsantner/markor) — a markdown editor that
   opens a directory of files. Point it at the synced folder and it reads and
   writes the same notes.
+
+"Read-mostly" describes how you will use it, not how to configure it. The
+phone's folder is **Send & Receive** like every other — see
+[step 4](#setting-syncthing-up) — because the whole point of Markor being there
+is the edit you occasionally make, and a receive-only folder would strand it on
+the phone.
 
 There is no md-notes application on Android. The phone gets plain files and a
 plain editor, which is the point of keeping notes as plain files; the daemon and
