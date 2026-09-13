@@ -503,8 +503,14 @@ The editor is part of the UI bundle embedded in the binary, but a page that is o
 reading a note does not load it. Opening a note pulls one JavaScript chunk of about
 43 KB and 11 KB of CSS; CodeMirror and the table of languages it can highlight —
 about 200 KB over the wire — are fetched on the first `Ctrl+E` of that page, and kept
-for every later toggle in it. On loopback that first toggle takes around 55 to 65 ms,
-against about 35 ms once the editor is loaded. The per-language parsers for fenced
+for every later toggle in it. On loopback the first `Ctrl+E` of a page takes about
+50 ms and every later one about 6 ms. Opening a second page does not inherit the
+second figure: the browser has the chunk cached, so nothing is fetched, but that first
+toggle still takes about 55 ms, because what the time buys is compiling CodeMirror and
+building the editor rather than getting hold of it. If the daemon is upgraded while a
+page is open, the chunk that page would ask for is no longer in the bundle: `Ctrl+E`
+then says the editor could not be loaded and offers to try again, and reloading the
+page fetches the current one. The per-language parsers for fenced
 code are separate chunks again, one per language, fetched when a note containing such
 a block is opened in the editor — not when the block is typed in.
 
