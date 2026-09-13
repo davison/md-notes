@@ -1,4 +1,5 @@
 import { useEffect } from "preact/hooks";
+import type { Root } from "./api";
 import { hasUnsaved, type SessionState } from "./session";
 
 /**
@@ -49,6 +50,20 @@ export function fileTitle(path: string): string {
  */
 export function noteTabTitle(path: string, title: string | null, state: SessionState): string {
   return marker(state) + (title?.trim() || fileTitle(path));
+}
+
+/**
+ * The tab title the root view owns, or null when the note pane below it
+ * does. A root is named by its slug only on a page that has no note: on a
+ * URL that names one, naming the root while the roots load would put the
+ * slug on the tab for a moment between the last title and the note's own.
+ * `root` is undefined while the roots are loading and null when there is no
+ * such root — a page with neither a note nor a root behind it.
+ */
+export function rootTabTitle(root: Root | null | undefined, slug: string, hasNote: boolean): string | null {
+  if (root === null) return FALLBACK_TITLE;
+  if (hasNote) return null;
+  return root ? root.slug : slug;
 }
 
 /**
