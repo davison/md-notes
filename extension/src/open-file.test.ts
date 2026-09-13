@@ -109,6 +109,63 @@ describe("resolveOpen", () => {
     });
   });
 
+  it("names the tailnet allow-list when registering a folder is refused", async () => {
+    // Under `tailnet_host` the roots listing succeeds — it now carries the
+    // token — and the registration behind it is what the allow-list refuses.
+    const remote: Settings = { daemonUrl: "https://laptop.ts.net", token: "s3cret" };
+    const a: RootsApi = {
+      async listRoots() {
+        return [notes];
+      },
+      async registerRoot() {
+        throw new DaemonError(
+          "loopback_only",
+          "this endpoint is served on loopback only; it is not reachable under laptop.ts.net",
+          403,
+          "this endpoint is served on loopback only; it is not reachable under laptop.ts.net",
+        );
+      },
+    };
+    const result = await resolveOpen("file:///tmp/scratch/a.md", remote, a);
+    expect(result).toMatchObject({ status: "failed", kind: "loopback_only" });
+    expect((result as { message: string }).message).toContain(
+      "Registering a folder is refused over laptop.ts.net",
+    );
+    expect((result as { message: string }).message).toContain("`POST /api/roots`");
+    expect((result as { message: string }).message).toContain("mdn open DIR");
+    expect((result as { message: string }).message).not.toContain("mdn token");
+  });
+
+  it("blames the port when the daemon does not answer to the address", async () => {
+    const remote: Settings = { daemonUrl: "http://laptop.ts.net:7337", token: "s3cret" };
+    const a: RootsApi = {
+      async listRoots() {
+        throw new DaemonError("bad_host", "unexpected Host header", 403, "unexpected Host header");
+      },
+      async registerRoot() {
+        throw new Error("not reached");
+      },
+    };
+    const result = await resolveOpen("file:///home/you/notes/a.md", remote, a);
+    expect(result).toMatchObject({ status: "failed", kind: "bad_host" });
+    expect((result as { message: string }).message).toContain(
+      "does not answer to laptop.ts.net:7337",
+    );
+    expect((result as { message: string }).message).toContain("`tailnet_host`");
+  });
+
+  it("opens a file inside a registered root under a tailnet daemon URL", async () => {
+    const remote: Settings = { daemonUrl: "https://laptop.ts.net", token: "s3cret" };
+    const a = api([notes]);
+    expect(await resolveOpen("file:///home/you/notes/deep/a.md", remote, a)).toEqual({
+      status: "open",
+      url: "https://laptop.ts.net/r/notes/deep/a.md",
+      slug: "notes",
+      note: "deep/a.md",
+    });
+    expect(a.registered).toEqual([]);
+  });
+
   it("turns an unexpected error into a failure rather than rejecting", async () => {
     const a: RootsApi = {
       async listRoots() {
