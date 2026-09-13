@@ -121,7 +121,9 @@ configured `tailnet_host`, to an authenticated caller; `POST /api/roots` and
 | `POST /api/clip` | Creates a note from `{url, title, markdown, kind}`; needs the token. See [Clipping a web page](#clipping-a-web-page) |
 
 Everything else serves the embedded UI bundle, falling back to `index.html` so
-client-side routes such as `/r/notes/some/note.md` load.
+client-side routes such as `/r/notes/some/note.md` load. Assets are served
+compressed and cached — see [Editing](#editing) for what that costs and saves — and
+the fallback `index.html` is, like the file itself, `no-cache` with an `ETag`.
 
 ### Authentication
 
@@ -497,19 +499,28 @@ CRLF when LF is not in the tie. A note that uses one ending throughout therefore
 keeps every byte through an edit; a note that already *mixes* endings comes back
 uniform in its dominant one the first time it is edited.
 
-The editor is part of the UI bundle embedded in the binary, and most of it loads
-whether or not you open it. The page pulls two JavaScript chunks — about 710 KB
-together, being CodeMirror itself and the table of languages it can highlight — plus
-11 KB of CSS, all of it before `Ctrl+E` is ever pressed. The daemon sets no
-`Content-Encoding`, so that is what crosses loopback rather than a compressed third
-of it, and no `Cache-Control`, `ETag` or `Last-Modified` either, so nothing is
-cached: every page load fetches all of it again, and a conditional request is
-answered with the whole file rather than a 304. Moving between notes does not repay
-it — navigation inside the app is client-side and fetches only the note — but a
-reload, a new tab, or a note URL opened directly does. Over loopback it costs
-milliseconds. The per-language parsers for fenced code are separate chunks, one per
-language, fetched when a note containing such a block is opened in the editor — not
-when the block is typed in.
+The editor is part of the UI bundle embedded in the binary, but a page that is only
+reading a note does not load it. Opening a note pulls one JavaScript chunk of about
+43 KB and 11 KB of CSS; CodeMirror and the table of languages it can highlight —
+about 200 KB over the wire — are fetched on the first `Ctrl+E` of that page, and kept
+for every later toggle in it. On loopback that first toggle takes around 55 to 65 ms,
+against about 35 ms once the editor is loaded. The per-language parsers for fenced
+code are separate chunks again, one per language, fetched when a note containing such
+a block is opened in the editor — not when the block is typed in.
+
+What the daemon serves is compressed and cacheable. The build writes a brotli and a
+gzip copy beside each asset, and the daemon serves whichever the request's
+`Accept-Encoding` asks for — brotli first, gzip next, the plain file if the client
+takes neither or the build could not shrink that file — always with
+`Vary: Accept-Encoding`, the source file's `Content-Type`, and a `Content-Length`.
+The hashed files under `/assets/` carry `Cache-Control: public, max-age=31536000,
+immutable`: their names change when their content does, so a browser that has one
+never asks for it again. `index.html` carries `no-cache`, which means revalidate
+rather than do not store, and every response carries an `ETag` over the bytes actually
+sent, so the revalidation is answered with a 304 and the page itself crosses the wire
+only when it has changed. A first load of a note transfers about 17 KB of assets; a
+reload, a new tab, or a note URL opened directly transfers none at all, and only the
+JSON for the note itself.
 
 ### Autosave and the save states
 
