@@ -71,52 +71,77 @@ options**):
 > work and is not here. Everything else on this page works against a daemon
 > built from `main`.
 
-The daemon URL may name a daemon reached over the tailnet rather than one on this
-machine, and the browser will ask for permission for that address — but **nothing
-the extension does works under such a name today**, whatever token is pasted.
+**Test connection** asks the daemon for its roots and says what came back.
 
-- Clipping and registering a new folder are served on loopback only, so both are
-  refused with `loopback_only` under a `tailnet_host` name. That is deliberate; see
-  [What is reachable under that name](introduction.md#what-is-reachable-under-that-name-and-what-is-not).
-- Opening a local file fails too, including one already inside a registered root.
-  The extension asks the daemon for its roots *without* the token — a GET from its
-  background context carries no `Origin`, so on loopback the guard lets it through
-  and the intercept works with nothing pasted — and under `tailnet_host` nothing is
-  served unauthenticated, so that request is `401` and the attempt ends there. The
-  badge and the popup then say **the daemon rejected the token**, which is
-  misleading: the token is fine, it was simply never sent.
-- **Test connection** below fails there too, with that same message and for that
-  same reason: its first question — is a daemon there at all? — is the same
-  unauthenticated roots read, so it never reaches the read that carries your token.
-  No token makes it succeed against such a name, and an empty one gives the same
-  answer. A genuinely wrong token on a *loopback* daemon does say a little more —
-  `daemon answered: 1 root, but …` before the same sentence — so the two cases differ
-  by a prefix nothing tells you to read, and on the file-URL surface not even by that.
-
-Reading your notes from another device is the app's job, not the extension's: open
-`https://<tailnet_host>/` in the browser there and log in. Leave the extension's
-daemon URL pointing at the daemon on this machine.
-[#51](https://github.com/davison/md-notes/issues/51) is the capture for making the
-extension work against a tailnet name.
-
-**Test connection** asks the daemon for its roots and says what came back. If
-a token is stored it also presents one the daemon cannot have issued, to find
-out whether this daemon judges tokens at all, and only then reports yours as
-accepted or rejected — a daemon old enough to predate the token answers
+Against a daemon on this machine it also presents a token the daemon cannot have
+issued, to find out whether this daemon judges tokens at all, and only then reports
+yours as accepted or rejected — a daemon old enough to predate the token answers
 everything, so a plain success would say nothing about your token.
+
+Against a daemon that is *not* on this machine it asks one question instead, and
+asks it with your token: an unauthenticated read there is a `401` whatever the
+token is, and a daemon that serves nothing unauthenticated has already answered
+whether it judges tokens. A success there says what the tailnet allow-list leaves
+working — `daemon answered: 2 roots, and the token was accepted; opening a file
+already inside a registered root works here, but registering a folder and clipping
+are refused — the daemon serves both on loopback only` — so the button cannot be
+read as a clean bill of health for actions that will still be refused.
 
 What needs the token, and what does not:
 
-| Action | Token | Works |
-|--------|-------|-------|
-| Reading the list of roots | not needed — a GET from the extension's background context carries no `Origin` header, so the daemon's guard lets it through | yes |
-| Opening a file that is already inside a registered root | not needed | yes |
-| Registering a new folder as a root | **needed** — the POST carries `Origin: chrome-extension://…`, which the daemon refuses without the token | yes |
-| Clipping a page or a selection | **needed** — `POST /api/clip` requires it | yes |
+| Action | Token on a loopback daemon | Over the tailnet |
+|--------|----------------------------|------------------|
+| Reading the list of roots | not needed — a GET from the extension's background context carries no `Origin` header, so the daemon's guard lets it through | **needed**, and sent automatically whenever the daemon URL is not loopback |
+| Opening a file that is already inside a registered root | not needed | **needed**; works |
+| Registering a new folder as a root | **needed** — the POST carries `Origin: chrome-extension://…`, which the daemon refuses without the token | refused whatever the token: `loopback_only` |
+| Clipping a page or a selection | **needed** — `POST /api/clip` requires it | refused whatever the token: `loopback_only` |
 
-So the extension works for notes already under a registered root before you
-paste anything, and says what is missing the first time it needs to register
-a folder.
+So against a daemon on this machine the extension works for notes already under a
+registered root before you paste anything, and says what is missing the first time
+it needs to register a folder. Against one reached over the tailnet the token is
+needed from the first action, and two of the three stay refused.
+
+### A daemon reached over the tailnet
+
+The daemon URL may name a daemon reached over the tailnet — `https://laptop.ts.net`,
+or `http://laptop.ts.net:7337` if you reach the daemon's own port rather than a
+`tailscale serve` proxy — rather than one on this machine. The browser asks for
+permission for that address when you save, and **the token is not optional
+there**: under a `tailnet_host` name the daemon serves nothing at all without it,
+so paste the token before anything else.
+
+With the token pasted, one of the extension's three actions works and two do not:
+
+- **Opening a local file already inside a registered root works.** The extension
+  presents the token on the roots listing whenever the daemon URL is not loopback,
+  so the listing is answered, the file is matched against a root, and the tab is
+  sent to that note's address on the tailnet name. (Whether the note then renders
+  or the daemon's login page does is the app's business: log in at
+  `https://<tailnet_host>/` once and the session cookie covers the rest.)
+- **Registering a new folder is refused**, and so is **clipping**. `POST /api/roots`
+  and `POST /api/clip` are served on loopback only — the first is the path from a
+  network credential to any directory on the machine — so the daemon answers both
+  `403 loopback_only` under a tailnet name. That is deliberate and is not a token
+  problem; see
+  [What is reachable under that name](introduction.md#what-is-reachable-under-that-name-and-what-is-not).
+  The popup says so by name, before you press anything: the daemon line reads
+  *over the tailnet, opening a file already inside a registered root works here,
+  but registering a folder and clipping are refused*.
+
+So a local markdown file that lives under a root you registered on the daemon's own
+machine opens over the tailnet; one that does not is left alone with the
+explanation above. Register the folder there — `mdn open DIR` — and it opens after
+that.
+
+> **Not yet.** Clipping over the tailnet is not offered. Widening the allow-list
+> for `POST /api/clip` is a security decision that has not been taken, so the
+> refusal is reported honestly rather than worked around
+> ([#60](https://github.com/davison/md-notes/issues/60)).
+
+If the daemon answers `unexpected Host header`, the address and the daemon's
+`tailnet_host` disagree — almost always the port, which `tailnet_host` has to carry
+unless a `tailscale serve` proxy terminates TLS for it on 443. The popup and the
+connection test both say that rather than passing the daemon's four words through.
 
 ## Clipping a page or a selection
 
@@ -264,7 +289,10 @@ text the browser was going to show anyway, and the toolbar icon gains a red
 | `daemon not reachable at http://localhost:7337` | Nothing is listening. Start `mdn serve`, or fix the daemon URL in the options. |
 | `cross-origin request refused: no token is stored` | The file is not in any registered root, and registering one needs the token. Run `mdn token` and paste it — or register the folder with `mdn open DIR` instead. |
 | `the daemon refused the extension's origin even with a token` | The daemon does not know about tokens: it was built before the token existed. Rebuild it, or use `mdn open DIR`. |
-| `the daemon rejected the token` | The token is wrong or has been rotated — `mdn token` prints the current one. It also appears, misleadingly, when the daemon URL names a `tailnet_host`, where the roots call is refused for carrying no token at all ([#51](https://github.com/davison/md-notes/issues/51)). |
+| `the daemon rejected the token` | The token is wrong or has been rotated — `mdn token` prints the current one. |
+| `the daemon serves nothing without a token` | The daemon URL names a `tailnet_host` and no token is stored. Nothing is served unauthenticated under that name; paste the token on the options page. |
+| `Registering a folder is refused over <host>` | The daemon URL names a `tailnet_host`, the file is not inside any registered root, and `POST /api/roots` is served on loopback only. Register the folder on the daemon's own machine with `mdn open DIR`; the file opens over the tailnet after that. |
+| `The daemon does not answer to <host>` | The address and the daemon's `tailnet_host` disagree — usually the port, which `tailnet_host` must carry unless a `tailscale serve` proxy terminates TLS on 443. |
 | `path must be absolute`, `not a directory` | The daemon refused the folder; its own message is passed through. |
 
 Whatever the reason, the page itself is untouched. Fix the cause and reload
@@ -287,7 +315,7 @@ The manifest asks for the least that makes the above work. From
 | `scripting` | Putting the extractor and the markdown converter into that tab. `activeTab` says *which* page may be read; `scripting` is what allows code to be run in it at all. |
 | `host_permissions: http://localhost:7337/*`, `http://127.0.0.1:7337/*` | Talking to the daemon. Chromium enforces the port, so this grants no access to any other service on your machine. |
 | `host_permissions: file:///*` | Seeing that a tab has navigated to a local markdown file. Inert until you switch **Allow access to file URLs** on. |
-| `optional_host_permissions: http://*/*`, `https://*/*` | Not granted at install. Only requested, with the browser's own prompt, if you set a daemon URL that is not the default — a different port, or a name reached over the tailnet — though no extension action works under a tailnet name today ([#51](https://github.com/davison/md-notes/issues/51); see above). |
+| `optional_host_permissions: http://*/*`, `https://*/*` | Not granted at install. Only requested, with the browser's own prompt, if you set a daemon URL that is not the default — a different port, or a name reached over the tailnet. Under a tailnet name the token is required and only opening a file already inside a registered root works; see [A daemon reached over the tailnet](#a-daemon-reached-over-the-tailnet). |
 
 Deliberately **not** asked for:
 

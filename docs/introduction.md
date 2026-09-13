@@ -810,12 +810,13 @@ that can reach the port runs as you and can read those files anyway. Over the
 tailnet it is not, so it stays on the machine. `POST /api/clip` is refused because
 nothing off the machine clips: the extension's daemon URL is `http://localhost:7337`
 by default, and it runs where the notes are. Pointing that URL at the tailnet name
-instead does not buy a working extension: its clips and folder registrations meet
-the same `loopback_only` as everybody else's, and even opening a local file fails,
-because the extension asks for the roots list without the token — which loopback
-allows and this name does not
-([#51](https://github.com/davison/md-notes/issues/51)). Reading notes from another
-device is the UI's job in the browser there.
+buys exactly one of the extension's three actions: with the token pasted it opens a
+local markdown file that is already inside a registered root, because the roots
+listing it depends on carries the token whenever the daemon URL is not loopback.
+Its clips and folder registrations meet the same `loopback_only` as everybody
+else's, and the extension names that refusal rather than blaming the token — see
+[the extension page](extension.md#a-daemon-reached-over-the-tailnet). Reading notes
+from another device is still the UI's job in the browser there.
 
 So a remote device reads, searches, and edits the notes the daemon already serves.
 It cannot add a root, and `mdn open` remains a command for the daemon's own machine.
