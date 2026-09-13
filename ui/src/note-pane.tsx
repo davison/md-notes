@@ -16,23 +16,39 @@ const loadEditor = () => import("./editor");
 type EditorComponent = Awaited<ReturnType<typeof loadEditor>>["Editor"];
 let loadedEditor: EditorComponent | null = null;
 
-/** The editor component, once wanted and arrived; null until then. */
-function useEditor(wanted: boolean): EditorComponent | null {
+/**
+ * The editor component once wanted and arrived, and whether the attempt to
+ * fetch it failed. The chunk can genuinely go missing: upgrade the daemon
+ * under an open tab and the hashed name this page asks for is no longer in
+ * the bundle, so the request lands on the single-page fallback and the
+ * import rejects. Without a rejection path the pane would wait for it for
+ * ever, which is worse than the static import this replaced.
+ */
+function useEditor(wanted: boolean): { Editor: EditorComponent | null; failed: boolean; retry: () => void } {
   // The initialiser is a thunk because the state *is* a function, which a
   // bare value would be mistaken for a lazy initialiser.
   const [editor, setEditor] = useState<EditorComponent | null>(() => loadedEditor);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (!wanted || editor) return;
+    if (!wanted || editor || failed) return;
     let live = true;
-    void loadEditor().then((mod) => {
-      loadedEditor = mod.Editor;
-      if (live) setEditor(() => mod.Editor);
-    });
+    void loadEditor().then(
+      (mod) => {
+        loadedEditor = mod.Editor;
+        if (live) setEditor(() => mod.Editor);
+      },
+      () => {
+        if (live) setFailed(true);
+      },
+    );
     return () => {
       live = false;
     };
-  }, [wanted, editor]);
-  return editor;
+  }, [wanted, editor, failed]);
+  // Clearing the failure re-runs the effect, and the browser refetches: a
+  // module that never loaded was never registered.
+  const retry = useCallback(() => setFailed(false), []);
+  return { Editor: editor, failed, retry };
 }
 
 /** Re-renders the caller whenever the session changes. */
@@ -140,7 +156,7 @@ export function NotePane({ slug, path, version = 0, line = null }: Props) {
       cancelled = true;
     };
   }, [mode, slug, path, generation, unread, lost]);
-  const Editor = useEditor(mode === "edit");
+  const editor = useEditor(mode === "edit");
 
   const toggle = useCallback(() => setMode((m) => (m === "view" ? "edit" : "view")), []);
 
@@ -169,8 +185,7 @@ export function NotePane({ slug, path, version = 0, line = null }: Props) {
         <main class="editor-body">
           {state.status === "loading" && <p class="muted pad">Loading…</p>}
           {state.status === "error" && <p class="error pad">{state.error?.message}</p>}
-          {state.status !== "loading" && state.status !== "error" && !Editor && <p class="muted pad">Loading the editor…</p>}
-          {state.status !== "loading" && state.status !== "error" && Editor && <Editor session={session} />}
+          {state.status !== "loading" && state.status !== "error" && <EditorBody editor={editor} session={session} />}
         </main>
       ) : (
         <main class="note-body">
@@ -178,6 +193,21 @@ export function NotePane({ slug, path, version = 0, line = null }: Props) {
         </main>
       )}
     </div>
+  );
+}
+
+/** The editor, the wait for its chunk, or the failure to fetch it. */
+function EditorBody({ editor, session }: { editor: ReturnType<typeof useEditor>; session: Session }) {
+  if (editor.Editor) return <editor.Editor session={session} />;
+  if (!editor.failed) return <p class="muted pad">Loading the editor…</p>;
+  return (
+    <p class="error pad" role="alert">
+      The editor could not be loaded. If the daemon was updated while this page was open, reloading the page will
+      fetch the current one.{" "}
+      <button type="button" onClick={editor.retry}>
+        Try again
+      </button>
+    </p>
   );
 }
 
