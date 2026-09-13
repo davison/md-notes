@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
 import { fetchTags, fetchTree, listRoots, type Root, type Tag, type TreeNode } from "./api";
+import { Drawer, FindToggle, NavToggle, useDrawer } from "./drawer";
 import { affects, affectsTree, type LiveUpdate, useEvents } from "./events";
 import { Navigator } from "./navigator";
 import { NotePane, UnsavedDrafts, useUnsavedGuard } from "./note-pane";
@@ -12,6 +13,11 @@ import { rootTabTitle, useDocumentTitle } from "./title";
  * The three-pane shell for one root: navigator, note, and the search and
  * tags pane. `note` is the wildcard remainder of
  * the route, already URL-decoded by the router.
+ *
+ * Below the narrow breakpoint the same markup is a different application:
+ * the note has the viewport under a compact top bar, and the two side panes
+ * are tabs of one drawer the top bar's burger and magnifier open. The
+ * stylesheet makes that switch; see ./drawer.
  */
 export function RootView({ slug, note }: { slug: string; note?: string }) {
   const [root, setRoot] = useState<Root | null | undefined>(undefined);
@@ -23,6 +29,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
   const [treeVersion, setTreeVersion] = useState(0);
   const [tags, setTags] = useState<Tag[] | null>(null);
   const [live, setLive] = useState<LiveUpdate | null>(null);
+  const drawer = useDrawer();
   const current = note ?? "";
   const { query } = useLocation();
   const line = query.l && /^\d+$/.test(query.l) ? Number(query.l) : null;
@@ -108,25 +115,33 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
   return (
     <div class="shell">
       <header class="topbar">
+        <NavToggle state={drawer} />
         <a href="/" class="brand">mdn</a>
         <span class="root-name">{root.slug}</span>
         <span class="path">{root.path}</span>
         <UnsavedDrafts slug={slug} current={current} />
+        <FindToggle state={drawer} />
       </header>
-      <aside class="nav">
-        <LiveUpdateNotice live={live} />
-        {treeError && <p class="error">{treeError}</p>}
-        {!tree && !treeError && <p class="muted">Loading…</p>}
-        {tree && (
-          <Navigator
-            slug={slug}
-            tree={tree}
-            current={current}
-            only={only}
-            query={activeTag ? `?tag=${encodeURIComponent(activeTag)}` : ""}
-          />
-        )}
-      </aside>
+      <Drawer state={drawer}>
+        <aside class="nav">
+          <LiveUpdateNotice live={live} />
+          {treeError && <p class="error">{treeError}</p>}
+          {!tree && !treeError && <p class="muted">Loading…</p>}
+          {tree && (
+            <Navigator
+              slug={slug}
+              tree={tree}
+              current={current}
+              only={only}
+              query={activeTag ? `?tag=${encodeURIComponent(activeTag)}` : ""}
+            />
+          )}
+        </aside>
+        <aside class="side">
+          <SearchPane slug={slug} refresh={treeVersion} keep={activeTag ? { tag: activeTag } : {}} />
+          <TagPanel slug={slug} tags={tags} active={activeTag} current={current} />
+        </aside>
+      </Drawer>
       <div class="note">
         {current ? (
           <NotePane key={slug + "\0" + current} slug={slug} path={current} version={noteVersion} line={line} />
@@ -136,10 +151,6 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
           </main>
         )}
       </div>
-      <aside class="side">
-        <SearchPane slug={slug} refresh={treeVersion} keep={activeTag ? { tag: activeTag } : {}} />
-        <TagPanel slug={slug} tags={tags} active={activeTag} current={current} />
-      </aside>
     </div>
   );
 }

@@ -44,6 +44,8 @@ function mockApi() {
           ],
         };
       else if (url === "/api/r/n/tags") body = { tags: [{ name: "x", count: 1, notes: ["b.md"] }] };
+      else if (url.startsWith("/api/r/n/search"))
+        body = { hits: [{ path: "b.md", line: 3, text: "a needle here", matches: [[2, 8]] }], truncated: false };
       else if (url.includes("/source/")) body = { source: "body\n", revision: "r1" };
       else body = { path: "docs/a.md", title: "A", html: "<p>body</p>" };
       return Promise.resolve({ ok: true, status: 200, statusText: "OK", json: () => Promise.resolve(body) } as Response);
@@ -217,5 +219,123 @@ describe("watch coverage", () => {
     const notice = await screen.findByText(/Live update covers/);
     expect(notice.textContent).toContain("8,192 of 12,690 directories");
     expect(notice.textContent).toContain("raise max_watches above 8,192");
+  });
+});
+
+describe("RootView drawer at narrow widths", () => {
+  // The stylesheet, not the markup, decides whether the drawer's chrome is
+  // on screen: here everything is in the document at every width, so these
+  // exercise the behaviour the media query switches on.
+  const panes = () => document.querySelector(".panes")!;
+  const burger = () => screen.getByLabelText("Open navigation");
+  const magnifier = () => screen.getByLabelText("Search and tags");
+  const backdrop = () => document.querySelector(".drawer-backdrop");
+
+  async function mounted(url = "/r/n/docs/a.md") {
+    mount(url);
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+  }
+
+  it("starts closed, with no dialog and nothing to tap through", async () => {
+    await mounted();
+    expect(panes().classList.contains("open")).toBe(false);
+    expect(panes().getAttribute("role")).toBeNull();
+    expect(panes().getAttribute("aria-modal")).toBeNull();
+    expect(burger().getAttribute("aria-expanded")).toBe("false");
+    expect(backdrop()).toBeNull();
+  });
+
+  it("the burger opens it on the notes tab as a labelled modal, with focus inside", async () => {
+    await mounted();
+    fireEvent.click(burger());
+    expect(panes().classList.contains("open")).toBe(true);
+    expect(panes().getAttribute("data-tab")).toBe("notes");
+    expect(panes().getAttribute("role")).toBe("dialog");
+    expect(panes().getAttribute("aria-modal")).toBe("true");
+    expect(panes().getAttribute("aria-label")).toBeTruthy();
+    expect(burger().getAttribute("aria-expanded")).toBe("true");
+    expect(burger().getAttribute("aria-controls")).toBe(panes().id);
+    expect(panes().contains(document.activeElement)).toBe(true);
+    expect(backdrop()).toBeTruthy();
+  });
+
+  it("the magnifier opens the same drawer on the search tab, in the search box", async () => {
+    await mounted();
+    fireEvent.click(magnifier());
+    expect(panes().classList.contains("open")).toBe(true);
+    expect(panes().getAttribute("data-tab")).toBe("find");
+    expect(document.activeElement).toBe(screen.getByLabelText("Search notes"));
+  });
+
+  it("Escape closes it and hands focus back to the button that opened it", async () => {
+    await mounted();
+    fireEvent.click(burger());
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(panes().classList.contains("open")).toBe(false);
+    expect(document.activeElement).toBe(burger());
+  });
+
+  it("a tap on the backdrop closes it", async () => {
+    await mounted();
+    fireEvent.click(magnifier());
+    fireEvent.click(backdrop()!);
+    expect(panes().classList.contains("open")).toBe(false);
+    expect(document.activeElement).toBe(magnifier());
+  });
+
+  it("the close button closes it", async () => {
+    await mounted();
+    fireEvent.click(burger());
+    fireEvent.click(screen.getByLabelText("Close navigation"));
+    expect(panes().classList.contains("open")).toBe(false);
+  });
+
+  it("selecting a note closes it, since the drawer covers the note", async () => {
+    await mounted();
+    fireEvent.click(burger());
+    fireEvent.click(screen.getByText("b.md"));
+    expect(panes().classList.contains("open")).toBe(false);
+  });
+
+  it("selecting a search hit closes it", async () => {
+    await mounted();
+    fireEvent.click(magnifier());
+    fireEvent.input(screen.getByLabelText("Search notes"), { target: { value: "needle" } });
+    const hit = await screen.findByText("needle");
+    expect(panes().classList.contains("open")).toBe(true);
+    fireEvent.click(hit);
+    expect(panes().classList.contains("open")).toBe(false);
+  });
+
+  it("selecting a tag shows the notes tab rather than closing, so the filter is visible", async () => {
+    await mounted();
+    fireEvent.click(magnifier());
+    fireEvent.click(document.querySelector(".tags .tag")!);
+    expect(panes().classList.contains("open")).toBe(true);
+    expect(panes().getAttribute("data-tab")).toBe("notes");
+  });
+
+  it("keeps the navigator's expanded directories across open and close", async () => {
+    await mounted();
+    fireEvent.click(burger());
+    fireEvent.click(screen.getByText("docs"));
+    expect(screen.queryByText("a.md")).toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(burger());
+    expect(screen.queryByText("a.md")).toBeNull();
+    fireEvent.click(screen.getByText("docs"));
+    expect(screen.getByText("a.md")).toBeTruthy();
+  });
+
+  it("cycles Tab within the open drawer, skipping the tab that is not shown", async () => {
+    await mounted();
+    fireEvent.click(burger());
+    const inside = [...panes().querySelectorAll<HTMLElement>("a[href], button, input")].filter((n) => !n.closest(".side"));
+    const last = inside[inside.length - 1];
+    last.focus();
+    fireEvent.keyDown(panes(), { key: "Tab" });
+    expect(document.activeElement).toBe(inside[0]);
+    fireEvent.keyDown(panes(), { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(last);
   });
 });
