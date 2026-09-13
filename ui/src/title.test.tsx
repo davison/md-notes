@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { EditorView } from "@codemirror/view";
 import { LocationProvider } from "preact-iso";
@@ -125,6 +125,10 @@ afterEach(() => {
 
 const ctrlE = { key: "e", ctrlKey: true };
 const editorText = () => document.querySelector(".cm-content")?.textContent ?? "";
+/** How many times the rendered note has been asked for. */
+const noteRequests = () =>
+  (fetch as unknown as Mock).mock.calls.filter(([u]) => String(u).startsWith("/api/r/n/note/")).length;
+
 /** Replaces the mounted editor's document, as typing would. */
 function type(text: string) {
   const view = EditorView.findFromDOM(document.querySelector(".cm-editor")!)!;
@@ -169,6 +173,33 @@ describe("the tab title over an open note", () => {
     await waitFor(() => expect(document.title).toBe(`${UNSAVED_MARKER} A Rendered Heading`));
     await waitFor(() => expect(document.title).toBe("A Rendered Heading"), { timeout: 3000 });
     expect(file!.source).toBe("edited\n");
+  });
+
+  it("asks for nothing more when the reader's own typing reaches disk", async () => {
+    // The trade-off recorded on #56 rests on this: the pane re-asks when the
+    // text under the editor is replaced from outside it, and a save of the
+    // reader's own typing is not that. Adding the base revision to the
+    // effect's dependencies would turn on a render request per autosave, and
+    // only this test would notice.
+    const { rerender } = render(<NotePane slug="n" path="docs/a.md" version={0} />);
+    await waitFor(() => expect(document.title).toBe("A Rendered Heading"));
+    fireEvent.keyDown(document.body, ctrlE);
+    await waitFor(() => expect(editorText()).toContain("body"));
+    // One for the rendered view, one for the pane on opening the editor.
+    await waitFor(() => expect(noteRequests()).toBe(2));
+
+    type("# My Own New H1\n");
+    noteTitle = "My Own New H1";
+    await waitFor(() => expect(document.title).toBe(`${UNSAVED_MARKER} A Rendered Heading`));
+    await waitFor(() => expect(file!.source).toBe("# My Own New H1\n"), { timeout: 3000 });
+    await waitFor(() => expect(document.title).toBe("A Rendered Heading"));
+    // The daemon's change event for that save, which finds the file already
+    // matching the session's base and replaces nothing.
+    rerender(<NotePane slug="n" path="docs/a.md" version={1} />);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(noteRequests()).toBe(2);
+    // So the tab holds the title it had: the residual the record names.
+    expect(document.title).toBe("A Rendered Heading");
   });
 
   it("follows a live update that lands while the editor is open", async () => {
