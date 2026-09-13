@@ -501,7 +501,7 @@ uniform in its dominant one the first time it is edited.
 
 The editor is part of the UI bundle embedded in the binary, but a page that is only
 reading a note does not load it. Opening a note pulls one JavaScript chunk of about
-43 KB and 11 KB of CSS; CodeMirror and the table of languages it can highlight —
+43 KB and 12 KB of CSS; CodeMirror and the table of languages it can highlight —
 about 200 KB over the wire — are fetched on the first `Ctrl+E` of that page, and kept
 for every later toggle in it. On loopback the first `Ctrl+E` of a page takes about
 50 ms and every later one about 6 ms. Opening a second page does not inherit the
