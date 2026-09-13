@@ -7,7 +7,7 @@ import { Home } from "./home";
 import { NotePane } from "./note-pane";
 import { RootView } from "./root-view";
 import { resetSessions, type SessionState } from "./session";
-import { CONFLICT_MARKER, FALLBACK_TITLE, UNSAVED_MARKER, fileName, marker, noteTabTitle } from "./title";
+import { CONFLICT_MARKER, FALLBACK_TITLE, UNSAVED_MARKER, fileTitle, marker, noteTabTitle, rootTabTitle } from "./title";
 
 /** A session state with only the fields the title rules read. */
 function state(patch: Partial<SessionState> = {}): SessionState {
@@ -17,11 +17,31 @@ function state(patch: Partial<SessionState> = {}): SessionState {
 describe("the title rules", () => {
   it("names a note by the daemon's title, and by its file name until one arrives", () => {
     expect(noteTabTitle("docs/a.md", "A Heading", state())).toBe("A Heading");
-    expect(noteTabTitle("docs/a.md", null, state())).toBe("a.md");
+    expect(noteTabTitle("docs/a.md", null, state())).toBe("a");
     // A title that is only whitespace is no title.
-    expect(noteTabTitle("docs/a.md", "   ", state())).toBe("a.md");
-    expect(fileName("a.md")).toBe("a.md");
-    expect(fileName("docs/deep/a.md")).toBe("a.md");
+    expect(noteTabTitle("docs/a.md", "   ", state())).toBe("a");
+  });
+
+  it("falls back to the file name the daemon would use: the stem, not the whole name", () => {
+    expect(fileTitle("a.md")).toBe("a");
+    expect(fileTitle("docs/deep/file-name.md")).toBe("file-name");
+    expect(fileTitle("docs/a.b.md")).toBe("a.b");
+    expect(fileTitle("no-extension")).toBe("no-extension");
+    // All extension and no name: the daemon's trim would leave nothing.
+    expect(fileTitle(".hidden")).toBe(".hidden");
+  });
+
+  it("gives the root's slug only to a page with no note", () => {
+    const root = { slug: "n", path: "/n", kind: "notes" } as const;
+    expect(rootTabTitle(root, "n", false)).toBe("n");
+    // A note is named by the pane below, which knows it.
+    expect(rootTabTitle(root, "n", true)).toBe(null);
+    // Still loading: the slug, but never over a note that is about to be named.
+    expect(rootTabTitle(undefined, "n", false)).toBe("n");
+    expect(rootTabTitle(undefined, "n", true)).toBe(null);
+    // No such root: a page with neither a note nor a root.
+    expect(rootTabTitle(null, "n", false)).toBe(FALLBACK_TITLE);
+    expect(rootTabTitle(null, "n", true)).toBe(FALLBACK_TITLE);
   });
 
   it("marks the unsaved states, and a conflict over them", () => {
@@ -115,15 +135,19 @@ describe("the tab title over an open note", () => {
   it("is the note's own title, and the file name while the daemon has not answered", async () => {
     render(<NotePane slug="n" path="docs/a.md" />);
     // Before the render lands, the pane can only name the file.
-    expect(document.title).toBe("a.md");
+    expect(document.title).toBe("a");
     await waitFor(() => expect(document.title).toBe("A Rendered Heading"));
   });
 
-  it("falls back to the file name when the note cannot be rendered", async () => {
+  it("gives up the title of a note that stops rendering", async () => {
+    // Rendered first, so there is a title to give up: a note deleted under
+    // an open tab must not leave its name on it.
+    const { rerender } = render(<NotePane slug="n" path="docs/a.md" version={0} />);
+    await waitFor(() => expect(document.title).toBe("A Rendered Heading"));
     file = null;
-    render(<NotePane slug="n" path="docs/a.md" />);
+    rerender(<NotePane slug="n" path="docs/a.md" version={1} />);
     await waitFor(() => expect(screen.getByText("not found")).toBeTruthy());
-    expect(document.title).toBe("a.md");
+    await waitFor(() => expect(document.title).toBe("a"));
   });
 
   it("follows a live update of the note's title", async () => {
@@ -145,6 +169,44 @@ describe("the tab title over an open note", () => {
     await waitFor(() => expect(document.title).toBe(`${UNSAVED_MARKER} A Rendered Heading`));
     await waitFor(() => expect(document.title).toBe("A Rendered Heading"), { timeout: 3000 });
     expect(file!.source).toBe("edited\n");
+  });
+
+  it("follows a live update that lands while the editor is open", async () => {
+    const { rerender } = render(<NotePane slug="n" path="docs/a.md" version={0} />);
+    await waitFor(() => expect(document.title).toBe("A Rendered Heading"));
+    fireEvent.keyDown(document.body, ctrlE);
+    await waitFor(() => expect(editorText()).toContain("body"));
+    // The rendered view is unmounted, so nothing there can report the title.
+    expect(document.querySelector(".note-body")).toBeNull();
+    noteTitle = "Retitled While Editing";
+    file = { source: "# Retitled While Editing\n", revision: "r2" };
+    rerender(<NotePane slug="n" path="docs/a.md" version={1} />);
+    await waitFor(() => expect(editorText()).toContain("Retitled While Editing"));
+    await waitFor(() => expect(document.title).toBe("Retitled While Editing"));
+  });
+
+  it("follows the file when a conflict is resolved by loading it", async () => {
+    const { rerender } = render(<NotePane slug="n" path="docs/a.md" version={0} />);
+    await waitFor(() => expect(document.title).toBe("A Rendered Heading"));
+    fireEvent.keyDown(document.body, ctrlE);
+    await waitFor(() => expect(editorText()).toContain("body"));
+    type("mine\n");
+    noteTitle = "Theirs Heading";
+    file = { source: "# Theirs Heading\n", revision: "r9" };
+    rerender(<NotePane slug="n" path="docs/a.md" version={1} />);
+    await waitFor(() => expect(document.title).toBe(`${CONFLICT_MARKER} A Rendered Heading`));
+    fireEvent.click(screen.getByRole("button", { name: "Load the file" }));
+    await waitFor(() => expect(editorText()).toContain("Theirs Heading"));
+    // The marker goes with the conflict, and the title with the draft it named.
+    await waitFor(() => expect(document.title).toBe("Theirs Heading"));
+  });
+
+  it("asks for the title of a note opened straight into the editor", async () => {
+    // A recovered draft opens the editor without ever rendering the note.
+    localStorage.setItem("mdn:draft:n\u0000docs/a.md", JSON.stringify({ revision: "r1", draft: "mine\n" }));
+    render(<NotePane slug="n" path="docs/a.md" />);
+    await waitFor(() => expect(editorText()).toContain("mine"));
+    await waitFor(() => expect(document.title).toBe(`${UNSAVED_MARKER} A Rendered Heading`));
   });
 
   it("takes the conflict marker when the file changes under a draft", async () => {
