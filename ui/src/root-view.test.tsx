@@ -328,6 +328,28 @@ describe("RootView drawer at narrow widths", () => {
     expect(screen.getByText("a.md")).toBeTruthy();
   });
 
+  it("closes when the window crosses back to the wide layout", async () => {
+    await mounted();
+    fireEvent.click(burger());
+    expect(panes().classList.contains("open")).toBe(true);
+    // A resize inside the narrow range leaves it alone: the stylesheet still
+    // makes the wrapper a box, so there is still a drawer to be open.
+    fireEvent(window, new Event("resize"));
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    expect(panes().classList.contains("open")).toBe(true);
+    // Past the breakpoint the wrapper is `display: contents` and has no
+    // dialog to be. jsdom computes no media queries, so the stylesheet's
+    // answer is stood in for.
+    const real = window.getComputedStyle;
+    vi.stubGlobal("getComputedStyle", (el: Element) =>
+      el === panes() ? ({ display: "contents" } as CSSStyleDeclaration) : real(el),
+    );
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(panes().classList.contains("open")).toBe(false));
+    expect(panes().getAttribute("role")).toBeNull();
+    expect(panes().getAttribute("aria-modal")).toBeNull();
+  });
+
   it("cycles Tab within the open drawer, skipping the tab that is not shown", async () => {
     await mounted();
     fireEvent.click(burger());

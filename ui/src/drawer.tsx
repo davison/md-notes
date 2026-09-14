@@ -87,6 +87,31 @@ export function Drawer({ state, children }: { state: DrawerState; children: Comp
     return () => document.removeEventListener("keydown", onKey, true);
   }, [open, close]);
 
+  // A window dragged past the breakpoint gives the panes back to the grid,
+  // and a wrapper that is `display: contents` has no dialog to be: left
+  // open, it would tell a screen reader the whole shell is behind a modal
+  // that is not on screen. Asking the element what the stylesheet made of
+  // it keeps the breakpoint in one place — the number is not repeated here.
+  useEffect(() => {
+    if (!open) return;
+    let frame = 0;
+    const onResize = () => {
+      // On the next frame, not in the handler: a resize can reach script
+      // before the media query behind `display: contents` has been applied,
+      // and the answer would be the old one.
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const root = panes.current;
+        if (root && getComputedStyle(root).display === "contents") close();
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [open, close]);
+
   // Opening moves focus inside. The search tab leads with its box, which is
   // the reason to have opened it; the notes tab leads with the first control.
   useEffect(() => {
