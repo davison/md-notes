@@ -42,7 +42,8 @@ extension with the authentication it needed; the inbox is still ahead.
   arrangement: Syncthing setup, offline editing, conflict files in the
   navigator, Android with Markor, and the tailnet alternative.
 - **E-ink.** The web UI has a light-theme override and a no-animation
-  setting for a backlit-less screen, and tap targets that suit a stylus.
+  setting for a screen with no backlight, and tap targets that suit a
+  stylus.
   [docs/e-ink.md](docs/e-ink.md) covers a Boox Note Air 3 and the two ways
   to reach your notes from one.
 
