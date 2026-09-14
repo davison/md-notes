@@ -153,11 +153,14 @@ code {
   display: contents;
 }
 
-/* The drawer and the controls that open it exist only at narrow widths. */
+/* The drawer and the controls that open it exist only at narrow widths, as
+ * is the copy of the live-update notice that sits above the note there;
+ * the navigator's own copy is the one on screen at wide widths. */
 .drawer-backdrop,
 .drawer-head,
 .drawer-toggle,
-.tag-chip {
+.tag-chip,
+.note > .notice {
   display: none;
 }
 
@@ -466,6 +469,17 @@ code {
   .shell .panes[data-tab="notes"] > .side,
   .shell .panes[data-tab="find"] > .nav {
     display: none;
+  }
+
+  /* Behind the drawer the navigator's copy would be out of sight on the
+     one device where it matters most: a phone on a dropped forward. */
+  .nav > .notice {
+    display: none;
+  }
+
+  .note > .notice {
+    display: block;
+    margin: 0.5rem 0.5rem 0;
   }
 
   .note-body {
