@@ -16,7 +16,8 @@ and the navigator, search and tags are the tabs of a drawer
 ([On a phone](#on-a-phone)); it works on an e-ink tablet, where a light-theme
 override and a no-animation switch answer a screen with no backlight
 ([Display settings](#display-settings), [On an e-ink tablet](e-ink.md)); the browser
-tab names the note you have open; fenced code is readable in the dark colour scheme
+tab names the note you have open ([The browser tab](#the-browser-tab)); fenced code is
+readable in the dark colour scheme
 as well as the light one; the embedded bundle is compressed and cached and no longer
 carries the editor to a page that is only reading ([Editing](#editing)); the browser
 extension works against a daemon reached over the tailnet
@@ -446,18 +447,8 @@ for good rather than reconnecting.
 ## The web UI
 
 A Preact application, three panes per root on a wide screen and a note with a
-drawer on a narrow one — see [On a phone](#on-a-phone) below.
-
-The browser tab names what is on screen. With a note open it takes the note's own
-title — the rendered H1, else the frontmatter `title`, else the file name without its
-extension — and follows it through navigation and through a
-[live update](#live-update). A root with no note open is named by its slug, and the
-home page, an unknown root and any page that is not a route are `MD Notes`, which is
-also what the served HTML says before the bundle runs. An editing session adds a
-leading marker: `• ` while a draft is unsaved, saving or refused, and `⚠ ` while it is
-in conflict, the conflict outranking the rest. The marker follows the session rather
-than the pane, so a note left in the rendered view with a draft outstanding still
-carries it. The panes are:
+drawer on a narrow one — see [On a phone](#on-a-phone) below. The browser tab names
+what is on screen; [The browser tab](#the-browser-tab) below says how. The panes are:
 
 - **Navigator.** The markdown tree, with collapsible directories whose expansion is
   remembered per root in `localStorage`. The current note is highlighted and its
@@ -498,6 +489,50 @@ stylesheet in which a class is styled in one scheme and not the other or carries
 background of its own in one scheme only, a colour falls below AA, a line-highlight or
 diff tint is too close in luminance to the page to be seen, or two colours the source
 palette tells apart have come together.
+
+### The browser tab
+
+The tab names what is on screen, so two windows on two roots are told apart in the tab
+strip and a note with work still in the browser says so from there.
+
+With a note open the tab takes the note's own title, by the same rule the note's heading
+follows: the rendered `H1` if the note has one, otherwise the frontmatter `title`,
+otherwise the file's own name with its extension dropped — `plain-name` for
+`plain-name.md`. It follows the note through in-app navigation and through a
+[live update](#live-update), in the rendered view and under an open editor alike: an
+external rewrite that changes the heading changes the tab with it.
+
+Everything else is named by what it is:
+
+| What is open | The tab says |
+|--------------|--------------|
+| A note | The note's title, by the rule above |
+| A root with no note open | The root's slug — `notes` for `/r/notes/` |
+| The home page, a root that does not exist, any address that is not a route | `MD Notes` |
+
+`MD Notes` is also what `index.html` itself says, ahead of the script that renders the
+application, so a tab is never nameless while the page loads and stays sensible if the
+bundle never runs at all.
+
+An editing session adds a leading marker to the note's title:
+
+| Marker | What it means |
+|--------|---------------|
+| `• ` | The draft is unsaved: waiting to be sent, being sent, or refused |
+| `⚠ ` | The note changed or was deleted on disk under an unsaved draft — see [Conflicts](#conflicts) |
+
+A conflict outranks the plain unsaved states, so the two never appear together and `⚠ `
+replaces `• ` rather than joining it. The marker follows the *session*, not the pane's
+mode, so a note left in the rendered view with a draft outstanding still carries it, and
+both markers clear when the draft reaches disk or the conflict is resolved.
+
+Two edges are worth knowing rather than meeting by surprise. A note **deleted** while it
+is open keeps its file name on the tab — the pane says the note is gone, and the tab
+still reads `doomed` rather than `MD Notes`, which is the more useful of the two when
+several tabs are open. And a reader who edits their **own** `H1` sees the tab follow it
+only when the rendered view next runs: their save does not replace the text under the
+editor, so nothing asks the daemon what the note is called now. Both are recorded in
+[the milestone four record](milestones/4-polish-phone-e-ink-and-the-bundle.md#known-gaps-at-the-boundary).
 
 ### On a phone
 
