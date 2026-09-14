@@ -2,12 +2,24 @@
 
 md-notes is a local service that turns folders of markdown files into a notes
 application in the browser. This page describes what exists and works today, at the
-end of [milestone three](milestones/3-clipper-authentication-and-tailnet.md): the
+end of [milestone four](milestones/4-polish-phone-e-ink-and-the-bundle.md): the
 daemon and the rendered viewer from
 [milestone one](milestones/1-daemon-and-rendered-viewer.md), the editor from
-[milestone two](milestones/2-editor-autosave-and-live-update.md), and now the browser
-half. Notes are edited in place; creating, renaming and deleting them is still done
-with other tools.
+[milestone two](milestones/2-editor-autosave-and-live-update.md), the browser half
+from [milestone three](milestones/3-clipper-authentication-and-tailnet.md), and the
+polish milestone four put on all three. Notes are edited in place; creating,
+renaming and deleting them is still done with other tools.
+
+Milestone four is the one whose subject is how the rest of it is read rather than
+what it can do. The web UI works on a phone, where the note takes the whole viewport
+and the navigator, search and tags are the tabs of a drawer
+([On a phone](#on-a-phone)); the browser tab names the note you have open; fenced
+code is readable in the dark colour scheme as well as the light one; the embedded
+bundle is compressed and cached and no longer carries the editor to a page that is
+only reading ([Editing](#editing)); the browser extension works against a daemon
+reached over the tailnet ([The browser extension](extension.md)); and
+[Sync and offline editing](sync.md) is the page that says how the notes reach every
+device.
 
 The browser half is a Chromium extension that clips a readable page or a selection
 into the notes root as markdown, and opens a local markdown file in the app instead
@@ -431,7 +443,18 @@ for good rather than reconnecting.
 ## The web UI
 
 A Preact application, three panes per root on a wide screen and a note with a
-drawer on a narrow one — see [On a phone](#on-a-phone) below:
+drawer on a narrow one — see [On a phone](#on-a-phone) below.
+
+The browser tab names what is on screen. With a note open it takes the note's own
+title — the rendered H1, else the frontmatter `title`, else the file name without its
+extension — and follows it through navigation and through a
+[live update](#live-update). A root with no note open is named by its slug, and the
+home page, an unknown root and any page that is not a route are `MD Notes`, which is
+also what the served HTML says before the bundle runs. An editing session adds a
+leading marker: `• ` while a draft is unsaved, saving or refused, and `⚠ ` while it is
+in conflict, the conflict outranking the rest. The marker follows the session rather
+than the pane, so a note left in the rendered view with a draft outstanding still
+carries it. The panes are:
 
 - **Navigator.** The markdown tree, with collapsible directories whose expansion is
   remembered per root in `localStorage`. The current note is highlighted and its
@@ -459,6 +482,17 @@ drawer on a narrow one — see [On a phone](#on-a-phone) below:
   line, flashing it. Below it, the tag panel lists each tag with its count; selecting
   one sets `?tag=` and prunes the navigator to the notes carrying it, with a link to
   clear the filter.
+
+The page follows the browser's own light or dark preference, and so does the code in
+a fence. Both highlighting palettes are generated from a single source palette by
+`internal/render/gencss`, each toned against the background that scheme actually
+paints, so the two cover exactly the same set of token classes and every colour the
+stylesheet declares clears the 4.5:1 contrast the WCAG calls AA on the background it
+is drawn on. The generator asserts both before it writes the file, and refuses a
+stylesheet in which a class is styled in one scheme and not the other or carries a
+background of its own in one scheme only, a colour falls below AA, a line-highlight or
+diff tint is too close in luminance to the page to be seen, or two colours the source
+palette tells apart have come together.
 
 ### On a phone
 
