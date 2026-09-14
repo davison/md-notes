@@ -2,7 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      interactive-widget=resizes-content: Chromium's default is to leave the
+      layout viewport alone when the on-screen keyboard opens and shrink only
+      the visual one, which on a shell sized in dvh puts the caret and the note
+      bar under the keyboard with no way to scroll to them. Resizing the
+      content instead gives the editor the space that is left.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content"
+    />
     <title>MD Notes</title>
     <!--
       The display settings, before the stylesheet paints: a reader who has

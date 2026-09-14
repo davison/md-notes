@@ -149,4 +149,10 @@ describe("the boot script", () => {
     expect(head).toContain(BOOT);
     expect(/<script\s+type="module"/.test(head)).toBe(false);
   });
+
+  it("asks the browser to resize the content for the on-screen keyboard", () => {
+    // Chromium's default shrinks the visual viewport only, which leaves the
+    // caret and the note bar under the keyboard on a shell sized in dvh.
+    expect(/<meta\s+name="viewport"[\s\S]*?interactive-widget=resizes-content/.test(html)).toBe(true);
+  });
 });
