@@ -949,11 +949,14 @@ Milestone one's tailnet capture ([#10](https://github.com/davison/md-notes/issue
 is closed by [#39](https://github.com/davison/md-notes/issues/39). What remains true and
 will surprise someone who has not read this far:
 
-> **Annotation, added by [milestone four](4-polish-phone-e-ink-and-the-bundle.md)
-> ([#63](https://github.com/davison/md-notes/issues/63)).** This record is sealed as of the
-> M3 boundary and nothing in it is rewritten
+> **Superseded in four places by [milestone four](4-polish-phone-e-ink-and-the-bundle.md),
+> and left as written** ([#63](https://github.com/davison/md-notes/issues/63)). This
+> section's account stands in the words milestone three used
 > ([the #40 decision](https://github.com/davison/md-notes/issues/40)); four of the captures
-> it leaves open have since been closed, so four things below are no longer true of `main`.
+> it leaves open have since been taken up, so four things below are no longer true of
+> `main`. The note is here rather than beneath any one of them because they are spread
+> across the table and the two paragraphs after it, and a reader who meets one should meet
+> all four.
 >
 > - **[#51](https://github.com/davison/md-notes/issues/51)** — the row below about a
 >   tailnet daemon URL leaving the extension with nothing that works. Closed by
