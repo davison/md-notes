@@ -251,8 +251,9 @@ daemon from another node on the tailnet. And so is milestone four, which
 worked through what three milestones of use had surfaced: the phone layout,
 the browser tab title, code colours that are readable in the dark scheme, an
 embedded bundle that is compressed, cached and no longer carries the editor
-to a reader, the extension against a tailnet daemon URL, and
-[docs/sync.md](docs/sync.md), the account of how the notes reach every device.
+to a reader, the extension against a tailnet daemon URL, the display settings
+an e-ink tablet needs, and [docs/sync.md](docs/sync.md), the account of how
+the notes reach every device.
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
 today, [docs/extension.md](docs/extension.md) the extension,
 [docs/e-ink.md](docs/e-ink.md) the e-ink tablet, and the milestone
