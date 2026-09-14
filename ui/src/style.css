@@ -587,6 +587,85 @@ code {
 }
 
 /*
+ * Touch, and the narrow layout whatever is pointing at it. Every row and
+ * control that is tapped stands at least 40 px tall: 2.75rem is 41.25 px at
+ * the 15 px root font, and the drawer's own buttons were already that.
+ *
+ * Scoped to a coarse pointer rather than applied everywhere, so a mouse-driven
+ * window keeps the density it has — the navigator is the shape of the root,
+ * and a tree row that goes from 27 px to 41 px puts a third fewer notes on the
+ * screen. `hover: none` is a second name for the same devices, in case a
+ * stylus tablet reports a fine pointer; the width clause keeps a narrow
+ * desktop window, which is already the drawer layout, consistent with it.
+ *
+ * The tree and the tag rows are centred by their line box rather than by a
+ * flex container: both are one line — `white-space: nowrap` above — and
+ * `text-overflow: ellipsis` on a block is what keeps a long note name from
+ * pushing the drawer sideways.
+ */
+@media (pointer: coarse), (hover: none), (max-width: 60rem) {
+  .tree .dir,
+  .tree .file {
+    min-height: 2.75rem;
+    padding: 0 0.5rem;
+    line-height: 2.75rem;
+  }
+
+  .tag {
+    min-height: 2.75rem;
+    align-items: center;
+    padding: 0 0.5rem;
+  }
+
+  .tag-clear {
+    display: block;
+    min-height: 2.75rem;
+    padding: 0 0.5rem;
+    line-height: 2.75rem;
+  }
+
+  .hit {
+    min-height: 2.75rem;
+    padding: 0.5rem 0.35rem;
+  }
+
+  .search input {
+    min-height: 2.75rem;
+  }
+
+  .drawer-tab {
+    min-height: 2.75rem;
+  }
+
+  .settings-toggle {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .setting {
+    min-height: 2.75rem;
+    align-items: center;
+  }
+
+  .shell .brand,
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+
+  .note-bar button,
+  .conflict button {
+    min-height: 2.75rem;
+    padding: 0.1rem 0.9rem;
+  }
+
+  .note-bar {
+    padding: 0.15rem 0.6rem;
+  }
+}
+
+/*
  * No animation: the setting, and the device preference, answered the same way.
  * The blanket form rather than a list of the animations the application draws
  * today, because on an e-ink screen every one of them is a slow partial
