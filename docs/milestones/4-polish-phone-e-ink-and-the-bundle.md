@@ -453,9 +453,11 @@ confirmation, and three defaults fixed in the requirements for the operator to o
 - **Trade-off:** five concurrent tasks mean five review loops at once; the areas are
   disjoint enough that rebases should be trivial, and they were. The operator is present
   intermittently, so defaults are recorded rather than gated — at the risk of one of them
-  being wrong. Two of the three turned out to be decided by evidence rather than by the
-  default: M4-R7's editor chunk was overturned on measurements, and M4-R6's clipping
-  refusal was reaffirmed with the reasoning written down next to #39's.
+  being wrong. None of the three was taken on the default alone: M4-R7's named the
+  evidence that would overturn it and the measurements overturned it, M4-R6's refusal was
+  reaffirmed with the reasoning written down next to #39's rather than inherited in
+  silence, and M4-R1's open choice was argued against the two alternatives
+  [#34](https://github.com/davison/md-notes/issues/34) had put up.
 - **Rejected:** folding the tab title into the phone-layout task (the operator asked for a
   task of its own, and it is a smaller deliverable that unblocks nothing).
 
@@ -701,8 +703,9 @@ produced: a tab measured through a `MutationObserver` while a file changed under
 editor, a diff fence's luminance delta sampled off the painted page, twenty-eight timed
 editor toggles against three separately built binaries, a module map defeated with CDP
 request interception, a magnifier measured four pixels inside the viewport at an iPhone 14
-width. Three of the six blocking findings below are things the author could not have found
-by reading their own diff, and one of them — the retry — the author says so explicitly.
+width. Twelve findings blocked a merge across the six PRs; several of them are things the
+author could not have found by reading their own diff, and of one — the retry that cannot
+retry — the author says so in as many words.
 
 - **The tab title ([#64](https://github.com/davison/md-notes/pull/64#issuecomment-5656219635)):**
   round one reproduced all fifteen of the PR's own browser checks independently and then
