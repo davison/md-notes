@@ -45,8 +45,9 @@ scheme it is drawn in; the dark scheme that shipped for three milestones was chr
 fallback for a style name that does not exist. The daemon serves its embedded assets
 compressed and cacheable — brotli and gzip copies written at build time, an immutable
 year on the hashed names, `no-cache` and an `ETag` on `index.html` — and the editor is no
-longer in the bundle a reader downloads: a first page load transfers about 17 KB where it
-transferred 722 KB, and a second transfers none. The extension works against a daemon
+longer in the bundle a reader downloads: at the milestone's boundary a first page load
+transfers **19,738 bytes** where the same page transferred 721,528 before any of this, and
+a second transfers none. The extension works against a daemon
 reached over the tailnet, presenting the token on the roots listing whenever the daemon
 URL is not loopback, and naming the two actions the tailnet allow-list refuses rather
 than blaming the token for them. And [Sync and offline editing](../sync.md) is the page
@@ -324,10 +325,16 @@ and a copy that came out no smaller than its source is not written
 ([#59](https://github.com/davison/md-notes/issues/59#issuecomment-5656189477)).
 
 - **Trade-off:** the embedded bundle roughly doubles in file count and the binary grows
-  by about 1.11–1.13 MiB (+7.1%), in exchange for a first page load that transfers about
-  17 KB instead of 722 KB. `index.html` at 387 bytes is under the threshold and is served
-  uncompressed, which is also what keeps the missing-sibling fallback on a path that runs
-  in production rather than only in tests.
+  by about 1.11–1.13 MiB (+7.1–7.2%), in exchange for a first page load that, on the same
+  tree with the editor still statically imported, transfers **208,355 B instead of
+  721,528 B**. That is the decision's own like-for-like pair; the second saving, from
+  53,542 B to 16,580 B, belongs to the lazy-editor decision below and is not this one's to
+  claim. A copy that came out no smaller than its source is not written, so nothing is
+  embedded that would never be served, and the files under the 1 KB threshold are what keep
+  the missing-sibling fallback on a path that runs in production rather than only in tests.
+  The decision names `index.html` at 387 bytes as one of those files; [#62](https://github.com/davison/md-notes/issues/62)
+  has since undone that — see [Corrections](#corrections-to-the-record-itself) — and eleven
+  language chunks under a kilobyte keep the clause true for a different reason.
 - **Rejected:** `vite-plugin-compression2` and its siblings (a dependency and a lockfile
   entry for what `zlib` already does in thirty lines); compressing on the fly in Go
   (`compress/gzip` at request time on every load, and no brotli in the standard library at
@@ -759,17 +766,38 @@ and its answer stay legible to whoever reads the issue next.
   one correction in this milestone that a reviewer verified by reproducing the *new* premise
   rather than the old error.
 
+- **`index.html` is no longer under the compression threshold.** The precompression
+  decision names it at 387 bytes as one of the files small enough that no compressed copy
+  is written, which is what kept the missing-sibling fallback on a production path.
+  [#62](https://github.com/davison/md-notes/issues/62)'s inline boot script took it to
+  **1,457 bytes**, over the 1 KB floor, so the build now writes `index.html.br` (595 B) and
+  `index.html.gz` (791 B) and the daemon serves them — `Cache-Control: no-cache`,
+  `Content-Encoding: br`, `Content-Length: 595` against a request that accepts brotli.
+  Nothing the decision turned on changes, and the clause it supports survives for a
+  different reason: eleven per-language chunks under a kilobyte still ship with no
+  siblings. This is a statement one task in this milestone made true and a later one in the
+  same milestone undid, which is the shape this section exists for.
+
 One correction this milestone could not make, and which is therefore recorded here rather
 than in the place it belongs. [#68](https://github.com/davison/md-notes/pull/68)'s
 **Measurements** table is the pre-rebase run: it gives 16,580 B of assets on the first
-load, a 42,635 B eager chunk and a 17,580,295 B binary, where the merged tree gives
-17,049 B, 43,776 B and about 17,539,232 B — the bundle grew slightly with #56's and #57's
-own work. Round three raised it as a nit
-([#68](https://github.com/davison/md-notes/pull/68#issuecomment-5656631839)) and it was
-not taken. The reply comment and `docs/introduction.md` carry the current figures, so the
-record as a whole is honest; the body is what a reader meets first, and it now disagrees
-with the page. The same round left two nits of the same kind unfixed in the tree, and they
-are in [Known gaps](#known-gaps-at-the-boundary).
+load, a 42,635 B eager chunk and a 17,580,295 B binary. Round three of its own review
+raised it as a nit and gave the figures on the rebased branch — 17,049 B, 43,776 B and
+about 17,539,232 B
+([#68](https://github.com/davison/md-notes/pull/68#issuecomment-5656631839)) — and it was
+not taken. **Both sets are stale at this milestone's boundary**, and that is the more
+useful thing to know: the figures moved twice inside one milestone, first when #68 rebased
+onto #56's and #57's merges and again when #61's drawer and #62's settings panel landed
+after it. At [`e37164c`](https://github.com/davison/md-notes/commit/e37164c) the same page
+transfers **19,738 B** across two assets — QA's own measurement
+([#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406)), reproduced here and by
+the review of [#71](https://github.com/davison/md-notes/pull/71#issuecomment-5658292677) —
+the eager chunk is 50,657 B beside an 18,376 B stylesheet, and the binary is about
+17.56 MB. A byte figure for the UI bundle is true of a commit and not of a milestone,
+which is why [the introduction](../introduction.md#editing) now states the ratios as the
+durable part and dates its numbers to this boundary. The same round of #68 left two nits
+of the same kind unfixed in the tree, and they are in
+[Known gaps](#known-gaps-at-the-boundary).
 
 **A note on commit SHAs.** Every SHA quoted in a review comment or a reply on
 [#64](https://github.com/davison/md-notes/pull/64)–[#70](https://github.com/davison/md-notes/pull/70)
@@ -1079,7 +1107,7 @@ not read this far:
 | The Syncthing half of the sync page is read, not run — nothing here installs or configures Syncthing, and the page marks which half is which. Two daemons over one folder on one machine lose an update in between one round in seven and one in ten, silently, with both saves reporting success | [the sync page](../sync.md), [#58](https://github.com/davison/md-notes/issues/58#issuecomment-5656137446) |
 | Syncthing's `maxConflicts: 0` deletes the losing text rather than archiving it, and file versioning does not keep conflict copies out of the folder at all. The page says so and tells the reader not to reach for either | [#65](https://github.com/davison/md-notes/pull/65#issuecomment-5656228186), finding 1 |
 | The short device ID in a Syncthing conflict file name is not defined by Syncthing's manual, and the source passes the *incoming* version's last modifier — the copy that keeps its name. The page declines to say whose it is | [#58](https://github.com/davison/md-notes/issues/58#issuecomment-5656267935) |
-| The binary is about 1.11–1.13 MiB larger (+7.1%) for the brotli and gzip copies it now embeds, and the first `Ctrl+E` of a page costs about 25–30 ms more than it did | [#59](https://github.com/davison/md-notes/issues/59#issuecomment-5656189477), [#59](https://github.com/davison/md-notes/issues/59#issuecomment-5656192500) |
+| The binary is about 1.11–1.13 MiB larger (+7.1–7.2%, the two figures measured on two machines) for the brotli and gzip copies it now embeds, and the first `Ctrl+E` of a page costs about 25–30 ms more than it did | [#59](https://github.com/davison/md-notes/issues/59#issuecomment-5656189477), [#59](https://github.com/davison/md-notes/issues/59#issuecomment-5656192500) |
 | An editor chunk that fails to load can only be cured by reloading the page. No retry is possible: a module script whose fetch fails leaves a null entry in the browser's module map, and every later `import()` of that URL rejects against it without a request | [#59](https://github.com/davison/md-notes/issues/59#issuecomment-5656545448) |
 | `TestUITypesCoverTheBundle` skips silently when `ui/dist` is empty, so a bare `go test ./...` does not run it; `make check` and `make test` are what make it mean anything | [#68](https://github.com/davison/md-notes/pull/68#issuecomment-5656631839) |
 | `uiSibling`'s comment in `internal/server/server.go` still says the precompressed copies "fall through to the app like any other unknown path". Since the 404 decision they do not: every sibling the build writes is under `assets/` and 404s. The test that pins the behaviour was updated; the comment above it was not | [#68](https://github.com/davison/md-notes/pull/68#issuecomment-5656631839), nit 1 |
@@ -1092,7 +1120,7 @@ not read this far:
 | `Accept-Encoding: identity;q=0` is answered `200` with the identity bytes rather than the `406` RFC 9110 permits. `q=0` *is* honoured as a refusal for `br` and `gzip`; it is only the "no representation left" case that falls through | [#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406), finding 3 |
 | Under a `tailnet_host` name an authenticated request for a hashed asset gets `public, max-age=31536000, immutable` with no `Vary: Authorization`. The unauthenticated request is `401 no-store`, and the bytes are the public UI bundle, byte-identical for every user | [#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406), finding 4 |
 | An unknown name under `/assets/` answers `404 {"error":"not found"}` with no `code` field — the envelope every unrouted path has had since M3, not a routing fault | [#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406), finding 6 |
-| The first `Ctrl+E` was measured at 55.6 ms (48.2–75.3) on #59 and at 87 ms (60–94) by QA on a busier machine. Both are under the 100 ms the decision set as its own condition; two samples exist for whoever re-measures | [#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406), finding 8 |
+| The first `Ctrl+E` has four medians on three machines: **55.6 ms** (48.2–75.3) on #59, **85 ms** (74–100) taken for this record, **87 ms** (60–94) by QA, and **103 ms** by the review of #71. The decision set "about 100 ms" as its own condition and the highest sample is over it, which is why [the introduction](../introduction.md#editing) states the ratios rather than a number — cold ≈ warm, held an order of magnitude quicker — and those hold across all four | [#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406), finding 8; [#71](https://github.com/davison/md-notes/pull/71#issuecomment-5658292677), finding 1 |
 | **Nothing in CI holds the narrow breakpoint.** The phone-layout and e-ink harnesses live in their runs' scratchpads by recorded decision, so the pane rectangles, the drawer's geometry, the 40-pixel rule, the override applied before first paint and the second load's zero asset bytes are covered by component-level vitest and by measurements on issues, and by nothing a regression would fail. QA names it the largest untested surface in the milestone | [#72](https://github.com/davison/md-notes/issues/72) |
 | `TestBurstIsOneBatch` in `internal/watch` is still flaky in CI. It recurred three times during this milestone — on PR #43's CI, on PR #65's and on PR #71's — and **two of the three were on branches carrying no Go at all**, which is what rules out a regression and leaves the debounce race on a loaded runner. It is the strongest candidate for an early task in the next milestone | [#46](https://github.com/davison/md-notes/issues/46) |
 
