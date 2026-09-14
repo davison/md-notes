@@ -13,11 +13,14 @@ renaming and deleting them is still done with other tools.
 Milestone four is the one whose subject is how the rest of it is read rather than
 what it can do. The web UI works on a phone, where the note takes the whole viewport
 and the navigator, search and tags are the tabs of a drawer
-([On a phone](#on-a-phone)); the browser tab names the note you have open; fenced
-code is readable in the dark colour scheme as well as the light one; the embedded
-bundle is compressed and cached and no longer carries the editor to a page that is
-only reading ([Editing](#editing)); the browser extension works against a daemon
-reached over the tailnet ([The browser extension](extension.md)); and
+([On a phone](#on-a-phone)); it works on an e-ink tablet, where a light-theme
+override and a no-animation switch answer a screen with no backlight
+([Display settings](#display-settings), [On an e-ink tablet](e-ink.md)); the browser
+tab names the note you have open; fenced code is readable in the dark colour scheme
+as well as the light one; the embedded bundle is compressed and cached and no longer
+carries the editor to a page that is only reading ([Editing](#editing)); the browser
+extension works against a daemon reached over the tailnet
+([The browser extension](extension.md)); and
 [Sync and offline editing](sync.md) is the page that says how the notes reach every
 device.
 
@@ -483,10 +486,12 @@ carries it. The panes are:
   one sets `?tag=` and prunes the navigator to the notes carrying it, with a link to
   clear the filter.
 
-The page follows the browser's own light or dark preference, and so does the code in
-a fence. Both highlighting palettes are generated from a single source palette by
-`internal/render/gencss`, each toned against the background that scheme actually
-paints, so the two cover exactly the same set of token classes and every colour the
+The page follows the browser's own light or dark preference — unless the light-theme
+override under [Display settings](#display-settings) is on — and so does the code in
+a fence, which follows the override too. Both highlighting palettes are generated
+from a single source palette by `internal/render/gencss`, each toned against the
+background that scheme actually paints, so the two cover exactly the same set of
+token classes and every colour the
 stylesheet declares clears the 4.5:1 contrast the WCAG calls AA on the background it
 is drawn on. The generator asserts both before it writes the file, and refuses a
 stylesheet in which a class is styled in one scheme and not the other or carries a
@@ -546,8 +551,9 @@ Tap targets are not a setting. Wherever the browser reports a coarse pointer or 
 hover — a phone, a tablet, a stylus — or the window is below the narrow breakpoint,
 every row and control that is tapped is at least 40 pixels tall: tree entries, tags
 and the clear link, search hits and the search box, the drawer's tabs, the top bar's
-buttons and the note bar's. Under a mouse at a wide width the rows keep their
-compact density.
+buttons, the note bar's, and the frontmatter disclosure. Links *inside* a note are the
+exception, and have to be — their size is the line of prose they sit in. Under a mouse
+at a wide width the rows keep their compact density.
 
 Both settings exist for an e-ink tablet, where a dark theme is grey on grey and
 every animation is a slow visible repaint. [On an e-ink tablet](e-ink.md) covers

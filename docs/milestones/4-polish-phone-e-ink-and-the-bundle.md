@@ -1,11 +1,8 @@
 # M4 — Polish: mobile layout, e-ink, dark code colours, sync docs, tailnet extension, asset caching
 
-Tracking issue: [#55](https://github.com/davison/md-notes/issues/55). Six of its seven
+Tracking issue: [#55](https://github.com/davison/md-notes/issues/55). Its seven
 implementation tasks are merged on `main` at
-[`3802e2f`](https://github.com/davison/md-notes/commit/3802e2f); the seventh,
-[#62](https://github.com/davison/md-notes/issues/62), is in review on
-[#70](https://github.com/davison/md-notes/pull/70) as this document is drafted, and its
-entries are marked **awaiting #62** below.
+[`e37164c`](https://github.com/davison/md-notes/commit/e37164c).
 
 ## Goal and outcome
 
@@ -57,13 +54,23 @@ this milestone added: the multi-device model, Syncthing setup, conflict files in
 navigator, Android, the tailnet as the connected alternative, and the one shape that does
 not work.
 
-**Awaiting #62.** The e-ink settings — the explicit light-theme override, the no-motion
-setting and the larger tap targets — and the page `docs/e-ink.md` are #62's;
-this paragraph, that page's link and the outcomes table are completed when it merges.
+And the web UI is usable on an e-ink tablet. A gear at the right of the top bar, at
+every width, opens a panel with two switches kept in `localStorage`: an explicit
+light-theme override, applied by an inline script before the stylesheet paints so a
+reader who overrides a dark device never sees a dark frame, and which the code
+colours follow as well as the page; and a blanket no-animation setting, which
+`prefers-reduced-motion: reduce` also reaches on its own, and which the scroll-to-line
+flash obeys by never being added rather than by running invisibly. Wherever the browser
+reports a coarse pointer or no hover, or the window is below the narrow breakpoint,
+every row and control that is tapped stands at least 40 pixels — 2.75rem against the
+app's 15 px root — while a mouse at a wide width keeps the density it had.
 
 The system as it stands is described in [the introduction](../introduction.md);
-[Sync and offline editing](../sync.md) is the page this milestone added, and
-[On a phone](../introduction.md#on-a-phone) is the section it added to the other.
+[Sync and offline editing](../sync.md) and
+[On an e-ink tablet](../e-ink.md) are the two pages this milestone added, and
+[On a phone](../introduction.md#on-a-phone) and
+[Display settings](../introduction.md#display-settings) are the sections it added to
+the first.
 
 Seven implementation tasks delivered it, each through its own PR and review loop, and
 this document is the eighth ([#63](https://github.com/davison/md-notes/issues/63)):
@@ -108,8 +115,9 @@ coordinator's scope decision, had already fixed the answer.
 ## Requirement outcomes
 
 **Awaiting QA.** Independent QA exercises all eight requirements against the built
-daemon, UI and extension after [#62](https://github.com/davison/md-notes/issues/62)
-merges, and its verdict comment on
+daemon, UI and extension at
+[`e37164c`](https://github.com/davison/md-notes/commit/e37164c), and its verdict comment
+on
 [#55](https://github.com/davison/md-notes/issues/55) is what fills this table. Each row
 below names what the verdict has to reach; none of them is a claim of this document.
 
@@ -119,7 +127,7 @@ below names what the verdict has to reach; none of them is a claim of this docum
 | M4-R2 | Tab title: the open note's title, updating on navigation and live update; the root's slug with no note open; `MD Notes` elsewhere; the unsaved and conflict states as a leading marker | _Awaiting QA_ |
 | M4-R3 | Dark-scheme code colours: a dark rule for every class the light palette defines, asserted by the generator, with contrast checked against the code background in both schemes, verified over Go, Python and shell fences | _Awaiting QA_ |
 | M4-R4 | Sync and offline documentation: the multi-device model, Syncthing setup, offline editing, conflict files and how to resolve them, Android, the tailnet alternative and the one unsupported shape, linked from the README and the introduction | _Awaiting QA_ |
-| M4-R5 | E-ink tablet: the light-theme override, no animations under the setting or reduced motion, 40-pixel tap targets, the editor usable with the on-screen keyboard, verified at the Boox viewport in both orientations | _Awaiting #62, then QA_ |
+| M4-R5 | E-ink tablet: the light-theme override, no animations under the setting or reduced motion, 40-pixel tap targets, the editor usable with the on-screen keyboard, verified at the Boox viewport in both orientations | _Awaiting QA_ |
 | M4-R6 | Extension against a tailnet daemon URL: opening a local file inside a registered root works, the two refused actions named as the allow-list's rather than the token's, Test connection reporting the true state, clipping still refused | _Awaiting QA_ |
 | M4-R7 | Embedded assets: immutable long-lived caching on hashed names and `no-cache` on `index.html`, precompressed at build time and served compressed when accepted, a second page load fetching no asset bytes, and the eager JavaScript in view mode reduced or the M2 decision reaffirmed with measurements | _Awaiting QA_ |
 | M4-R8 | Documentation and record: user documentation reflecting the delivered changes, the roadmap row, and this record | _Awaiting QA_ — see below |
@@ -432,15 +440,86 @@ inherited: #62's settings boot script and #61's own breakpoint-crossing close bo
 and the second of them solved its problem by asking the element what the stylesheet made of
 it rather than repeating `960` in JavaScript.
 
-### **Awaiting #62** — the e-ink settings, and what the tap-target rule is keyed on
+### The light override is the *absence* of the dark palette, not a third one
 
-Two decisions on [#62](https://github.com/davison/md-notes/issues/62) —
-[where the settings live and why the light override is the *absence* of the dark palette](https://github.com/davison/md-notes/issues/62#issuecomment-5657570182),
-and
-[the tap targets keyed on a coarse pointer rather than on width](https://github.com/davison/md-notes/issues/62#issuecomment-5657572060),
-with
-[a correction](https://github.com/davison/md-notes/issues/62#issuecomment-5657608807) to
-the second's premise — are written up here when #70 merges.
+The settings are a popover behind a gear in the top bar at every width, because the
+drawer exists only below 960 px and the device these settings are for spends time above
+that breakpoint; a popover rather than a route or a modal, because two checkboxes are not
+a page and a modal would take focus off the note to say so. The switch is a **light-only**
+override rather than a three-way `auto / light / dark` picker, and it is implemented by
+making the stylesheet's dark block `:root:not([data-theme="light"])`: the light palette is
+already on bare `:root`, so a root carrying the attribute simply stops matching the dark
+block and keeps what it had. Nothing moves and nothing is reformatted, so `gencss` still
+finds exactly two `--bg` declarations straddling the same media query
+([#62](https://github.com/davison/md-notes/issues/62#issuecomment-5657570182)).
+
+An explicit *dark* choice is the one thing that would genuinely need a third palette — the
+dark values live inside `@media (prefers-color-scheme: dark)`, so forcing them on a light
+device means declaring them again outside it, which is the third `--bg` the stylesheet
+documents `gencss` as refusing. M4-R5 asks for a light override and nothing else, and the
+device that wants it has no backlight, so there is no e-ink reason to force dark.
+
+`gencss` gained the other half: every rule inside the generated stylesheet's dark media
+query is prefixed with the same selector, so the code colours follow the override.
+Without it the override produced white paper under dark tokens.
+`TestTheDarkScopeMatchesTheAppStylesheet` reads the selector back out of
+`ui/src/style.css` and fails if the two halves ever disagree — the same shape as #57's
+reading of `--bg` and `--fg` from the same file, and for the same reason.
+
+The no-animation setting and `prefers-reduced-motion` reach the same blanket reset over
+`*`, `*::before` and `*::after` rather than naming the drawer transition and the flash
+keyframes: on an e-ink screen every animation is a slow partial repaint, and a rule that
+has to be remembered when the next transition is added is a rule that will not be. The one
+animation script owns — the scroll-to-line flash — cannot be called off by a stylesheet
+once the class is on the element, so `note-view` asks `animationsOff()` and never adds it;
+the block is still scrolled to centre, which is where the hit is and is not motion.
+
+- **Trade-off:** the `!important` reset is heavy-handed and would have to be unpicked if
+  the application ever wanted one deliberate animation under the setting. It is the
+  standard reduced-motion reset for that reason, and the setting says "no animation"
+  without qualification.
+- **Rejected:** a three-way theme picker, above; re-stating the light palette under
+  `:root[data-theme="light"]` with the values held in `--light-*` properties so `gencss`'s
+  two-declaration check still passes, which satisfies the letter of the invariant by
+  arranging for the check not to see the third palette; teaching `gencss` a third scheme,
+  which is real work bought for a feature nobody asked for; setting the attributes from the
+  application bundle rather than an inline script, which is a deferred module the
+  stylesheet paints ahead of, so a reader who overrode a dark device would see a dark frame
+  on every load — precisely the flash the requirement rules out; a `matchMedia` hook
+  deciding the palette in script, which is #61's objection again, plus a repaint after the
+  first paint rather than before it.
+
+### The tap targets are keyed on the pointer, not on the width
+
+M4-R5 asks for the targets "without changing the wide layout's density more than
+necessary", so the only real question is which wide layouts get them. The rule is
+`@media (pointer: coarse), (hover: none), (max-width: 60rem)`: a touch or stylus device at
+any width, or any window below the narrow breakpoint. `pointer` reports the *primary*
+input, so a laptop with a touchscreen and a trackpad reports `fine` and keeps its density
+while a tablet reports `coarse` whatever its width; `hover: none` is a second name for the
+same set, included because a stylus digitiser is the one input nobody here could be certain
+Android reports as coarse
+([#62](https://github.com/davison/md-notes/issues/62#issuecomment-5657572060)).
+
+- **Trade-off:** three costs, in the order they are likely to be felt. The wide layout does
+  change density on a touch device — a tree row goes from about 27 px to 41 px, so roughly
+  a third fewer notes are on screen at once, which is the requirement's own bargain. A
+  narrow desktop window gets the roomier rows even under a mouse, because the width clause
+  is in the list; that window is already the drawer layout, where the panes are a temporary
+  overlay rather than the persistent tree. And a device that reports a fine pointer *and*
+  hover gets no enlarged targets at all — a silent failure mode only the operator's check
+  on the Boox can rule out, and if it turns out that way the remedy is one media feature.
+- **Rejected:** 40 px at every width (one rule, no media feature to get wrong, and it makes
+  the desktop navigator a third emptier for a benefit no mouse user gets — the requirement
+  explicitly asks not to); a third toggle, "large tap targets", beside the other two (the
+  task fixes the panel at two, and a setting is the wrong shape for something the browser
+  can already answer: a reader should not have to be told their tablet is a tablet);
+  `any-pointer: coarse`, which matches any *attached* coarse input, so a desktop with a
+  graphics tablet plugged in gets the tablet layout.
+
+The premise this decision was first argued on was wrong, and the correction is the
+milestone's last one — see [Corrections](#corrections-to-the-record-itself). The decision
+stands on a better foot, and the reviewer measured the case that foot rests on.
 
 ### How the milestone was run
 
@@ -535,9 +614,13 @@ off the file name
 ([#58](https://github.com/davison/md-notes/issues/58#issuecomment-5656267935)).
 
 Tasks [#56](https://github.com/davison/md-notes/issues/56),
-[#57](https://github.com/davison/md-notes/issues/57) and
-[#59](https://github.com/davison/md-notes/issues/59) recorded no deviations from their
-plans. **Awaiting #62** for its own.
+[#57](https://github.com/davison/md-notes/issues/57),
+[#59](https://github.com/davison/md-notes/issues/59) and
+[#62](https://github.com/davison/md-notes/issues/62) recorded no deviations from their
+plans. #62's review checked one candidate and judged it recorded rather than undeclared: the
+plan named a new `ui/src/boot.test.ts` and the cover shipped as a `describe("the boot
+script")` block inside `settings.test.ts`, which the task's first decision comment names
+by file ([#70](https://github.com/davison/md-notes/pull/70#issuecomment-5657786993)).
 
 ## Corrections to the record itself
 
@@ -621,7 +704,26 @@ and its answer stay legible to whoever reads the issue next.
   the only time in four milestones a review has blocked a merge on a PR description with
   nothing against the code.
 
-**Awaiting #62** for the correction on its tap-target decision's premise.
+- **A breakpoint the tablet was said to straddle, and does not.** The tap-target decision
+  was argued on the premise that the Boox Note Air 3 is below the 960 px breakpoint in
+  portrait and above it in landscape, so a width clause alone would have left the
+  orientation an attached keyboard folio puts it in with 27 px tree rows. It is not: a media
+  query's `rem` is the initial 16 px rather than the application's 15, so `60rem` is 960 CSS
+  px and the tablet is 936 the long way — under it in *both* orientations, which the harness
+  confirms. `(max-width: 60rem)` alone would therefore have given this device its targets,
+  and the coarse-pointer clause is not load-bearing for it. The decision is unchanged, on a
+  reason that should have been given first: zooming out is the first thing a reader does on
+  an e-ink screen, to fit more text between refreshes, and NeoBrowser's zoom changes CSS
+  pixels — the same tablet at 90% is 1040 CSS px wide in landscape and takes the **wide**
+  layout with a stylus still in the reader's hand. The commit message was corrected to match
+  ([#62](https://github.com/davison/md-notes/issues/62#issuecomment-5657608807),
+  [`fc5596d`](https://github.com/davison/md-notes/commit/fc5596d)). The review then measured
+  the case the corrected reason rests on — a coarse pointer at 1040×780 and 1248×936, wide
+  by the stylesheet's reckoning and still 41.25 px throughout — which the correction had
+  reasoned rather than run
+  ([#70](https://github.com/davison/md-notes/pull/70#issuecomment-5657786993)). It is the
+  one correction in this milestone that a reviewer verified by reproducing the *new* premise
+  rather than the old error.
 
 One correction this milestone could not make, and which is therefore recorded here rather
 than in the place it belongs. [#68](https://github.com/davison/md-notes/pull/68)'s
@@ -636,7 +738,7 @@ with the page. The same round left two nits of the same kind unfixed in the tree
 are in [Known gaps](#known-gaps-at-the-boundary).
 
 **A note on commit SHAs.** Every SHA quoted in a review comment or a reply on
-[#64](https://github.com/davison/md-notes/pull/64)–[#69](https://github.com/davison/md-notes/pull/69)
+[#64](https://github.com/davison/md-notes/pull/64)–[#70](https://github.com/davison/md-notes/pull/70)
 is the one it had on the task branch, which the rebase merge rewrote. This document quotes
 the SHAs on `main`. [#68](https://github.com/davison/md-notes/pull/68) was rewritten twice
 — once by its own rebase onto `main` mid-review, after #56, #57 and #58 had landed, and
@@ -689,10 +791,19 @@ anyone following the comments into the history:
 | `7825349` | [`113aeef`](https://github.com/davison/md-notes/commit/113aeef) | the drawer does not outlive its width |
 | `302ab54` | [`3565433`](https://github.com/davison/md-notes/commit/3565433) | the live-update notice at phone widths |
 | `a3acf5a` | [`3802e2f`](https://github.com/davison/md-notes/commit/3802e2f) | the breakpoint named in pixels |
+| `88d7cdf` | [`6834ee7`](https://github.com/davison/md-notes/commit/6834ee7) | the display settings |
+| `c562943` | [`fc5596d`](https://github.com/davison/md-notes/commit/fc5596d) | tap targets where a stylus lands |
+| `f5f40b7` | [`d496228`](https://github.com/davison/md-notes/commit/d496228) | the on-screen keyboard resizes the content |
+| `1fc5be0` | [`fded5c3`](https://github.com/davison/md-notes/commit/fded5c3) | the settings documented, and the e-ink page |
+| `9db8588` | [`01fc0e3`](https://github.com/davison/md-notes/commit/01fc0e3) | the boot script's guard can actually fail |
+| `4e96463` | [`20e75d2`](https://github.com/davison/md-notes/commit/20e75d2) | gencss refuses a line it could only half-scope |
+| `dce79e8` | [`818312f`](https://github.com/davison/md-notes/commit/818312f) | the frontmatter disclosure is a target too |
+| `f42528c` | [`e37164c`](https://github.com/davison/md-notes/commit/e37164c) | what the 40 px rule covers, and what is unchecked |
 
 ## What the reviews and QA changed
 
-Every PR went through at least two rounds; two went through three. The reviewer seat is
+Six of the seven PRs went through at least two rounds, two went through three, and one —
+#70 — was approved in a single round with no blocking finding. The reviewer seat is
 routed to the same identity as the author (pure solo tier), so each review is a comment
 rather than a formal approval, and each merge carried the operator's standing confirmation
 from [#35](https://github.com/davison/md-notes/issues/35#issuecomment-5632220363).
@@ -836,6 +947,35 @@ retry — the author says so in as many words.
   #59's lazy editor at all four phone profiles after the rebase. It approved with two nits,
   neither taken.
 
+- **The e-ink settings ([#70](https://github.com/davison/md-notes/pull/70#issuecomment-5657786993)):**
+  one round, approved, with six findings and none of them blocking — the only PR of the
+  milestone where that is true. It is also the most thoroughly executed single round:
+  seven device profiles, every one started with `colorScheme: "dark"`, 206 checks, with the
+  module bundle held back by a route interceptor to prove that both attributes are on the
+  root at `requestAnimationFrame` and at `DOMContentLoaded` and that no frame is ever the
+  dark page. It checked the *built* CSS rather than the source, and recorded something the
+  task had not: lightningcss rewrites `color-scheme: light dark` into its own custom-property
+  pair, and the `:root[data-theme="light"]` block is what makes it emit the correct
+  forced-light overrides in the bundle. Two of its findings are the same defect in two
+  languages — a guard that cannot fail. `settings.test.ts` asserted that no
+  `<script type="module">` appears in `ui/index.html?raw`, which is the *source*, and by
+  definition never contains the script Vite injects at build; and `gencss`'s `scoped`
+  refused only a line with *no* match for the selector it inserts, so a comma-joined line
+  would have been half-scoped, leaving the second selector live under the override, and the
+  test that pins it uses `strings.Contains` and would not have seen that either. Both were
+  fixed at the level the finding named: three guards each verified against a mutation that
+  makes them fail, one of them reading `ui/dist/index.html` through `import.meta.glob` so a
+  clean tree falls back rather than throwing; and a count rather than a presence test.
+  Finding 3 is the one that reached the documentation: `docs/e-ink.md` opened "Every row and
+  control that is tapped … is at least 40 pixels tall" as a universal, and the frontmatter
+  disclosure was 20.25 px. Both halves were done — the disclosure joined the coarse block,
+  and the sentence now names the surfaces and says outright that links *inside* a note are
+  the exception and have to be, since their size is the line of prose they sit in. Finding 4
+  is the one worth keeping: the 702×936 figure the whole verification section rests on is
+  arithmetic from the panel, not a reading taken off the device, and it was stated as
+  settled while sitting outside the page's own list of what only hardware can answer. It is
+  first in that list now.
+
 Two findings changed something beyond their own PR. The review of #68 proving that a
 failed module import can never be retried is the reason the pane offers a reload and
 carries a comment saying why, and the reason `/assets/` answers 404 — a decision about the
@@ -849,14 +989,17 @@ of them, are recorded here when they arrive.
 
 ## Known gaps at the boundary
 
-The four M2 and M3 captures this milestone's tasks adopted —
+All six captures this milestone's tasks adopted —
 [#32](https://github.com/davison/md-notes/issues/32),
 [#34](https://github.com/davison/md-notes/issues/34),
-[#51](https://github.com/davison/md-notes/issues/51) and
-[#54](https://github.com/davison/md-notes/issues/54) — are closed, and
+[#51](https://github.com/davison/md-notes/issues/51),
+[#52](https://github.com/davison/md-notes/issues/52),
+[#53](https://github.com/davison/md-notes/issues/53) and
+[#54](https://github.com/davison/md-notes/issues/54) — are closed, and the four of them
+that
 [the M3 record's gaps table](3-clipper-authentication-and-tailnet.md#known-gaps-at-the-boundary)
-is annotated to say so. What remains true and will surprise someone who has not read this
-far:
+listed as open are annotated there. What remains true and will surprise someone who has
+not read this far:
 
 | Gap | Where it is recorded |
 |-----|----------------------|
@@ -877,10 +1020,16 @@ far:
 | On a phone the navigator and the search-and-tags pane cannot be seen at once, and it is two taps from the tree to the tag list. The live-update notice is duplicated markup, one copy per width, so a DOM query for it finds two nodes | [#61](https://github.com/davison/md-notes/issues/61#issuecomment-5656475004), [#61](https://github.com/davison/md-notes/issues/61#issuecomment-5657377326) |
 | `TestBurstIsOneBatch` in `internal/watch` is still flaky in CI. It recurred three times during this milestone — on PR #43's CI, on PR #65's and on PR #71's — and **two of the three were on branches carrying no Go at all**, which is what rules out a regression and leaves the debounce race on a loaded runner. It is the strongest candidate for an early task in the next milestone | [#46](https://github.com/davison/md-notes/issues/46) |
 
-**Awaiting #62** for the e-ink gaps, including the one the record already knows it cannot
-close: a device that reports a fine pointer and hover gets no enlarged tap targets at all,
-and the failure mode is silent
-([#62](https://github.com/davison/md-notes/issues/62#issuecomment-5657572060)).
+Four more are the e-ink work's, and they are held back from the table above only because
+three of the four are about a device nobody here has held. The first is the one the record
+already knew it could not close:
+
+| Gap | Where it is recorded |
+|-----|----------------------|
+| A device reporting a **fine** pointer *and* hover gets no enlarged tap targets at a wide width — a stylus tablet zoomed out past 960 CSS px is exactly that shape. The failure is silent, only hardware can rule it out, and the remedy if it happens is one media feature | [#62](https://github.com/davison/md-notes/issues/62#issuecomment-5657572060), [the e-ink page](../e-ink.md#what-has-been-checked-and-what-has-not) |
+| The Boox Note Air 3's 702×936 viewport is arithmetic from its panel and pixel ratio, not a reading taken off the device. Nothing delivered depends on it — the targets follow the pointer at any width and the layout follows whatever width the browser reports — but the verification rests on it | [the e-ink page](../e-ink.md#what-has-been-checked-and-what-has-not) |
+| Nothing has run on a Boox. Panel ghosting, the real on-screen keyboard, whether NeoBrowser reports a coarse pointer and whether the tablet's single VPN slot is free are all unanswered, and none of them is a closure gate | [#55](https://github.com/davison/md-notes/issues/55), [the e-ink page](../e-ink.md#what-has-been-checked-and-what-has-not) |
+| The light override is light-only: there is no way to force the *dark* scheme on a light device. That would need the third palette `ui/src/style.css` documents `gencss` as refusing, and no requirement asked for it | [#62](https://github.com/davison/md-notes/issues/62#issuecomment-5657570182) |
 
 Milestone two's and milestone three's own boundary notes still stand, minus the two this
 milestone discharged — the bundle served uncompressed and uncacheable, and the extension
@@ -908,8 +1057,12 @@ rows above that a capture would have carried.
 
 ## Where the record is silent
 
-- **Nothing says why the two settings the e-ink work adds are the only two.**
-  **Awaiting #62.**
+- **Nothing says why the two settings are the only two.** The panel is fixed at two
+  switches by the task's plan, and the tap-target decision turns down a third — "large tap
+  targets" — partly on that ground: "the task fixes the panel at two toggles". What fixed it
+  at two is M4-R5's own wording, and nothing weighs a third, a font-size control, or a
+  refresh-mode hint against them. The record is clear that the panel *could* grow; it does
+  not say what would earn a place in it.
 - **The palette's aesthetics were settled by two model readers.** The decision on toning
   both schemes from one palette is argued on coverage and contrast, which are measurable,
   and the three rules that came out of the review are argued on what a contrast ratio does

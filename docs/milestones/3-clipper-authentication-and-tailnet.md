@@ -993,6 +993,13 @@ will surprise someone who has not read this far:
 > [#48](https://github.com/davison/md-notes/issues/48) and
 > [#50](https://github.com/davison/md-notes/issues/50) are still open. Every other row below
 > still stands.
+>
+> Two further captures were taken up by the same milestone and are named here only so the
+> accounting is whole: [#52](https://github.com/davison/md-notes/issues/52) (the notes
+> application on a Boox Note Air 3) by [#62](https://github.com/davison/md-notes/issues/62),
+> and [#53](https://github.com/davison/md-notes/issues/53) (the multi-device and offline
+> workflow) by [#58](https://github.com/davison/md-notes/issues/58). Like #54, both were
+> filed after this record merged, so neither contradicts anything in it.
 
 | Gap | Where it is recorded |
 |-----|----------------------|
