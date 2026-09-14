@@ -41,6 +41,10 @@ extension with the authentication it needed; the inbox is still ahead.
   the daemon. [docs/sync.md](docs/sync.md) describes the whole
   arrangement: Syncthing setup, offline editing, conflict files in the
   navigator, Android with Markor, and the tailnet alternative.
+- **E-ink.** The web UI has a light-theme override and a no-animation
+  setting for a backlit-less screen, and tap targets that suit a stylus.
+  [docs/e-ink.md](docs/e-ink.md) covers a Boox Note Air 3 and the two ways
+  to reach your notes from one.
 
 ## Building
 
@@ -234,7 +238,8 @@ milestone three: the bearer token and the clip endpoint, the extension that
 clips a page or a selection and opens local markdown files, and reaching the
 daemon from another node on the tailnet.
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
-today, [docs/extension.md](docs/extension.md) the extension, and the milestone
+today, [docs/extension.md](docs/extension.md) the extension,
+[docs/e-ink.md](docs/e-ink.md) the e-ink tablet, and the milestone
 records
 ([one](docs/milestones/1-daemon-and-rendered-viewer.md),
 [two](docs/milestones/2-editor-autosave-and-live-update.md),

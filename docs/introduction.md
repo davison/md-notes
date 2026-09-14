@@ -491,6 +491,34 @@ whitespace) and from inline hashtags: `#` at the start of a line or after whites
 followed by letters, digits, `_`, `-` or `/`, containing at least one letter, outside
 fenced and inline code, lower-cased. Tags are collected per request, with no index.
 
+### Display settings
+
+The **gear** at the right of the top bar, at every width, opens a panel with two
+switches. Both are kept in `localStorage`, so they are per device and per browser,
+and neither is sent anywhere.
+
+- **Always use the light theme.** The page uses the light palette whatever the
+  device's `prefers-color-scheme` says. The syntax colouring in fenced code follows
+  the same switch, so an overridden page is not left with dark-scheme tokens on a
+  light background. It is applied by an inline script before the stylesheet paints,
+  so overriding a dark device shows no frame of the dark scheme on load. Turning it
+  off returns the page to the device's preference.
+- **No animation.** No transitions, and no flash on the block a search hit scrolls
+  to — the scroll itself still happens, centring the block. The same is true without
+  the switch on a device that asks for reduced motion: `prefers-reduced-motion:
+  reduce` is honoured on its own.
+
+Tap targets are not a setting. Wherever the browser reports a coarse pointer or no
+hover — a phone, a tablet, a stylus — or the window is below the narrow breakpoint,
+every row and control that is tapped is at least 40 pixels tall: tree entries, tags
+and the clear link, search hits and the search box, the drawer's tabs, the top bar's
+buttons and the note bar's. Under a mouse at a wide width the rows keep their
+compact density.
+
+Both settings exist for an e-ink tablet, where a dark theme is grey on grey and
+every animation is a slow visible repaint. [On an e-ink tablet](e-ink.md) covers
+that device end to end, including the two ways to reach your notes from one.
+
 ## Editing
 
 Any note the daemon serves can be edited in place. `Ctrl+E` flips the note pane
