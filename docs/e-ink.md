@@ -7,12 +7,16 @@ as a stutter or a smear rather than as motion; and a stylus is a blunter
 instrument than a mouse, so a 27-pixel row in a tree is a row you miss.
 
 The device this page was written for is a **Boox Note Air 3**: Android 12, a
-1404x1872 panel at a device pixel ratio of 2 — which is 702x936 CSS pixels in
-portrait and 936x702 in landscape — a capacitive touchscreen, a Wacom stylus,
-and a Chromium-based browser called NeoBrowser. Both orientations are under the
-application's 960-pixel breakpoint, so the tablet gets [the narrow
-layout](introduction.md#on-a-phone): the note has the screen, and the navigator
-and the search-and-tags pane are tabs of a drawer.
+1404x1872 panel at a device pixel ratio of 2 — which should be 702x936 CSS
+pixels in portrait and 936x702 in landscape — a capacitive touchscreen, a Wacom
+stylus, and a Chromium-based browser called NeoBrowser. Both of those are under
+the application's 960-pixel breakpoint, so on those figures the tablet gets [the
+narrow layout](introduction.md#on-a-phone): the note has the screen, and the
+navigator and the search-and-tags pane are tabs of a drawer. The figures are
+arithmetic from the panel, not a reading taken off the device — see [what has
+not been checked](#what-has-been-checked-and-what-has-not) — but nothing here
+depends on them: the tap targets follow the pointer at any width, and the
+layout follows the width whatever it turns out to be.
 
 There are two ways to reach your notes from it, and they answer different
 questions. Try both.
@@ -36,11 +40,13 @@ effect at once.
   device asks for reduced motion in its accessibility settings, so on a tablet
   that already does, the switch is belt and braces.
 
-Tap targets do not need a setting. Every row and control that is tapped — tree
-entries, tags, search hits, the drawer's tabs, the top bar's buttons — is at
-least 40 pixels tall wherever the browser reports a touch or stylus pointer,
-including the wide layout you get by zooming out. A mouse keeps the compact
-rows.
+Tap targets do not need a setting. The application's own controls — tree
+entries, tags and the clear link, search hits and the search box, the drawer's
+tabs, the top bar's buttons, the note bar's, and the frontmatter disclosure —
+are at least 40 pixels tall wherever the browser reports a touch or stylus
+pointer, including the wide layout you get by zooming out. A mouse keeps the
+compact rows. Links *inside* a note are the exception, and have to be: their
+size is the line of prose they sit in, and a 40-pixel line is not prose.
 
 ## Route one: the browser, over the tailnet
 
@@ -114,10 +120,13 @@ no transition and no flash under the no-animation setting, every tap target at
 by the height of an on-screen keyboard.
 
 What has not been checked is the tablet. Nothing here has run on a Boox, and the
-things that only hardware can answer are: whether NeoBrowser reports a coarse
-pointer (if it reports a fine one, the tap targets will not grow, and that is a
-one-line fix); whether the panel's own refresh modes leave ghosting the settings
-cannot help with; whether the on-screen keyboard behaves as Chromium's
+things that only hardware can answer are: **what viewport NeoBrowser actually
+reports** — 702x936 is arithmetic from the panel and its pixel ratio, and a
+browser is free to disagree, though as above nothing depends on it; whether
+NeoBrowser reports a coarse pointer (if it reports a fine one, the tap targets
+will not grow past the 960-pixel breakpoint, and that is a one-line fix);
+whether the panel's own refresh modes leave ghosting the settings cannot help
+with; whether the on-screen keyboard behaves as Chromium's
 `interactive-widget=resizes-content` says it should; and whether the VPN slot is
 free. The operator's check on the device is recorded on
 [the milestone issue](https://github.com/davison/md-notes/issues/55) when it
