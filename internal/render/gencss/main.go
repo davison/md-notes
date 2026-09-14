@@ -207,14 +207,27 @@ func tokensOnly(in []byte) ([]byte, error) {
 // selector rather than in front of the line. A line the selector is
 // missing from is refused: a dark rule that escaped the scope would keep
 // its dark colour under the light override.
+//
+// A line carrying the selector more than once is refused for the same
+// reason and needs saying separately: chroma's formatter writes one
+// selector per line today, but a comma-joined
+// `.mdn-chroma .mdn-a, .mdn-chroma .mdn-b` would take the prefix on its
+// first selector only and leave the second live under the override — and
+// half a scope is the silence this refusal exists to prevent, not a
+// milder version of it.
 func scoped(in []byte, scope string) ([]byte, error) {
 	want := "." + render.ClassPrefix + "chroma "
 	var out bytes.Buffer
 	for _, line := range strings.Split(strings.TrimSuffix(string(in), "\n"), "\n") {
-		at := strings.Index(line, want)
-		if at < 0 {
+		switch strings.Count(line, want) {
+		case 1: // the one shape this can scope whole
+		case 0:
 			return nil, fmt.Errorf("no %q selector to scope in %q", want, line)
+		default:
+			return nil, fmt.Errorf("%d %q selectors on one line, which scoping would only half cover: %q",
+				strings.Count(line, want), want, line)
 		}
+		at := strings.Index(line, want)
 		out.WriteString(line[:at])
 		out.WriteString(scope)
 		out.WriteByte(' ')

@@ -29,10 +29,6 @@ var brokenTokens = []string{
 	"gp", "nv", "ni", "gd", "gr", "ge", "ow", "vc", "w", "nl", "gt",
 }
 
-// renderClassPrefix is the prefix the highlighter emits, named through
-// the renderer so these tests cannot drift from the classes it writes.
-func renderClassPrefix() string { return render.ClassPrefix }
-
 func readFile(t *testing.T, path string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -642,7 +638,7 @@ func TestTheDarkBlockFollowsTheLightOverride(t *testing.T) {
 			continue
 		}
 		dark++
-		if !strings.Contains(line, darkScope+" ."+renderClassPrefix()+"chroma ") {
+		if !strings.Contains(line, darkScope+" ."+render.ClassPrefix+"chroma ") {
 			t.Errorf("a dark rule escapes the override: %s", line)
 		}
 	}
@@ -675,7 +671,7 @@ func TestTheDarkScopeMatchesTheAppStylesheet(t *testing.T) {
 // slipped past the prefix would keep its dark colour under the override,
 // and silence is how that would reach a reader.
 func TestScopedRefusesALineItCannotScope(t *testing.T) {
-	in := []byte("/* Keyword */ ." + renderClassPrefix() + "chroma ." + renderClassPrefix() + "k { color: #ffffff }\n")
+	in := []byte("/* Keyword */ ." + render.ClassPrefix + "chroma ." + render.ClassPrefix + "k { color: #ffffff }\n")
 	out, err := scoped(in, darkScope)
 	if err != nil {
 		t.Fatalf("scoped: %v", err)
@@ -685,5 +681,16 @@ func TestScopedRefusesALineItCannotScope(t *testing.T) {
 	}
 	if _, err := scoped([]byte("html { color: red }\n"), darkScope); err == nil {
 		t.Error("scoped accepted a rule it could not scope")
+	}
+	// A comma-joined line would take the prefix on its first selector and
+	// leave the second one live under the override, which no later check
+	// would see: TestTheDarkBlockFollowsTheLightOverride asks whether the
+	// scope is on the line, not whether it is on every selector in it.
+	joined := "/* Two */ ." + render.ClassPrefix + "chroma ." + render.ClassPrefix + "a, ." +
+		render.ClassPrefix + "chroma ." + render.ClassPrefix + "b { color: #ffffff }\n"
+	if out, err := scoped([]byte(joined), darkScope); err == nil {
+		t.Errorf("scoped half-covered a comma-joined line instead of refusing it: %s", out)
+	} else if !strings.Contains(err.Error(), "half") {
+		t.Errorf("the refusal should say what it cannot cover, got %v", err)
 	}
 }
