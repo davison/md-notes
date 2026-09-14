@@ -6,6 +6,7 @@ import { affects, affectsTree, type LiveUpdate, useEvents } from "./events";
 import { Navigator } from "./navigator";
 import { NotePane, UnsavedDrafts, useUnsavedGuard } from "./note-pane";
 import { SearchPane } from "./search-pane";
+import { SettingsMenu } from "./settings-panel";
 import { TagPanel, tagURL } from "./tag-panel";
 import { rootTabTitle, useDocumentTitle } from "./title";
 
@@ -119,9 +120,11 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
         <a href="/" class="brand">mdn</a>
         <span class="root-name">{root.slug}</span>
         <span class="path">{root.path}</span>
+        <span class="topbar-spacer" />
         <TagChip slug={slug} current={current} active={activeTag} />
         <UnsavedDrafts slug={slug} current={current} />
         <FindToggle state={drawer} />
+        <SettingsMenu />
       </header>
       <Drawer state={drawer}>
         <aside class="nav">
