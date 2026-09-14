@@ -629,22 +629,31 @@ keeps every byte through an edit; a note that already *mixes* endings comes back
 uniform in its dominant one the first time it is edited.
 
 The editor is part of the UI bundle embedded in the binary, but a page that is only
-reading a note does not load it. Opening a note pulls one JavaScript chunk of about
-43 KB and 12 KB of CSS; CodeMirror and the table of languages it can highlight —
-about 200 KB over the wire — are fetched on the first `Ctrl+E` of that page, and kept
-for every later toggle in it. On loopback the first `Ctrl+E` of a page takes about
-50 ms and every later one about 6 ms. Opening a second page does not inherit the
-second figure: the browser has the chunk cached, so nothing is fetched, but that first
-toggle still takes about 55 ms, because what the time buys is compiling CodeMirror and
-building the editor rather than getting hold of it. If the daemon is upgraded while a
-page is open, the chunk that page would ask for is no longer in the bundle and the
-daemon answers 404: `Ctrl+E` then says the editor could not be loaded and offers to
-reload, which is the only thing that cures it — a browser that failed to fetch a module
-will not ask for that URL again, however healthy the network becomes, but a reloaded
-page asks for whatever the current `index.html` names. The note and any unsaved draft
-survive the reload. The per-language parsers for fenced
-code are separate chunks again, one per language, fetched when a note containing such
-a block is opened in the editor — not when the block is typed in.
+reading a note does not load it. Opening a note pulls one JavaScript chunk and one
+stylesheet; CodeMirror and the table of languages it can highlight are an order of
+magnitude larger and are fetched on the first `Ctrl+E` of that page, then kept for
+every later toggle in it.
+
+What that costs in time holds its shape across every machine it has been measured on,
+even where the absolute numbers differ by a factor of two. The first `Ctrl+E` of a page
+is the expensive one; a second page with the chunk already in the browser's cache costs
+**the same again**, because what the time buys is compiling CodeMirror and building the
+editor rather than getting hold of it; and every later toggle *within* a page is an order
+of magnitude quicker, because the module is held. As of this milestone, on loopback on
+one desktop machine, that is about 85 ms, about 85 ms and about 7 ms. Four samples of the
+first figure, taken on three machines, run from 56 ms to 103 ms — a spread wide enough that
+the ratios above are the part to rely on and any single number is the part to re-measure.
+They are in
+[the milestone four record](milestones/4-polish-phone-e-ink-and-the-bundle.md#known-gaps-at-the-boundary).
+
+If the daemon is upgraded while a page is open, the chunk that page would ask for is no
+longer in the bundle and the daemon answers 404: `Ctrl+E` then says the editor could not
+be loaded and offers to reload, which is the only thing that cures it — a browser that
+failed to fetch a module will not ask for that URL again, however healthy the network
+becomes, but a reloaded page asks for whatever the current `index.html` names. The note
+and any unsaved draft survive the reload. The per-language parsers for fenced code are
+separate chunks again, one per language, fetched when a note containing such a block is
+opened in the editor — not when the block is typed in.
 
 What the daemon serves is compressed and cacheable. The build writes a brotli and a
 gzip copy beside each asset, and the daemon serves whichever the request's
@@ -656,9 +665,18 @@ immutable`: their names change when their content does, so a browser that has on
 never asks for it again. `index.html` carries `no-cache`, which means revalidate
 rather than do not store, and every response carries an `ETag` over the bytes actually
 sent, so the revalidation is answered with a 304 and the page itself crosses the wire
-only when it has changed. A first load of a note transfers about 17 KB of assets; a
-reload, a new tab, or a note URL opened directly transfers none at all, and only the
-JSON for the note itself.
+only when it has changed. So a first load of a note transfers the bundle once and a
+reload, a new tab, or a note URL opened directly transfers **no asset bytes at all** —
+only the JSON for the note itself. That is the property worth remembering; the sizes
+behind it move with every change to the UI and are not worth trusting from a page like
+this one. As of this milestone, at
+[`e37164c`](https://github.com/davison/md-notes/commit/e37164c), a cold load of a note
+transferred **19,738 bytes** across two assets — a 50,657-byte JavaScript chunk and an
+18,376-byte stylesheet, compressed to 16,189 and 3,549 on the wire — and the first
+`Ctrl+E` pulled about 226 KB more.
+[The milestone four record](milestones/4-polish-phone-e-ink-and-the-bundle.md#corrections-to-the-record-itself)
+carries the measurements, who took them, and how far they had already drifted inside one
+milestone.
 
 ### Autosave and the save states
 
