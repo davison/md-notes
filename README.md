@@ -21,24 +21,32 @@ do a few things well and nothing else:
 ## Shape
 
 The design as a whole. Milestone one built the daemon and the reading half of
-the web UI, milestone two the editor, and milestone three the browser
-extension with the authentication it needed; the inbox is still ahead.
+the web UI, milestone two the editor, milestone three the browser extension
+with the authentication it needed, and milestone four made the result usable
+on the devices it is read from and cheap on the wire; the inbox is still
+ahead.
 
 - **Daemon.** One static Go binary. Serves the web UI, watches one or more
   root folders, renders markdown server-side, shells out to ripgrep for
   search and tags, and pushes changes over Server-Sent Events. Binds to
   localhost only.
 - **Web UI.** TypeScript. Navigator, rendered note, search panel, and a
-  CodeMirror 6 editor with vim keybindings behind a single toggle.
+  CodeMirror 6 editor with vim keybindings behind a single toggle. Three panes
+  on a wide screen; below 960 pixels the note takes the whole viewport under a
+  compact top bar and the two side panes become the tabs of one drawer. The
+  browser tab names the note you have open. The bundle is embedded in the
+  binary, served compressed and cached, and does not carry the editor to a
+  page that is only reading.
 - **Browser extension.** Chromium Manifest V3. Clips a readable page or a
   selection as markdown and posts it to the daemon. Also intercepts local
   markdown file URLs so they open in the app. See
   [docs/extension.md](docs/extension.md).
 - **Sync and mobile.** Out of scope for the daemon. Syncthing keeps the
   folder mirrored between machines and an Android phone, where any markdown
-  editor reads the same files. An inbox file lets URLs shared from the
-  phone become proper clips when the folder next syncs to a machine running
-  the daemon. [docs/sync.md](docs/sync.md) describes the whole
+  editor reads the same files. An inbox file that turns URLs shared from the
+  phone into proper clips when the folder next syncs to a machine running the
+  daemon is planned, and is not built.
+  [docs/sync.md](docs/sync.md) describes the whole
   arrangement: Syncthing setup, offline editing, conflict files in the
   navigator, Android with Markor, and the tailnet alternative.
 - **E-ink.** The web UI has a light-theme override and a no-animation
@@ -113,7 +121,9 @@ lists them with counts and filters the navigator to the notes carrying one.
 editor with vim keybindings, and back. Edits save to the original file
 automatically, one second after typing stops and immediately when you
 switch view, move to another note, leave the window or type `:w` — the
-note bar says whether the draft is saved, saving, failed or in conflict.
+note bar says whether the draft is saved, saving, failed or in conflict, and
+the browser tab carries the same news as a leading `•` for unsaved work or
+`⚠` for a conflict.
 A refused save keeps the draft and offers a retry; a note changed or
 deleted on disk under an unsaved draft raises a banner that keeps the
 draft until you say what to do with it. Notes are edited in place:
@@ -237,14 +247,20 @@ too: the editor, autosave with explicit conflict handling, and the two
 live-update and rendering follow-ups milestone one's QA left open. So is
 milestone three: the bearer token and the clip endpoint, the extension that
 clips a page or a selection and opens local markdown files, and reaching the
-daemon from another node on the tailnet.
+daemon from another node on the tailnet. And so is milestone four, which
+worked through what three milestones of use had surfaced: the phone layout,
+the browser tab title, code colours that are readable in the dark scheme, an
+embedded bundle that is compressed, cached and no longer carries the editor
+to a reader, the extension against a tailnet daemon URL, and
+[docs/sync.md](docs/sync.md), the account of how the notes reach every device.
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
 today, [docs/extension.md](docs/extension.md) the extension,
 [docs/e-ink.md](docs/e-ink.md) the e-ink tablet, and the milestone
 records
 ([one](docs/milestones/1-daemon-and-rendered-viewer.md),
 [two](docs/milestones/2-editor-autosave-and-live-update.md),
-[three](docs/milestones/3-clipper-authentication-and-tailnet.md))
+[three](docs/milestones/3-clipper-authentication-and-tailnet.md),
+[four](docs/milestones/4-polish-phone-e-ink-and-the-bundle.md))
 record the decisions behind them. The inbox, which turns URLs shared from a
 phone into clips, follows in a later milestone. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
