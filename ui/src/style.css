@@ -313,6 +313,17 @@ code {
     white-space: nowrap;
   }
 
+  /* An unsaved draft names the note it belongs to, and a deep path is
+     longer than this bar has to give: unclamped it pushes the magnifier off
+     the screen and scrolls the page sideways. It keeps what fits, and the
+     note it names is a tap away either way. */
+  .shell .unsaved-drafts {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .drawer-toggle {
     display: inline-flex;
     flex: none;

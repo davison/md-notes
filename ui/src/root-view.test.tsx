@@ -341,6 +341,35 @@ describe("RootView drawer at narrow widths", () => {
   });
 });
 
+describe("RootView top bar", () => {
+  // Every element in the top bar has an answer in the stylesheet's narrow
+  // block: hidden (the path), clamped to what fits (the root name, the
+  // unsaved-draft notice), or a fixed tap target (the two toggles, the
+  // chip). Nothing in jsdom computes those rules, so what this pins is the
+  // set: an element added here without a decision about the compact bar
+  // fails this, which is how an unclamped draft path once pushed the
+  // magnifier off an iPhone 14.
+  it("holds only the elements the narrow layout accounts for", async () => {
+    mount("/r/n/docs/a.md?tag=x");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+    // A draft on another note, so the unsaved notice is in the bar too.
+    const buried = getSession("n", "docs/deep/deeper/deepest/buried.md");
+    await buried.open();
+    buried.edit("a draft that never reached the file");
+    await waitFor(() => expect(document.querySelector(".unsaved-drafts")).toBeTruthy());
+    expect([...document.querySelector(".topbar")!.children].map((n) => n.className)).toEqual([
+      "drawer-toggle nav-toggle",
+      "brand",
+      "root-name",
+      "path",
+      "tag-chip",
+      "unsaved-drafts",
+      "drawer-toggle find-toggle",
+    ]);
+    await buried.flush();
+  });
+});
+
 describe("RootView tag chip", () => {
   it("is absent with no filter and names the active tag, clearing it", async () => {
     mount("/r/n/docs/a.md");
