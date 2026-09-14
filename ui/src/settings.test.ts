@@ -2,6 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // The shipped page itself, so the copy of the boot script in it is the one
 // under test rather than a transcription of it.
 import indexHTML from "../index.html?raw";
+// And the built page, when there is one. Vite's glob answers {} rather than
+// throwing when the build output is absent, so `pnpm test` on a clean tree
+// still runs; `make test` builds the UI first, so CI always has it.
+const built = import.meta.glob("../dist/index.html", { query: "?raw", import: "default", eager: true }) as Record<
+  string,
+  string
+>;
 import {
   BOOT,
   DEFAULTS,
@@ -140,14 +147,43 @@ describe("the boot script", () => {
     expect(document.documentElement.hasAttribute(THEME_ATTR)).toBe(false);
   });
 
-  it("runs before the stylesheet the build injects can paint", () => {
-    // Vite injects its <link rel="stylesheet"> and its module script into
-    // <head>; an inline classic script there runs during the parse, ahead of
-    // the first paint, which a deferred module does not. The test that
-    // matters is that it is inline and in the head.
+  it("is a plain inline script, not a deferred one", () => {
+    // type="module", defer or async would each move it after the parse and
+    // give up the whole point: a module script runs too late to beat the
+    // paint. The opening tag carries nothing at all.
+    expect(html).toContain(`<script>\n      ${BOOT}\n    </script>`);
+  });
+
+  it("is the last thing in the head, where Vite injects after it", () => {
+    // Vite appends its <script type="module"> and its stylesheet <link> to
+    // the end of <head>, so "last in the source head" is what puts the boot
+    // script ahead of both in the built page. Anything added after it here —
+    // a <link>, a <style>, another script — would take that away, which is
+    // what this notices and the old shape of this test could not: it asserted
+    // that the source lacks the module script Vite has not injected yet, and
+    // so could never fail.
     const head = /<head>([\s\S]*?)<\/head>/.exec(html)![1];
     expect(head).toContain(BOOT);
-    expect(/<script\s+type="module"/.test(head)).toBe(false);
+    const after = head.slice(head.indexOf(BOOT));
+    expect(after).toContain("</script>");
+    expect(after.slice(after.indexOf("</script>")).trim()).toBe("</script>");
+  });
+
+  it("precedes the module script and the stylesheet in the built page", () => {
+    const page = built["../dist/index.html"];
+    if (page === undefined) {
+      // Not a skip: the source assertions above are what hold when there is
+      // no build to look at, and `make test` always builds one.
+      expect(html).toContain(BOOT);
+      return;
+    }
+    const boot = page.indexOf(BOOT);
+    expect(boot).toBeGreaterThanOrEqual(0);
+    for (const re of [/<script[^>]+type="module"/, /<link[^>]+rel="stylesheet"/]) {
+      const at = re.exec(page)?.index ?? -1;
+      expect(at).toBeGreaterThanOrEqual(0);
+      expect(boot).toBeLessThan(at);
+    }
   });
 
   it("asks the browser to resize the content for the on-screen keyboard", () => {
