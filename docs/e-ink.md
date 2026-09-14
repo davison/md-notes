@@ -1,0 +1,124 @@
+# On an e-ink tablet
+
+An e-ink tablet is a good notes device and a bad web browser. The panel has no
+backlight, so a dark theme is grey text on a grey-black page rather than the
+crisp one a phone gives; a refresh is slow and visible, so an animation arrives
+as a stutter or a smear rather than as motion; and a stylus is a blunter
+instrument than a mouse, so a 27-pixel row in a tree is a row you miss.
+
+The device this page was written for is a **Boox Note Air 3**: Android 12, a
+1404x1872 panel at a device pixel ratio of 2 — which is 702x936 CSS pixels in
+portrait and 936x702 in landscape — a capacitive touchscreen, a Wacom stylus,
+and a Chromium-based browser called NeoBrowser. Both orientations are under the
+application's 960-pixel breakpoint, so the tablet gets [the narrow
+layout](introduction.md#on-a-phone): the note has the screen, and the navigator
+and the search-and-tags pane are tabs of a drawer.
+
+There are two ways to reach your notes from it, and they answer different
+questions. Try both.
+
+## What to turn on first, either way
+
+The web UI has two settings for this device, behind the **gear** at the right of
+the top bar. Both are remembered in the browser, per device, and both take
+effect at once.
+
+- **Always use the light theme.** The page uses the light palette whatever the
+  device's colour-scheme preference says — which matters, because Android's
+  night mode is a reasonable thing to leave on for a phone and the wrong way
+  round for e-ink. The code colouring in fenced blocks follows the same switch,
+  so a fence is not left in dark-scheme colours on a light page. The override is
+  applied before the page paints, so you never see a frame of the scheme you
+  overrode. Turning it off gives the device its preference back.
+- **No animation.** No transitions anywhere, and no flash on the block a search
+  hit scrolls to — the note still scrolls the hit to the middle of the screen,
+  which is what tells you where it is. This is also on automatically when the
+  device asks for reduced motion in its accessibility settings, so on a tablet
+  that already does, the switch is belt and braces.
+
+Tap targets do not need a setting. Every row and control that is tapped — tree
+entries, tags, search hits, the drawer's tabs, the top bar's buttons — is at
+least 40 pixels tall wherever the browser reports a touch or stylus pointer,
+including the wide layout you get by zooming out. A mouse keeps the compact
+rows.
+
+## Route one: the browser, over the tailnet
+
+There is one copy of the notes, on the machine running the daemon, and the
+tablet reads and writes it over the network. Nothing is stored on the tablet,
+so nothing on it can conflict.
+
+What it needs:
+
+1. **The daemon reachable on the tailnet.** `tailnet_host` in the daemon's
+   config, `tailscale serve` in front of it, and the bearer token. [Reaching the
+   daemon over the tailnet](introduction.md#reaching-the-daemon-over-the-tailnet)
+   is the whole setup, and [what is reachable under that
+   name](introduction.md#what-is-reachable-under-that-name-and-what-is-not) is
+   what it narrows.
+2. **Tailscale on the tablet.** The Android app, from the Play Store or as an
+   APK if the tablet has no Play services. It takes the device's single VPN
+   slot: Android allows one VPN at a time, so anything else you route — a work
+   VPN, a filtering DNS app — is off while Tailscale is on. If the tablet is
+   already holding that slot for something, this route is closed and route two
+   is the answer.
+3. **NeoBrowser**, the tablet's own browser, at the tailnet name. You log in
+   once with the token; the session is a cookie, so it survives closing the tab.
+
+Then the gear, the two settings, and you are reading.
+
+## Route two: Syncthing-Fork and Markor
+
+The tablet holds its own copy of the notes folder and edits it with a plain
+markdown editor. No network at the moment of use, no daemon, no browser.
+
+This is exactly the Android arrangement [Sync and offline
+editing](sync.md#android) describes, and the tablet is an Android device like
+any other: [Syncthing-Fork](https://github.com/Catfriend1/syncthing-android)
+mirrors the folder, [Markor](https://github.com/gsantner/markor) opens it. The
+folder is **Send & Receive**, so an edit made on the tablet reaches everything
+else. Two devices editing the same note while apart produce a Syncthing conflict
+file, which [the navigator shows and the conflict
+section](sync.md#when-two-devices-edit-the-same-note) tells you how to resolve.
+
+Markor is a better stylus-era editor than a browser text box, and it works with
+the tablet's own keyboard and handwriting input. What it does not give you is
+the rendered view, server-side search across the whole root, the tag panel or
+live update.
+
+## Which one
+
+| | Browser over the tailnet | Syncthing-Fork and Markor |
+|---|---|---|
+| Works offline | No | Yes |
+| Copy on the tablet | No | Yes |
+| Can produce a conflict file | No | Yes |
+| Rendered notes, search, tags | Yes | No |
+| Needs the VPN slot | Yes | No |
+| Editing | The app's editor, in the browser | Markor |
+
+They are not exclusive, and running both is the arrangement worth aiming at: the
+tablet syncs the folder so the notes are readable with the network down, and the
+browser is there when you want search, the rendered view, or to be sure you are
+looking at the one authoritative copy. The one shape to avoid is the one
+[sync.md](sync.md#the-one-shape-that-does-not-work) already rules out, and it
+does not arise here — the tablet never runs a daemon.
+
+## What has been checked, and what has not
+
+Everything above about the web UI was verified in headless Chromium at the
+tablet's viewport in both orientations, with the device set to prefer dark: the
+light override winning over that preference and taking the code colours with it,
+no transition and no flash under the no-animation setting, every tap target at
+40 pixels or more, and the editor still usable when the layout viewport shrinks
+by the height of an on-screen keyboard.
+
+What has not been checked is the tablet. Nothing here has run on a Boox, and the
+things that only hardware can answer are: whether NeoBrowser reports a coarse
+pointer (if it reports a fine one, the tap targets will not grow, and that is a
+one-line fix); whether the panel's own refresh modes leave ghosting the settings
+cannot help with; whether the on-screen keyboard behaves as Chromium's
+`interactive-widget=resizes-content` says it should; and whether the VPN slot is
+free. The operator's check on the device is recorded on
+[the milestone issue](https://github.com/davison/md-notes/issues/55) when it
+happens.
