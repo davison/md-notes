@@ -663,6 +663,14 @@ code {
   .note-bar {
     padding: 0.15rem 0.6rem;
   }
+
+  /* The one control inside a rendered note: the frontmatter disclosure. A
+     note's own links are not on this list and cannot be — their size is the
+     prose they sit in, and a 40 px line is not prose. */
+  .metadata summary {
+    min-height: 2.75rem;
+    line-height: 2.75rem;
+  }
 }
 
 /*
