@@ -114,34 +114,68 @@ coordinator's scope decision, had already fixed the answer.
 
 ## Requirement outcomes
 
-**Awaiting QA.** Independent QA exercises all eight requirements against the built
-daemon, UI and extension at
-[`e37164c`](https://github.com/davison/md-notes/commit/e37164c), and its verdict comment
-on
-[#55](https://github.com/davison/md-notes/issues/55) is what fills this table. Each row
-below names what the verdict has to reach; none of them is a claim of this document.
+The verdicts below are drawn from the independent QA comment on the milestone issue
+([#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406)), run against `origin/main` at
+[`e37164c`](https://github.com/davison/md-notes/commit/e37164c) in a clean worktree —
+four temporary daemons above port 8800 on their own configs, state files, token files and
+roots, one of them behind a Node TLS-terminating proxy with a self-signed certificate,
+and headless Chromium driving the built `extension/dist` and the UI against QA's own
+fixtures rather than the repository's. It raised eight findings, none blocking; the
+coordinator's disposition of them is at
+[#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658115371).
 
 | ID | Requirement | Status |
 |----|-------------|--------|
-| M4-R1 | Phone layout: the note under a compact top bar in both modes, the navigator as a drawer closing on selection, Escape and backdrop, search and tags reachable from the top bar, the filter visible, the root path gone, nothing overlapping at Pixel 7 and iPhone 14 in either orientation, scroll-to-line still working | _Awaiting QA_ |
-| M4-R2 | Tab title: the open note's title, updating on navigation and live update; the root's slug with no note open; `MD Notes` elsewhere; the unsaved and conflict states as a leading marker | _Awaiting QA_ |
-| M4-R3 | Dark-scheme code colours: a dark rule for every class the light palette defines, asserted by the generator, with contrast checked against the code background in both schemes, verified over Go, Python and shell fences | _Awaiting QA_ |
-| M4-R4 | Sync and offline documentation: the multi-device model, Syncthing setup, offline editing, conflict files and how to resolve them, Android, the tailnet alternative and the one unsupported shape, linked from the README and the introduction | _Awaiting QA_ |
-| M4-R5 | E-ink tablet: the light-theme override, no animations under the setting or reduced motion, 40-pixel tap targets, the editor usable with the on-screen keyboard, verified at the Boox viewport in both orientations | _Awaiting QA_ |
-| M4-R6 | Extension against a tailnet daemon URL: opening a local file inside a registered root works, the two refused actions named as the allow-list's rather than the token's, Test connection reporting the true state, clipping still refused | _Awaiting QA_ |
-| M4-R7 | Embedded assets: immutable long-lived caching on hashed names and `no-cache` on `index.html`, precompressed at build time and served compressed when accepted, a second page load fetching no asset bytes, and the eager JavaScript in view mode reduced or the M2 decision reaffirmed with measurements | _Awaiting QA_ |
-| M4-R8 | Documentation and record: user documentation reflecting the delivered changes, the roadmap row, and this record | _Awaiting QA_ — see below |
+| M4-R1 | Phone layout: the note under a compact top bar in both modes, the navigator as a drawer closing on selection, Escape and backdrop, search and tags reachable from the top bar, the filter visible, the root path gone, nothing overlapping at Pixel 7 and iPhone 14 in either orientation, scroll-to-line still working | [Satisfied](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406) — 145 checks |
+| M4-R2 | Tab title: the open note's title, updating on navigation and live update; the root's slug with no note open; `MD Notes` elsewhere; the unsaved and conflict states as a leading marker | [Satisfied](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406) — one judgement call accepted as finding 5 |
+| M4-R3 | Dark-scheme code colours: a dark rule for every class the light palette defines, asserted by the generator, with contrast checked against the code background in both schemes, verified over Go, Python and shell fences | [Satisfied](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406) |
+| M4-R4 | Sync and offline documentation: the multi-device model, Syncthing setup, offline editing, conflict files and how to resolve them, Android, the tailnet alternative and the one unsupported shape, linked from the README and the introduction | [Satisfied](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406) |
+| M4-R5 | E-ink tablet: the light-theme override, no animations under the setting or reduced motion, 40-pixel tap targets, the editor usable with the on-screen keyboard, verified at the Boox viewport in both orientations | [Satisfied](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406) — one documentation difference accepted as finding 7 |
+| M4-R6 | Extension against a tailnet daemon URL: opening a local file inside a registered root works, the two refused actions named as the allow-list's rather than the token's, Test connection reporting the true state, clipping still refused | [Satisfied](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406) — 30 checks behind a real TLS proxy |
+| M4-R7 | Embedded assets: immutable long-lived caching on hashed names and `no-cache` on `index.html`, precompressed at build time and served compressed when accepted, a second page load fetching no asset bytes, and the eager JavaScript in view mode reduced or the M2 decision reaffirmed with measurements | [Satisfied](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406) — four findings accepted |
+| M4-R8 | Documentation and record: user documentation reflecting the delivered changes, the roadmap row, and this record | [Not satisfied, provisionally](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406), on the state of `main` before this task — a superseding verdict is outstanding, see below |
 
-M4-R8 is the row no verdict can settle on its own, for the same reason M2-R6 and M3-R7
-could not: QA grades it against `main` as it stands *before* this task, so the
-milestone-level half of it — the boundary claims, the roadmap row and this record — is
-graded as missing however carefully it is then done. The closure gate on
-[#55](https://github.com/davison/md-notes/issues/55) requires both that every requirement
-verdict is satisfied *and* that the milestone document is merged, so the merge of this
-task's PR is a precondition of closure rather than the verdict itself. QA's provisional
-wording is recorded here when it arrives, with a superseding verdict expected after the
-merge, exactly as
-[M3-R7](3-clipper-authentication-and-tailnet.md#requirement-outcomes) records it.
+M4-R8 is the one row no verdict yet settles, and for the same reason M2-R6 and M3-R7 were
+not settled: QA graded it against `main` as it stood before this task and said the verdict
+is "entirely because #63 is still a draft … about `main` today and should be superseded
+once #63 merges". Everything that *was* on `main` it checked against behaviour and found
+accurate in every particular it could provoke — the introduction's **On a phone** section
+clause by clause against its own measurements, the **Display settings** section and
+[the e-ink page](../e-ink.md) including how scrupulous the latter is about what has not
+run on a Boox, and the asset paragraph's headers, negotiation order, `ETag` and 304
+behaviour and its "a reload transfers none at all" against the wire. What it graded as
+missing is the milestone-level half — the introduction's opening still ending at milestone
+three, the README's Shape and Status paragraphs naming no fourth, a three-row `ROADMAP.md`
+and a `docs/milestones/` with no fourth document — every item of it this task's declared
+scope, listed as finding 1 so it could be acted on directly. Finding 2 is the one
+*delivered behaviour* no user documentation described at all, the browser tab title, and
+is now [a section of the introduction](../introduction.md#the-browser-tab). The closure
+gate on [#55](https://github.com/davison/md-notes/issues/55) requires both that every
+requirement verdict is satisfied *and* that the milestone document is merged, so the merge
+of [#71](https://github.com/davison/md-notes/pull/71) is a precondition of closure rather
+than the verdict itself; the coordinator's disposition says M4-R8 is the only open verdict
+and is this task's scope ([#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658115371)).
+
+QA's eight findings, and what was done with each:
+
+| Finding | Disposition |
+|---------|-------------|
+| 1 — the milestone-level documentation absent on `main`, and three statements the merged work had made false | Folded into this task: the introduction's opening, the README's Shape and Status paragraphs, the roadmap row and this record |
+| 2 — the browser tab title documented **nowhere**: not in the README, not on any page under `docs/`, and not the markers | Folded into this task: [The browser tab](../introduction.md#the-browser-tab), which states the title rule, the three non-note cases, both markers and the two edges below |
+| 3 — `Accept-Encoding: identity;q=0` is answered `200` with the identity bytes rather than `406` | Accepted; RFC 9110 permits the `406`, no browser sends the header, nothing in M4-R7 asks for it, and serving the bytes is the friendlier failure |
+| 4 — assets under the tailnet name are `public, max-age=31536000, immutable` to an authenticated request, with no `Vary: Authorization` | Accepted; the unauthenticated request is `401 no-store`, and the bytes are the hashed public UI bundle, byte-identical for every user and holding no note content |
+| 5 — a note deleted while open keeps its **file name** on the tab rather than falling back to `MD Notes` | Accepted; `title.ts` is explicit that "for a note that no longer renders at all, the file name stands in", and a tab you can still find among others is the more useful of the two. QA called it the one judgement call in the verdict |
+| 6 — an unknown name under `/assets/` answers `404 {"error":"not found"}` with no `code` field | Accepted, pre-existing: the same envelope nit M3's QA recorded for every unrouted path. The routing is right — a `404` and not the shell |
+| 7 — the two 40-pixel lists disagree on their contents: [the e-ink page](../e-ink.md) names the frontmatter disclosure and the introduction's **Display settings** list did not | Accepted, and taken anyway while this task was in the file: the disclosure measures 41.25 px under a coarse pointer and 20.25 px under a mouse, so both statements were true and the shorter list is now the longer one |
+| 8 — QA's own first-toggle median is 87 ms (60–94, n=7) against the 55.6 ms (48.2–75.3) recorded on #59 | Accepted, for the record; both are under the 100 ms the decision set as its own condition, and the difference is a busier machine. Recorded so a later re-measurement has two samples |
+
+- **Trade-off, as recorded in the disposition:** findings 3 to 8 put nothing at risk and
+  none falls outside a requirement that QA judged satisfied, so acting on them inside the
+  milestone would extend it for outcomes a reader would not notice. Findings 1 and 2 are
+  this task's declared scope and are done here rather than deferred.
+- **Rejected:** a remedy task inside this milestone; the one proposal QA made and
+  deliberately did not file — putting a browser-level suite in the repository — is
+  [#72](https://github.com/davison/md-notes/issues/72), for a later task to adopt.
 
 The operator's own checks on the phone and on the Boox are recorded on
 [#55](https://github.com/davison/md-notes/issues/55) when available and are deliberately
@@ -984,8 +1018,44 @@ description with nothing against the code set a bar the rest of the milestone wa
 round three of #68 and round two of #69 both audited their PR bodies against the diff, and
 both found them stale.
 
-**Awaiting QA.** Independent QA's verdicts and findings, and the coordinator's disposition
-of them, are recorded here when they arrive.
+Independent QA then went at the merged whole
+([#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406)), and found **no defect**
+— the first milestone of the four where it found none. What it did instead is worth
+recording, because it is the strongest evidence in this document about what the reviews
+had already covered: it re-ran the measurement behind every requirement rather than the
+claims about them, and everything reproduced. The pane rectangles at four phone profiles
+to the pixel; the two-daemon lost-update race at 23 of 200, inside the page's own
+19/23/29 band; 72 token classes with an empty symmetric difference between the schemes and
+every ratio recomputed against the two `--bg` values parsed out of `ui/src/style.css`
+rather than taken from the generator; a first note load of 19,738 B and a reload of **0**
+asset bytes by CDP `encodedDataLength`; 400 concurrent requests across six
+`Accept-Encoding` shapes returning exactly three ETags with no mixing.
+
+It reached three places the reviews could not. It drove the tailnet surface behind a
+**real TLS-terminating proxy with a self-signed certificate** — the assertion the shipped
+suite says in its own header comment that it cannot make — and the note renders there,
+through the extension's intercept, over the tailnet name. It probed the shapes no fixture
+in the repository contains: a fence in a language chroma cannot tokenise and a fence with
+no language at all, both of which fall through to the page foreground at 13.77:1 rather
+than to an unstyled default; a 304-character `H1`, a whitespace-only one, and
+`🚀 Ünïcödé — 日本語`, all of which the tab handles; six malformed values seeded into
+`mdn:settings`, none of which stops the page booting. And it watched the tab's markers
+through a `MutationObserver` on the `<title>` node rather than by polling, which is what
+produced the exact transition sequence
+`["Marker Probe", "• Marker Probe", "Marker Probe", "• Marker Probe", "⚠ Marker Probe"]`
+— and, in passing, the observation that its *own* first harness reported two failures here
+that were the harness's and not the code's, a 300 ms poll against a one-second autosave and
+an `innerText.includes("Conflict")` that matched the note's own heading. Saying so is the
+same discipline the reviews showed when they distinguished an environment factor from a
+regression.
+
+Its eight findings and their dispositions are in
+[Requirement outcomes](#requirement-outcomes). Two are this task's, and the second of them
+is the gap this whole milestone came closest to shipping: M4-R2 was the only requirement
+whose delivered behaviour had **no user-facing description anywhere** — not in the README,
+not on any page under `docs/` — after two review rounds that both approved it. A reader who
+saw `⚠ My Note` in the tab strip had nowhere to look it up. The reviews checked that the
+behaviour was right; nothing until QA checked that anyone had been told.
 
 ## Known gaps at the boundary
 
@@ -1018,6 +1088,12 @@ not read this far:
 | Clipping over the tailnet is refused by design, so a clip taken on a laptop pointed at the tailnet daemon cannot be saved; the popup still offers the Clip buttons under such a URL, under a line saying they are refused, because hiding them would make the popup lie about what the extension is for | [#60](https://github.com/davison/md-notes/issues/60#issuecomment-5656174981), [#66](https://github.com/davison/md-notes/pull/66#issuecomment-5656253807) |
 | The tailnet end-to-end suite asserts that the redirected tab reached the note's address, not that the note rendered: over plain HTTP the `__Host-` session cookie cannot be set. The reviewer made the stronger assertion behind a TLS-terminating proxy; the suite in the repository cannot | [#60](https://github.com/davison/md-notes/issues/60#issuecomment-5656176349) |
 | On a phone the navigator and the search-and-tags pane cannot be seen at once, and it is two taps from the tree to the tag list. The live-update notice is duplicated markup, one copy per width, so a DOM query for it finds two nodes | [#61](https://github.com/davison/md-notes/issues/61#issuecomment-5656475004), [#61](https://github.com/davison/md-notes/issues/61#issuecomment-5657377326) |
+| A note **deleted** while it is open keeps its file name on the tab rather than falling back to `MD Notes`. `title.ts` is explicit that the file name stands in for a note that no longer renders, and a tab you can still find among others is the more useful of the two — but it is a judgement call against M4-R2's "any page without a note shows `MD Notes`" | [#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406), finding 5 |
+| `Accept-Encoding: identity;q=0` is answered `200` with the identity bytes rather than the `406` RFC 9110 permits. `q=0` *is* honoured as a refusal for `br` and `gzip`; it is only the "no representation left" case that falls through | [#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406), finding 3 |
+| Under a `tailnet_host` name an authenticated request for a hashed asset gets `public, max-age=31536000, immutable` with no `Vary: Authorization`. The unauthenticated request is `401 no-store`, and the bytes are the public UI bundle, byte-identical for every user | [#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406), finding 4 |
+| An unknown name under `/assets/` answers `404 {"error":"not found"}` with no `code` field — the envelope every unrouted path has had since M3, not a routing fault | [#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406), finding 6 |
+| The first `Ctrl+E` was measured at 55.6 ms (48.2–75.3) on #59 and at 87 ms (60–94) by QA on a busier machine. Both are under the 100 ms the decision set as its own condition; two samples exist for whoever re-measures | [#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658104406), finding 8 |
+| **Nothing in CI holds the narrow breakpoint.** The phone-layout and e-ink harnesses live in their runs' scratchpads by recorded decision, so the pane rectangles, the drawer's geometry, the 40-pixel rule, the override applied before first paint and the second load's zero asset bytes are covered by component-level vitest and by measurements on issues, and by nothing a regression would fail. QA names it the largest untested surface in the milestone | [#72](https://github.com/davison/md-notes/issues/72) |
 | `TestBurstIsOneBatch` in `internal/watch` is still flaky in CI. It recurred three times during this milestone — on PR #43's CI, on PR #65's and on PR #71's — and **two of the three were on branches carrying no Go at all**, which is what rules out a regression and leaves the debounce race on a loaded runner. It is the strongest candidate for an early task in the next milestone | [#46](https://github.com/davison/md-notes/issues/46) |
 
 Four more are the e-ink work's, and they are held back from the table above only because
@@ -1047,13 +1123,20 @@ Eight captures stay open across the three earlier milestones —
 [#46](https://github.com/davison/md-notes/issues/46),
 [#47](https://github.com/davison/md-notes/issues/47),
 [#48](https://github.com/davison/md-notes/issues/48) and
-[#50](https://github.com/davison/md-notes/issues/50) — and this milestone added **none**.
-That is the first time, and it is worth saying why rather than treating it as a virtue: six
-of its seven implementation tasks were captures being paid off, every blocking review
-finding was fixed inside the PR that raised it rather than deferred, and the handful of
-nits the reviews left on the table were judged too small to file. Whether that judgement
-was right is visible in [Corrections](#corrections-to-the-record-itself) and in the three
-rows above that a capture would have carried.
+[#50](https://github.com/davison/md-notes/issues/50) — and this milestone added exactly
+one, [#72](https://github.com/davison/md-notes/issues/72), which is not a defect: it is
+QA's suite-gap note, which QA deliberately declined to file itself and put to the operator
+as a proposal instead, and which the coordinator captured "since it is the second milestone
+in which browser-level verification existed only in a session"
+([#55](https://github.com/davison/md-notes/issues/55#issuecomment-5658115371)).
+
+Not one capture came out of a *defect* in this milestone's own work, which is the first
+time in four, and it is worth saying why rather than treating it as a virtue: six of its
+seven implementation tasks were captures being paid off, every blocking review finding was
+fixed inside the PR that raised it rather than deferred, QA found no defect at all, and the
+handful of nits the reviews left on the table were judged too small to file. Whether that
+last judgement was right is visible in [Corrections](#corrections-to-the-record-itself) and
+in the three rows above that a capture would have carried.
 
 ## Where the record is silent
 
@@ -1082,14 +1165,23 @@ rows above that a capture would have carried.
   it, and neither asked whether 960 px is the right place for the layout to change. The one
   thing the milestone did establish about it is that the number is ambiguous in a
   stylesheet with a 15 px root, and that trap is still in the stylesheet.
-- **No requirement asked where the device sweeps belong.** #61's and #62's Playwright
-  harnesses drove the built binary at real device profiles and produced the measurements
-  both requirements turn on, and both deliberately live in the run's scratchpad rather than
-  the repository, on the ground that the project carries no e2e dependency and adding one
-  is not the task's business. That is the same answer M3 recorded for the extension's
-  end-to-end suites, reached independently, twice, by tasks that had no reason to consult
-  it — and the record still does not say where such a test belongs, or what it costs that
-  the one measurement nobody can re-run is the one that proves the requirement.
+- **No requirement asked where the device sweeps belong, and the record has now said so
+  three times without answering it.** #61's and #62's Playwright harnesses drove the built
+  binary at real device profiles and produced the measurements both requirements turn on,
+  and both deliberately live in the run's scratchpad rather than the repository, on the
+  ground that the project carries no e2e dependency and adding one is not the task's
+  business. That is the same answer M3 recorded for the extension's end-to-end suites,
+  reached independently, twice more, by tasks with no reason to consult it — and each time
+  it was a task's own call rather than a policy, because nothing in the project has ever
+  said where such a test belongs. QA is the first to put a cost on the silence: the
+  measurements that prove M4-R1, M4-R5 and the load-bearing half of M4-R7 exist only in
+  comments on issues, so "a stylesheet regression at `60rem` would reach a person before it
+  reached a test". It declined to file that itself and put it to the operator as a
+  proposal, on the ground that the call is legitimate either way; the coordinator captured
+  it as [#72](https://github.com/davison/md-notes/issues/72). The silence is therefore
+  named at last — but the thing the record still does not contain is the reasoning that
+  would settle it, only three tasks' separate judgements and one observation that they
+  cost something.
 - **The operator has still not seen any of this.** The standing merge confirmation carried
   over from M3, so every trade-off in this document was struck between an implementer and a
   reviewer sharing one identity. This milestone's subject is more exposed to that than the
