@@ -634,16 +634,18 @@ stylesheet; CodeMirror and the table of languages it can highlight are an order 
 magnitude larger and are fetched on the first `Ctrl+E` of that page, then kept for
 every later toggle in it.
 
-What that costs in time holds its shape across every machine it has been measured on,
-even where the absolute numbers differ by a factor of two. The first `Ctrl+E` of a page
-is the expensive one; a second page with the chunk already in the browser's cache costs
-**the same again**, because what the time buys is compiling CodeMirror and building the
-editor rather than getting hold of it; and every later toggle *within* a page is an order
-of magnitude quicker, because the module is held. As of this milestone, on loopback on
-one desktop machine, that is about 85 ms, about 85 ms and about 7 ms. Four samples of the
-first figure, taken on three machines, run from 56 ms to 103 ms — a spread wide enough that
-the ratios above are the part to rely on and any single number is the part to re-measure.
-They are in
+What that costs in time holds its shape across every run it has been measured on, even
+where the absolute numbers differ by a factor of two. The first `Ctrl+E` of a page is the
+expensive one; a second page with the chunk already in the browser's cache costs **the same
+again**, because what the time buys is compiling CodeMirror and building the editor rather
+than getting hold of it; and every later toggle *within* a page is several times quicker,
+because the module is held. As of this milestone, on loopback, that is about 85 ms, about
+85 ms and about 7 ms — two runs measured all three and agreed to within a millisecond, and
+a third measured the held toggle five times quicker rather than twelve. Four samples of the
+first figure run from 56 ms to 103 ms, two of them from the same environment, so the spread
+is what else the machine was doing rather than which machine it was. That is wide enough
+that the shape above is the part to rely on and any single number is the part to
+re-measure; they are in
 [the milestone four record](milestones/4-polish-phone-e-ink-and-the-bundle.md#known-gaps-at-the-boundary).
 
 If the daemon is upgraded while a page is open, the chunk that page would ask for is no
@@ -673,7 +675,9 @@ this one. As of this milestone, at
 [`e37164c`](https://github.com/davison/md-notes/commit/e37164c), a cold load of a note
 transferred **19,738 bytes** across two assets — a 50,657-byte JavaScript chunk and an
 18,376-byte stylesheet, compressed to 16,189 and 3,549 on the wire — and the first
-`Ctrl+E` pulled about 226 KB more.
+`Ctrl+E` pulled about 200 KB more, and more again on a note with several fenced languages,
+since each one's parser is a chunk of its own: 197,808 bytes for a note with no fenced code,
+209,076 with one `go` fence, 226,093 with three languages.
 [The milestone four record](milestones/4-polish-phone-e-ink-and-the-bundle.md#corrections-to-the-record-itself)
 carries the measurements, who took them, and how far they had already drifted inside one
 milestone.
