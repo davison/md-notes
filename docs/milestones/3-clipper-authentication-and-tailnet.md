@@ -949,6 +949,48 @@ Milestone one's tailnet capture ([#10](https://github.com/davison/md-notes/issue
 is closed by [#39](https://github.com/davison/md-notes/issues/39). What remains true and
 will surprise someone who has not read this far:
 
+> **Annotation, added by [milestone four](4-polish-phone-e-ink-and-the-bundle.md)
+> ([#63](https://github.com/davison/md-notes/issues/63)).** This record is sealed as of the
+> M3 boundary and nothing in it is rewritten
+> ([the #40 decision](https://github.com/davison/md-notes/issues/40)); four of the captures
+> it leaves open have since been closed, so four things below are no longer true of `main`.
+>
+> - **[#51](https://github.com/davison/md-notes/issues/51)** — the row below about a
+>   tailnet daemon URL leaving the extension with nothing that works. Closed by
+>   [#60](https://github.com/davison/md-notes/issues/60): the extension presents the token
+>   on the roots listing whenever the daemon URL is not loopback, so opening a local file
+>   inside a registered root works, and the two actions the tailnet allow-list still
+>   refuses are named as the allow-list's rather than blamed on the token.
+> - **[#32](https://github.com/davison/md-notes/issues/32)** — the sentence at the end of
+>   this section carrying milestone two's note that "the UI bundle is served uncompressed
+>   and uncacheable", and the row it points at in
+>   [the M2 record](2-editor-autosave-and-live-update.md#known-gaps-at-the-boundary), which
+>   is likewise superseded and likewise not edited. Closed by
+>   [#59](https://github.com/davison/md-notes/issues/59): brotli and gzip copies written at
+>   build time, an immutable year on the hashed names, an `ETag` everywhere, and the editor
+>   no longer loaded by a page that is only reading.
+> - **[#34](https://github.com/davison/md-notes/issues/34)** — listed at the end of this
+>   section among the M2 follow-ups deferred to a later polish milestone. Closed by
+>   [#61](https://github.com/davison/md-notes/issues/61): below 960 pixels the note takes
+>   the whole viewport under a compact top bar and the two side panes become the tabs of one
+>   drawer.
+> - **[#54](https://github.com/davison/md-notes/issues/54)** — the dark scheme leaving 23
+>   code-highlight token classes in light-theme colours. It is not mentioned anywhere in
+>   this record, having been filed two days after the record merged; it is noted here
+>   because it belongs with the other three. Closed by
+>   [#57](https://github.com/davison/md-notes/issues/57), which found the cause underneath
+>   it: the dark block had been chroma's fallback for a style name that does not exist.
+>
+> [#30](https://github.com/davison/md-notes/issues/30),
+> [#31](https://github.com/davison/md-notes/issues/31),
+> [#33](https://github.com/davison/md-notes/issues/33),
+> [#45](https://github.com/davison/md-notes/issues/45),
+> [#46](https://github.com/davison/md-notes/issues/46),
+> [#47](https://github.com/davison/md-notes/issues/47),
+> [#48](https://github.com/davison/md-notes/issues/48) and
+> [#50](https://github.com/davison/md-notes/issues/50) are still open. Every other row below
+> still stands.
+
 | Gap | Where it is recorded |
 |-----|----------------------|
 | On loopback the token grants the **whole** API to whoever presents it, not the clip endpoint alone: a holder can register any directory as a root and read every file under it. That is by design, and contained by the premise and by the refused preflight | [#36](https://github.com/davison/md-notes/issues/36#issuecomment-5622222887) |
