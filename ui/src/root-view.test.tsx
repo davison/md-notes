@@ -178,9 +178,26 @@ describe("watch coverage", () => {
     );
     await screen.findByText("docs");
     FakeEventSource.last!.emitStatus({ ...limited, failed: 12, unwatched: 4510 });
-    const notice = await screen.findByText(/Live update covers/);
+    const notice = (await screen.findAllByText(/Live update covers/))[0];
     expect(notice.textContent).toContain("raise max_watches above 8,192");
     expect(notice.textContent).toContain("fs.inotify.max_user_watches");
+  });
+
+  it("puts the notice in the navigator and above the note, one for each width", async () => {
+    render(
+      <LocationProvider>
+        <RootView slug="n" />
+      </LocationProvider>,
+    );
+    await screen.findByText("docs");
+    const es = FakeEventSource.last!;
+    es.readyState = 2;
+    es.onerror!();
+    // The stylesheet shows the navigator's copy at wide widths and the
+    // note's at narrow ones, where the navigator is behind the drawer.
+    await waitFor(() => expect(document.querySelectorAll(".notice")).toHaveLength(2));
+    expect(document.querySelector(".nav > .notice")).toBeTruthy();
+    expect(document.querySelector(".note > .notice")).toBeTruthy();
   });
 
   it("says when the root has no live update at all", async () => {
@@ -193,7 +210,7 @@ describe("watch coverage", () => {
     const es = FakeEventSource.last!;
     es.readyState = 2;
     es.onerror!();
-    expect((await screen.findByText(/Live update is not available/)).textContent).toContain("reload");
+    expect((await screen.findAllByText(/Live update is not available/))[0].textContent).toContain("reload");
   });
 
   it("stays quiet while a dropped stream is still reconnecting", async () => {
@@ -206,7 +223,7 @@ describe("watch coverage", () => {
     const es = FakeEventSource.last!;
     es.readyState = 0;
     es.onerror!();
-    await waitFor(() => expect(screen.queryByText(/Live update is not available/)).toBeNull());
+    await waitFor(() => expect(screen.queryAllByText(/Live update is not available/)).toHaveLength(0));
   });
 
   it("says how much of the root is watched, and how to cover the rest", async () => {
@@ -217,7 +234,7 @@ describe("watch coverage", () => {
     );
     await screen.findByText("docs");
     FakeEventSource.last!.emitStatus(limited);
-    const notice = await screen.findByText(/Live update covers/);
+    const notice = (await screen.findAllByText(/Live update covers/))[0];
     expect(notice.textContent).toContain("8,192 of 12,690 directories");
     expect(notice.textContent).toContain("raise max_watches above 8,192");
   });

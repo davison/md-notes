@@ -144,6 +144,12 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
         </aside>
       </Drawer>
       <div class="note">
+        {/* The same notice twice, one shown at each width: in the navigator
+            where it has always been, and above the note for the narrow
+            layout, where the navigator is behind a drawer and a caveat
+            nobody opens is a caveat nobody reads. The stylesheet shows one
+            and hides the other, so only one is ever in the page. */}
+        <LiveUpdateNotice live={live} />
         {current ? (
           <NotePane key={slug + "\0" + current} slug={slug} path={current} version={noteVersion} line={line} />
         ) : (
