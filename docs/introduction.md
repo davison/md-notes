@@ -462,9 +462,9 @@ drawer on a narrow one — see [On a phone](#on-a-phone) below:
 
 ### On a phone
 
-Below 60rem of window width — a phone in either orientation, and a narrow desktop
-window — the note takes the whole viewport under a compact top bar, in the rendered
-view and in the editor alike. The two side panes move into one drawer:
+Below 960 pixels of window width — a phone in either orientation, and a narrow
+desktop window — the note takes the whole viewport under a compact top bar, in the
+rendered view and in the editor alike. The two side panes move into one drawer:
 
 - The **burger** at the left of the top bar opens the drawer on its **Notes** tab,
   which is the navigator, with the expanded directories and the tag filter it has at
@@ -480,7 +480,10 @@ view and in the editor alike. The two side panes move into one drawer:
 - An active tag filter shows as a chip in the top bar, which names the tag and clears
   the filter when tapped: the tag panel that would otherwise say so is behind the
   drawer. The root's path leaves the top bar at these widths, being the longest and
-  least useful of its labels on a phone.
+  least useful of its labels on a phone, and the note a draft is unsaved in keeps as
+  much of its name as fits.
+- The [live update](#live-update) notice, which at wide widths sits at the top of the
+  navigator, moves above the note here, where it is read without opening the drawer.
 
 Search is a literal, case-insensitive phrase — what you type is what is matched.
 Tags come from a frontmatter `tags` value (a list, or one string split on commas and
