@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MD Notes</title>
+    <!--
+      The display settings, before the stylesheet paints: a reader who has
+      overridden a dark device to light must not see a frame of the scheme
+      they overrode. The bundle is a deferred module and runs too late for
+      that, so this is inline and duplicated from ui/src/settings.ts, whose
+      BOOT export is held to this text by a test.
+    -->
+    <script>
+      var s={};try{s=JSON.parse(localStorage.getItem("mdn:settings"))||{}}catch(e){}if(s.light)document.documentElement.setAttribute("data-theme","light");if(s.noMotion)document.documentElement.setAttribute("data-motion","none");
+    </script>
   </head>
   <body>
     <div id="app"></div>

@@ -27,8 +27,16 @@
   color-scheme: light dark;
 }
 
+/*
+ * The dark palette applies unless the reader has overridden the scheme to
+ * light. The override is the absence of this block rather than a third
+ * palette: the light values are already on :root above, so a root carrying
+ * data-theme="light" simply keeps them, and gencss still finds exactly two
+ * --bg declarations straddling this query — which is what the comment above
+ * requires and what a third scheme would have broken.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #1b1b1b;
     --fg: #e6e6e3;
     --muted: #9a9a96;
@@ -36,6 +44,17 @@
     --accent: #7fb0e6;
     --pane: #202020;
   }
+}
+
+/*
+ * The explicit light override (davison/md-notes#52). An e-ink panel has no
+ * backlight, so the dark scheme an Android in night mode hands the browser is
+ * the wrong way round on it. color-scheme is narrowed here so the form
+ * controls and scrollbars the browser draws for itself follow the palette;
+ * the palette needs nothing, being what :root already says.
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 * {
@@ -145,6 +164,87 @@ code {
 }
 
 /*
+ * Everything after this is right-aligned. A spacer rather than a margin on
+ * each of them: the filter chip, the unsaved-draft list, the magnifier and
+ * the gear come and go independently, and two `margin-left: auto` in one flex
+ * row split the free space between them instead of stacking to the right.
+ */
+.topbar-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Display settings */
+.settings {
+  position: relative;
+  flex: none;
+  align-self: center;
+}
+
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.settings-toggle:hover {
+  background: var(--line);
+}
+
+.settings-panel {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 40;
+  width: 17rem;
+  max-width: 80vw;
+  padding: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--pane);
+  box-shadow: 0 0.4rem 1.5rem rgb(0 0 0 / 25%);
+  font-size: 0.9em;
+  text-align: left;
+}
+
+.setting {
+  display: flex;
+  gap: 0.5rem;
+  align-items: start;
+  padding: 0.4rem 0.3rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.setting:hover {
+  background: var(--bg);
+}
+
+.setting input {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0.15rem 0 0;
+  accent-color: var(--accent);
+}
+
+.setting-note {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+/*
  * Both side panes live inside .panes. Here it is not a box at all, so they
  * are grid items of the shell exactly as they were; below the narrow
  * breakpoint it becomes the drawer that holds them as tabs.
@@ -230,7 +330,6 @@ code {
 }
 
 .unsaved-drafts {
-  margin-left: auto;
   font-size: 0.85em;
   color: var(--error);
 }
@@ -346,10 +445,6 @@ code {
 
   .drawer-toggle:hover {
     background: var(--line);
-  }
-
-  .find-toggle {
-    margin-left: auto;
   }
 
   .tag-chip {
@@ -491,10 +586,35 @@ code {
   }
 }
 
+/*
+ * No animation: the setting, and the device preference, answered the same way.
+ * The blanket form rather than a list of the animations the application draws
+ * today, because on an e-ink screen every one of them is a slow partial
+ * repaint and the next one added must not have to remember this rule. Script
+ * asks the same question through animationsOff() in ./settings, for the
+ * flash a stylesheet cannot call off once the class is on the element.
+ */
+:root[data-motion="none"] *,
+:root[data-motion="none"] *::before,
+:root[data-motion="none"] *::after {
+  animation-delay: 0s !important;
+  animation-duration: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-delay: 0s !important;
+  transition-duration: 0s !important;
+  scroll-behavior: auto !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .shell .panes,
-  .shell .panes.open {
-    transition: none;
+  *,
+  *::before,
+  *::after {
+    animation-delay: 0s !important;
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-delay: 0s !important;
+    transition-duration: 0s !important;
+    scroll-behavior: auto !important;
   }
 }
 

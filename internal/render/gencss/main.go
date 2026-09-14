@@ -71,6 +71,15 @@ const (
 // the code background out of.
 const appStylesheet = "style.css"
 
+// darkScope is the selector every dark rule is prefixed with, so the code
+// colours follow the reader's explicit light override and not only the
+// device's preference. It is the same switch the application stylesheet
+// puts on its own dark palette, and the two have to agree: a page whose
+// --bg has gone back to the light value while the token colours stayed
+// dark is white text on white paper. ui/src/style.css holds the other
+// half; TestTheDarkScopeMatchesTheAppStylesheet holds them together.
+const darkScope = `:root:not([data-theme="light"])`
+
 func main() {
 	if len(os.Args) != 2 {
 		fmt.Fprintln(os.Stderr, "usage: gencss OUTFILE")
@@ -123,7 +132,9 @@ func generate(app []byte) ([]byte, error) {
 	out.WriteString("/* Both schemes are toned from chroma's " + baseStyle + " palette against\n")
 	out.WriteString("   that scheme's --bg, so the two blocks style the same classes, every\n")
 	out.WriteString("   colour clears WCAG AA on the background it is drawn on, and colours\n")
-	out.WriteString("   the palette tells apart stay apart. */\n")
+	out.WriteString("   the palette tells apart stay apart. The dark block is scoped the way\n")
+	out.WriteString("   the app's own dark palette is, so an explicit light override takes\n")
+	out.WriteString("   the code colours back with it. */\n")
 	block, err := tokensOnly(css(f, lightStyle))
 	if err != nil {
 		return nil, err
@@ -131,6 +142,9 @@ func generate(app []byte) ([]byte, error) {
 	out.Write(block)
 	out.WriteString("\n@media (prefers-color-scheme: dark) {\n")
 	if block, err = tokensOnly(css(f, darkStyle)); err != nil {
+		return nil, err
+	}
+	if block, err = scoped(block, darkScope); err != nil {
 		return nil, err
 	}
 	out.Write(block)
@@ -183,6 +197,29 @@ func tokensOnly(in []byte) ([]byte, error) {
 	}
 	if dropped != 2 {
 		return nil, fmt.Errorf("expected to drop the Background and PreWrapper rules, dropped %d", dropped)
+	}
+	return out.Bytes(), nil
+}
+
+// scoped prefixes every rule in a block with an ancestor selector. The
+// rules the formatter writes are one per line, each beginning with a
+// comment naming the token type, so the prefix goes in front of the
+// selector rather than in front of the line. A line the selector is
+// missing from is refused: a dark rule that escaped the scope would keep
+// its dark colour under the light override.
+func scoped(in []byte, scope string) ([]byte, error) {
+	want := "." + render.ClassPrefix + "chroma "
+	var out bytes.Buffer
+	for _, line := range strings.Split(strings.TrimSuffix(string(in), "\n"), "\n") {
+		at := strings.Index(line, want)
+		if at < 0 {
+			return nil, fmt.Errorf("no %q selector to scope in %q", want, line)
+		}
+		out.WriteString(line[:at])
+		out.WriteString(scope)
+		out.WriteByte(' ')
+		out.WriteString(line[at:])
+		out.WriteByte('\n')
 	}
 	return out.Bytes(), nil
 }

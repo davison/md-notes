@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { LocationProvider, Router, Route, useLocation } from "preact-iso";
 import { NoteView, formatValue, fragmentTarget } from "./note-view";
+import { KEY, reset } from "./settings";
 
 function mockNote(note: unknown, status = 200) {
   vi.stubGlobal(
@@ -20,6 +21,8 @@ function mockNote(note: unknown, status = 200) {
 beforeEach(() => {
   cleanup();
   window.location.hash = "";
+  localStorage.clear();
+  reset();
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -121,6 +124,43 @@ describe("NoteView", () => {
     // A different line does.
     rerender(<NoteView slug="n" path="x.md" version={1} line={9} />);
     await waitFor(() => expect(scrolls.length).toBe(2));
+  });
+
+  it("does not flash the block when animations are off", async () => {
+    // The scroll still happens: centring the block is what says where the
+    // hit is, and it is not an animation. The flash is not merely an
+    // animation the stylesheet has cancelled — the class never goes on.
+    localStorage.setItem(KEY, JSON.stringify({ light: false, noMotion: true }));
+    reset();
+    mockNote({ path: "x.md", title: "T", html: '<p data-line="1">a</p><pre data-line="5">code</pre>' });
+    const scrolls: string[] = [];
+    Element.prototype.scrollIntoView = function () {
+      scrolls.push((this as Element).className);
+    };
+    render(<NoteView slug="n" path="x.md" version={0} line={5} />);
+    await waitFor(() => expect(scrolls.length).toBe(1));
+    expect(document.querySelector("pre")!.classList.contains("flash")).toBe(false);
+    // Nothing is left to clean up either: no timer holds a class to remove.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(document.querySelector("pre")!.classList.contains("flash")).toBe(false);
+  });
+
+  it("does not flash the block when the device asks for reduced motion", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        matches: query.includes("prefers-reduced-motion"),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      })),
+    );
+    mockNote({ path: "x.md", title: "T", html: '<pre data-line="5">code</pre>' });
+    Element.prototype.scrollIntoView = function () {};
+    render(<NoteView slug="n" path="x.md" version={0} line={5} />);
+    await waitFor(() => expect(screen.getByText("T")).toBeTruthy());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(document.querySelector("pre")!.classList.contains("flash")).toBe(false);
   });
 
   it("scrolls a fresh open to the top when the requested line has no block", async () => {

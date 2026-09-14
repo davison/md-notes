@@ -401,9 +401,11 @@ describe("RootView top bar", () => {
       "brand",
       "root-name",
       "path",
+      "topbar-spacer",
       "tag-chip",
       "unsaved-drafts",
       "drawer-toggle find-toggle",
+      "settings",
     ]);
     await buried.flush();
   });

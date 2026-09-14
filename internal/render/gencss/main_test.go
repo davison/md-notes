@@ -9,6 +9,8 @@ import (
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/styles"
+
+	"github.com/davison/md-notes/internal/render"
 )
 
 // appStylesheetPath and generatedPath are the files the generator reads
@@ -26,6 +28,10 @@ var brokenTokens = []string{
 	"nn", "gi", "vg", "no", "nc", "o", "vi", "nd", "bp", "ne", "nf", "go",
 	"gp", "nv", "ni", "gd", "gr", "ge", "ow", "vc", "w", "nl", "gt",
 }
+
+// renderClassPrefix is the prefix the highlighter emits, named through
+// the renderer so these tests cannot drift from the classes it writes.
+func renderClassPrefix() string { return render.ClassPrefix }
 
 func readFile(t *testing.T, path string) []byte {
 	t.Helper()
@@ -608,5 +614,76 @@ func TestTheDarkSchemeKeepsItsColours(t *testing.T) {
 			t.Errorf("%s scheme: numbers %s and variables %s are %.3f apart, want %.3f",
 				name, rules["mdn-m"].colour, rules["mdn-nv"].colour, got, want)
 		}
+	}
+}
+
+// TestTheDarkBlockFollowsTheLightOverride is the half of M4-R5 that lives
+// here: a reader who overrides a dark device to light gets the light code
+// colours with it. The dark rules are scoped so they stop applying, and
+// the light rules are not, so they are what is left.
+func TestTheDarkBlockFollowsTheLightOverride(t *testing.T) {
+	css := string(readFile(t, generatedPath))
+	cut := strings.Index(css, "@media")
+	if cut < 0 {
+		t.Fatal("no media query in the generated stylesheet")
+	}
+	light, dark := 0, 0
+	for _, line := range strings.Split(css[:cut], "\n") {
+		if !strings.Contains(line, "chroma .") {
+			continue
+		}
+		light++
+		if strings.Contains(line, darkScope) {
+			t.Errorf("a light rule is scoped to the override: %s", line)
+		}
+	}
+	for _, line := range strings.Split(css[cut:], "\n") {
+		if !strings.Contains(line, "chroma .") {
+			continue
+		}
+		dark++
+		if !strings.Contains(line, darkScope+" ."+renderClassPrefix()+"chroma ") {
+			t.Errorf("a dark rule escapes the override: %s", line)
+		}
+	}
+	if light == 0 || light != dark {
+		t.Fatalf("parsed %d light and %d dark rules", light, dark)
+	}
+}
+
+// TestTheDarkScopeMatchesTheAppStylesheet holds the two halves of the
+// override together: the colours the generator writes and the palette the
+// application stylesheet declares have to stop applying at the same
+// moment, or the override leaves light paper under dark text.
+func TestTheDarkScopeMatchesTheAppStylesheet(t *testing.T) {
+	app := string(readFile(t, appStylesheetPath))
+	at := darkPattern.FindStringIndex(app)
+	if at == nil {
+		t.Fatal("no dark colour scheme media query in the application stylesheet")
+	}
+	end := strings.Index(app[at[1]:], "--bg:")
+	if end < 0 {
+		t.Fatal("no --bg inside the dark media query")
+	}
+	if selector := app[at[1] : at[1]+end]; !strings.Contains(selector, darkScope) {
+		t.Errorf("the app's dark palette is declared on %q, which does not carry %s",
+			strings.TrimSpace(selector), darkScope)
+	}
+}
+
+// TestScopedRefusesALineItCannotScope covers the refusal: a dark rule that
+// slipped past the prefix would keep its dark colour under the override,
+// and silence is how that would reach a reader.
+func TestScopedRefusesALineItCannotScope(t *testing.T) {
+	in := []byte("/* Keyword */ ." + renderClassPrefix() + "chroma ." + renderClassPrefix() + "k { color: #ffffff }\n")
+	out, err := scoped(in, darkScope)
+	if err != nil {
+		t.Fatalf("scoped: %v", err)
+	}
+	if want := "/* Keyword */ " + darkScope + " ."; !strings.HasPrefix(string(out), want) {
+		t.Errorf("got %q, want it to start %q", out, want)
+	}
+	if _, err := scoped([]byte("html { color: red }\n"), darkScope); err == nil {
+		t.Error("scoped accepted a rule it could not scope")
 	}
 }

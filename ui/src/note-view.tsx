@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { fetchNote, type Note } from "./api";
+import { animationsOff } from "./settings";
 
 /**
  * A rendered note: title, a collapsed metadata panel for its frontmatter,
@@ -76,6 +77,12 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
       const target = lineTarget(body.current, line);
       if (target) {
         target.scrollIntoView({ block: "center" });
+        // No flash when animations are off: the class is not added at all,
+        // rather than added and left to a stylesheet that has cancelled the
+        // animation, so nothing repaints and nothing is left behind if the
+        // page navigates before the timer. Centring the block is what says
+        // where the hit is; that is a scroll, not an animation.
+        if (animationsOff()) return;
         const flash = target.classList.contains("line-anchor") ? (target.nextElementSibling ?? target) : target;
         flash.classList.add("flash");
         const t = setTimeout(() => flash.classList.remove("flash"), 1500);
