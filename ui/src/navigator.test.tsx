@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/preact";
 import { Navigator, ancestors } from "./navigator";
 import type { TreeNode } from "./api";
@@ -27,9 +27,20 @@ const tree: TreeNode = {
 };
 
 beforeEach(() => {
-  cleanup();
   localStorage.clear();
 });
+
+/**
+ * The tree the case rendered goes away with the case, the same rule
+ * note-view.test.tsx states at length (davison/md-notes#101): cleaning up in
+ * `beforeEach` alone leaves the last case's tree mounted for the rest of the
+ * file's life, and this project runs vitest without the test globals that
+ * would have `@testing-library/preact` install its own `afterEach(cleanup)`.
+ * `Navigator` has no fetch and no effect that reaches a global, so nothing
+ * here was ever going to outlive the environment the way #87 did — this is
+ * the same hygiene, not a second fault.
+ */
+afterEach(cleanup);
 
 describe("ancestors", () => {
   it("lists every directory above a path", () => {
