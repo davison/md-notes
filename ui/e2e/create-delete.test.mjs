@@ -19,7 +19,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { TAP_TARGET, loadPlaywright, missingPrerequisite, startFixture, waitFor } from "./harness.mjs";
+import { TAP_TARGET, dialogReady, loadPlaywright, missingPrerequisite, startFixture, waitFor } from "./harness.mjs";
 
 const playwright = loadPlaywright();
 const blocker = missingPrerequisite(playwright);
@@ -33,17 +33,6 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
 
   /** The dialog on screen, and the two ways out of it. */
   const modal = () => page.locator(".modal");
-  /**
-   * Open and *ready*: the element is in the page a frame before the effect
-   * that moves focus into it and subscribes to Escape has run, and a
-   * keystroke sent in that frame reaches neither. Waiting for focus to
-   * land is both the synchronisation and the check that it lands.
-   */
-  const dialogReady = (target = page) =>
-    waitFor(
-      () => target.evaluate(() => !!document.activeElement?.closest(".modal")),
-      "focus to move into the dialog",
-    );
   const confirmButton = () => page.locator(".modal button.primary");
   const nameBox = () => page.locator(".modal-name");
 
@@ -66,7 +55,7 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     assert.equal(exists("Shopping list.md"), false);
 
     await page.getByRole("button", { name: "New note" }).click();
-    await dialogReady();
+    await dialogReady(page);
     // Nothing is written by opening the prompt.
     assert.equal(exists("Shopping list.md"), false);
 
@@ -151,14 +140,14 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     await page.locator(".note-bar").waitFor();
 
     await page.locator(".note-bar .delete-note").click();
-    await dialogReady();
+    await dialogReady(page);
     assert.match(await modal().textContent(), /docs\/guide\.md/, "the confirmation names the file");
     await page.locator(".modal button", { hasText: "Cancel" }).click();
     await waitFor(() => modal().count().then((n) => n === 0), "the dialog to close");
     assert.equal(exists("docs/guide.md"), true, "cancelling removed nothing");
 
     await page.locator(".note-bar .delete-note").click();
-    await dialogReady();
+    await dialogReady(page);
     await page.keyboard.press("Escape");
     await waitFor(() => modal().count().then((n) => n === 0), "the dialog to close");
     assert.equal(exists("docs/guide.md"), true, "Escape removed nothing");
@@ -406,7 +395,7 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     await page.keyboard.type("half a wor");
 
     await page.locator(".new-note").click();
-    await dialogReady();
+    await dialogReady(page);
     await page.keyboard.press("Escape");
     await waitFor(() => modal().count().then((n) => n === 0), "the prompt to close");
 

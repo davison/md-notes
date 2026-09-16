@@ -19,6 +19,7 @@ import {
   PHONES,
   PIXEL_7,
   TAP_TARGET,
+  drawerReady,
   loadPlaywright,
   missingPrerequisite,
   openNote,
@@ -209,9 +210,11 @@ describe("the layout at phone widths and above", { skip: blocker ?? false }, () 
       // Opening is complete when focus has moved in, which is also the
       // requirement; waiting on that rather than on the transition is what
       // keeps the close paths below off a race with the handlers' effects.
+      // `drawerReady` is that wait, in the harness so the next drawer case
+      // written does not have to know about the race (davison/md-notes#89).
       const open = async (selector, tab) => {
         await p.click(selector);
-        await p.waitForFunction(() => document.querySelector(".panes").contains(document.activeElement));
+        await drawerReady(p);
         const s = await state();
         assert.equal(s.open, true);
         assert.equal(s.visibility, "visible");

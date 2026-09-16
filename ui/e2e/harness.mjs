@@ -258,3 +258,42 @@ export async function openNote(page, url) {
   await page.waitForSelector(".note-body .markdown", { state: "attached" });
   return page;
 }
+
+/**
+ * Open and *ready*, for the two modal layers the suites drive.
+ *
+ * Both the dialog and the drawer attach their `Escape` listener and move
+ * focus from an effect, which preact runs a frame after the element is in
+ * the page. A key sent in that frame reaches neither listener, and the
+ * failure it produces is a wait that never ends rather than an assertion
+ * that fails — which is the worst shape a flake can take (davison/md-notes#89,
+ * and the same race the M5 record states for dialogs).
+ *
+ * Focus landing inside the layer is both the synchronisation and a check
+ * that it lands: the focus effect is declared after the `Escape` effect in
+ * the same component, and preact runs a component's effects in order, so
+ * focus being inside means the listener is attached.
+ */
+export function dialogReady(page) {
+  return waitFor(
+    () => page.evaluate(() => !!document.activeElement?.closest(".modal")),
+    "focus to move into the dialog",
+  );
+}
+
+/**
+ * The drawer's half of the same wait. The `open` class as well as focus:
+ * the panes element is in the page at every width, so "contains the active
+ * element" alone would also be true of a wide window's navigator pane, and
+ * the caller is asking about the drawer.
+ */
+export function drawerReady(page) {
+  return waitFor(
+    () =>
+      page.evaluate(() => {
+        const panes = document.querySelector(".panes");
+        return !!panes && panes.classList.contains("open") && panes.contains(document.activeElement);
+      }),
+    "the drawer to open with focus inside it",
+  );
+}

@@ -15,6 +15,8 @@ import {
   PHONES,
   PIXEL_7,
   TAP_TARGET,
+  dialogReady,
+  drawerReady,
   loadPlaywright,
   missingPrerequisite,
   openNote,
@@ -234,7 +236,7 @@ describe("the display settings and the tap targets", { skip: blocker ?? false },
     const openDrawer = async (tab) => {
       if (!drawer) return;
       await page.click(tab === "find" ? ".find-toggle" : ".nav-toggle");
-      await page.waitForFunction(() => document.querySelector(".panes").contains(document.activeElement));
+      await drawerReady(page);
     };
     const closeDrawer = async () => {
       if (!drawer) return;
@@ -287,9 +289,9 @@ describe("the display settings and the tap targets", { skip: blocker ?? false },
       // Open and ready, not merely present: the dialog's own Escape listener
       // is attached by an effect a frame after the element is in the page,
       // and a key pressed in that frame reaches nothing — which is a hang,
-      // not a failure. Focus landing inside it is the signal that the effects
-      // have run, and is what create-delete.test.mjs waits for too.
-      await page.waitForFunction(() => !!document.activeElement?.closest(".modal"));
+      // not a failure. `dialogReady` is that wait, shared with the other
+      // suites from the harness.
+      await dialogReady(page);
       await collect();
       await page.keyboard.press("Escape");
       await page.waitForSelector(".modal", { state: "detached" });
