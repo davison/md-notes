@@ -290,15 +290,46 @@ function cellsOf(row: HTMLElement): HTMLElement[] {
  * Content a cell cannot be flattened around: a `pre`, whose line breaks *are*
  * the code, and a heading, which no page writes inside a data cell.
  *
- * Matched by name over the cell's descendants rather than with a selector
- * list, because the DOM the tests run under answers `querySelector("pre, h1")`
- * with the first element it finds whatever its name is, and every table would
- * be a layout table.
+ * Matched by name over the cell's descendants rather than by asking the cell
+ * for a selector, because the DOM Turndown parses with under Node answers a
+ * *miss* with `undefined` and not with `null` — `querySelector` there is
+ * `select(selector, this)[0]` (@mixmark-io/domino 2.2.0, `lib/Element.js`) —
+ * so the obvious `cell.querySelector("pre, h1") !== null` reads every cell as
+ * a hit and every table as a layout table. A `!= null` would have done; this
+ * sidesteps the comparison altogether, and Chromium and the test DOM agree on
+ * it. The selector list itself is fine: the earlier claim that a list matched
+ * the first element whatever its name is does not reproduce, in either DOM.
  */
 const CELL_BLOCK = new Set(["PRE", "H1", "H2", "H3", "H4", "H5", "H6"]);
 
-function holdsBlock(cell: HTMLElement): boolean {
-  return Array.from(cell.querySelectorAll("*")).some((child) => CELL_BLOCK.has(child.nodeName));
+/**
+ * Names that make a cell a piece of page layout rather than a value: the
+ * blocks above, and anything else a page only writes when it is arranging a
+ * page inside a cell.
+ */
+const CELL_LAYOUT = new Set([
+  ...CELL_BLOCK,
+  "P",
+  "DIV",
+  "UL",
+  "OL",
+  "DL",
+  "TABLE",
+  "BLOCKQUOTE",
+  "FIGURE",
+  "HR",
+  "SECTION",
+  "ARTICLE",
+  "HEADER",
+  "FOOTER",
+  "ASIDE",
+  "NAV",
+  "MAIN",
+  "FORM",
+]);
+
+function holds(cell: HTMLElement, names: Set<string>): boolean {
+  return Array.from(cell.querySelectorAll("*")).some((child) => names.has(child.nodeName));
 }
 
 /**
@@ -313,9 +344,12 @@ function holdsBlock(cell: HTMLElement): boolean {
  * - `role="presentation"` (or `none`) is the page saying so itself;
  * - a `th` anywhere is the page saying the opposite — a header means the rows
  *   below it are data, whatever else is in them;
- * - otherwise a table no row of which has two cells is a wrapper, not a grid;
- * - and a cell holding a `pre` or a heading is a layout cell: that is the
- *   line-number wrapper, and the manual.
+ * - a cell holding a `pre` or a heading is a layout cell: that is the
+ *   line-number wrapper, and the manual;
+ * - and a table no row of which has two cells is a wrapper when any cell holds
+ *   block content of any kind — a paragraph, a list, a table — and a grid when
+ *   the cells are inline, which keeps a one-column headerless table the table
+ *   M6-R2 asks for.
  *
  * What is not a data table is converted as ordinary blocks instead — never as
  * the page's own HTML, which is the defect this all started from.
@@ -325,8 +359,14 @@ function isDataTable(table: HTMLElement): boolean {
   if (role === "presentation" || role === "none") return false;
   const rows = rowsOf(table).map(cellsOf);
   if (rows.some((cells) => cells.some((cell) => cell.nodeName === "TH"))) return true;
-  if (rows.reduce((widest, cells) => Math.max(widest, cells.length), 0) < 2) return false;
-  return !rows.some((cells) => cells.some(holdsBlock));
+  // A table only one cell wide is a wrapper when there is a page inside it,
+  // and a table when there is a value: a one-column list of names is what
+  // M6-R2's default is about, and taking it out of the grid for the shape
+  // alone would be the one place that default stopped holding.
+  if (rows.reduce((widest, cells) => Math.max(widest, cells.length), 0) < 2) {
+    return !rows.some((cells) => cells.some((cell) => holds(cell, CELL_LAYOUT)));
+  }
+  return !rows.some((cells) => cells.some((cell) => holds(cell, CELL_BLOCK)));
 }
 
 /**
