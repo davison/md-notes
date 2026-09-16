@@ -40,18 +40,43 @@ func (c *fakeClock) NewTimer(d time.Duration) timer {
 	return t
 }
 
-// Advance moves the clock on and fires every timer the move reached, in
-// deadline order.
+// Advance moves the clock on, fires every timer the move reached, and returns
+// once each fire has been taken off its channel.
+//
+// Waiting for that matters: without it a test could only say "nothing has been
+// emitted" where no timer fired at all, because a timer that fired a moment
+// ago might still be on its way through the watcher's loop. Waiting makes the
+// return point "the loop has the fire", and a handled call after it makes the
+// point "the loop has finished flushing", which is what an assertion of
+// absence needs. A fire is only ever waited for on an armed timer, which the
+// loop is by construction selecting on, so this waits for progress the loop is
+// already committed to making.
 func (c *fakeClock) Advance(d time.Duration) {
+	// Not under the lock: taking the fire leads the loop to Stop and Reset,
+	// which want it.
+	for _, t := range c.advance(d) {
+		if !waitFor(func() bool { return len(t.ch) == 0 }) {
+			panic("fake clock: a fired timer was never taken")
+		}
+	}
+}
+
+// advance moves the clock and fires without waiting for anything, for the two
+// tests below: they are about what reaches a timer's channel, so they are the
+// one caller with no loop on the other end to take it.
+func (c *fakeClock) advance(d time.Duration) []*fakeTimer {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.now = c.now.Add(d)
+	var fired []*fakeTimer
 	for _, t := range c.timers {
 		if t.armed && !t.deadline.After(c.now) {
 			t.armed = false
 			t.ch <- c.now
+			fired = append(fired, t)
 		}
 	}
+	return fired
 }
 
 type fakeTimer struct {
@@ -93,13 +118,13 @@ func (t *fakeTimer) drain() {
 func TestFakeClockFiresOnlyWhenTheDeadlineIsReached(t *testing.T) {
 	c := newFakeClock()
 	tm := c.NewTimer(50 * time.Millisecond)
-	c.Advance(49 * time.Millisecond)
+	c.advance(49 * time.Millisecond)
 	select {
 	case <-tm.C():
 		t.Fatal("fired before its deadline")
 	default:
 	}
-	c.Advance(time.Millisecond)
+	c.advance(time.Millisecond)
 	select {
 	case <-tm.C():
 	default:
@@ -110,14 +135,14 @@ func TestFakeClockFiresOnlyWhenTheDeadlineIsReached(t *testing.T) {
 func TestFakeClockResetDiscardsAnUnreadFire(t *testing.T) {
 	c := newFakeClock()
 	tm := c.NewTimer(10 * time.Millisecond)
-	c.Advance(10 * time.Millisecond) // fires, nobody reads it
+	c.advance(10 * time.Millisecond) // fires, nobody reads it
 	tm.Reset(10 * time.Millisecond)
 	select {
 	case <-tm.C():
 		t.Fatal("a fire from before the reset was still delivered")
 	default:
 	}
-	c.Advance(10 * time.Millisecond)
+	c.advance(10 * time.Millisecond)
 	if got := <-tm.C(); !got.Equal(c.Now()) {
 		t.Fatalf("fired at %v, want %v", got, c.Now())
 	}
