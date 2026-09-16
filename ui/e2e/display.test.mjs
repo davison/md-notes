@@ -283,7 +283,12 @@ describe("the display settings and the tap targets", { skip: blocker ?? false },
       const create = page.locator(".new-note");
       if (!(await create.isVisible())) await openDrawer("notes");
       await create.click();
-      await page.waitForSelector(".modal-name");
+      // Open and ready, not merely present: the dialog's own Escape listener
+      // is attached by an effect a frame after the element is in the page,
+      // and a key pressed in that frame reaches nothing — which is a hang,
+      // not a failure. Focus landing inside it is the signal that the effects
+      // have run, and is what create-delete.test.mjs waits for too.
+      await page.waitForFunction(() => !!document.activeElement?.closest(".modal"));
       await collect();
       await page.keyboard.press("Escape");
       await page.waitForSelector(".modal", { state: "detached" });
