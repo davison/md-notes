@@ -221,17 +221,26 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     }
   });
 
-  it("closes only the prompt when Escape is pressed over the editor", async () => {
-    // The dialog answers Escape on the window in the capture phase and stops
-    // it there, so the layer below — the editor, whose vim keymap reads
-    // Escape as "leave insert mode" — must not also see it. A reader who
-    // opens the prompt, changes their mind and presses Escape gets their
-    // prompt closed and their editor exactly as they left it, mid-word and
-    // still in insert mode. The unit test can only show that
-    // stopPropagation was called; this is what it buys. Left for this suite
-    // by the review of PR #83, and retargeted from the drawer to the editor
-    // when #85 moved the create control into the top bar, where the drawer's
-    // backdrop makes it unreachable while the drawer is open.
+  it("closes the prompt on Escape and leaves the editor under it untouched", async () => {
+    // What this holds: a reader who opens the prompt over a half-typed note,
+    // changes their mind and presses Escape gets the prompt closed and the
+    // editor exactly as they left it — same text, still in insert mode.
+    //
+    // What it does *not* hold, and cannot: the dialog's `stopPropagation`.
+    // The review of PR #83 left that for a browser, and it was held here
+    // against the drawer until #85 moved the create control into the top
+    // bar. Measured after that move: with the drawer open the top-bar
+    // control is visible but not clickable (the drawer's backdrop takes the
+    // click), and opening the prompt closes the settings panel (a
+    // pointerdown outside it), so neither of the two other Escape handlers
+    // in the application can be underneath a dialog any more. The editor is
+    // not a third: with the prompt open the key lands on `.modal-name`, and
+    // the editor's vim keymap is a listener on its own element, which a
+    // keydown dispatched at the dialog never reaches with or without the
+    // call. Commenting out `e.stopPropagation()` in ui/src/dialog.tsx fails
+    // nothing in this suite, which is why this case does not claim to be
+    // that check. The unit test on #83 is where that rule now lives; see the
+    // decision on #78.
     await page.goto(`${origin}/r/notes/index.md`);
     await page.locator(".note-bar").waitFor();
     await page.getByRole("button", { name: "Edit" }).click();
