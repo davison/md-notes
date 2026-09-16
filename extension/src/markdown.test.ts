@@ -273,6 +273,65 @@ describe("htmlToMarkdown", () => {
     );
   });
 
+  // Beside a fenced code block a page puts three kinds of thing: a copy
+  // button, which is the browser's business and not the note's; a caption or a
+  // filename, which is content; and, before this, nothing that survived at all
+  // (davison/md-notes#47).
+
+  it("keeps a caption beside GitHub's code block and drops the copy container", () => {
+    const html =
+      '<div class="highlight highlight-source-go notranslate position-relative overflow-auto" dir="auto">' +
+      "<pre>func main() {}</pre>" +
+      '<div class="zeroclipboard-container">' +
+      '<clipboard-copy aria-label="Copy" class="js-clipboard-copy">Copy</clipboard-copy>' +
+      "</div>" +
+      "<p>Listing 1 — the whole program.</p>" +
+      "</div>";
+    expect(htmlToMarkdown(html, PAGE)).toBe(
+      "```go\nfunc main() {}\n```\n\nListing 1 — the whole program.",
+    );
+  });
+
+  it("keeps a figure's caption after the code, and the wrapper's language with it", () => {
+    const html =
+      '<figure class="highlight highlight-source-python">' +
+      '<pre><code>print("hi")</code></pre>' +
+      "<figcaption>Figure 2 — printing.</figcaption>" +
+      "</figure>";
+    expect(htmlToMarkdown(html, PAGE)).toBe(
+      '```python\nprint("hi")\n```\n\nFigure 2 — printing.',
+    );
+  });
+
+  it("keeps a filename line before the code, which used to cost the block its language", () => {
+    const html =
+      '<div class="highlight highlight-source-go">' +
+      '<div class="filename">cmd/mdn/main.go</div>' +
+      "<pre>package main</pre>" +
+      '<button class="copy-button" type="button">Copy</button>' +
+      "</div>";
+    expect(htmlToMarkdown(html, PAGE)).toBe(
+      "cmd/mdn/main.go\n\n```go\npackage main\n```",
+    );
+  });
+
+  it("drops an aria-hidden decoration and keeps the prose beside it", () => {
+    const html =
+      '<div class="highlight" data-lang="sh">' +
+      '<span aria-hidden="true">$</span>' +
+      "<pre>ls</pre>" +
+      '<span role="button">Copy</span>' +
+      "<p>Lists the directory.</p>" +
+      "</div>";
+    expect(htmlToMarkdown(html, PAGE)).toBe("```sh\nls\n```\n\nLists the directory.");
+  });
+
+  it("keeps a bare text node beside the code, which the old rule dropped", () => {
+    expect(
+      htmlToMarkdown('<div class="highlight"><pre>x</pre>A trailing caption.</div>', PAGE),
+      ).toBe("```\nx\n```\n\nA trailing caption.");
+  });
+
   it("drops script and style content", () => {
     const md = htmlToMarkdown("<div><script>alert(1)</script><style>p{}</style><p>Text</p></div>", PAGE);
     expect(md).toBe("Text");
