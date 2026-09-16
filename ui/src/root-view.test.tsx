@@ -26,23 +26,60 @@ class FakeEventSource {
 }
 
 const calls: string[] = [];
+const methods: { method: string; url: string }[] = [];
+/** The daemon's markdown, which create and delete change under the tree. */
+let files: string[] = [];
+
+/** The tree endpoint's answer, built from `files` so it moves with them. */
+function treeOf(paths: string[]) {
+  const root = { name: "", path: "", dir: true, children: [] as Record<string, unknown>[] };
+  const dirs = new Map<string, Record<string, unknown>>();
+  for (const path of paths) {
+    const cut = path.lastIndexOf("/");
+    const name = path.slice(cut + 1);
+    let into = root.children;
+    if (cut > 0) {
+      const dir = path.slice(0, cut);
+      let node = dirs.get(dir);
+      if (!node) {
+        node = { name: dir, path: dir, dir: true, children: [] };
+        dirs.set(dir, node);
+        root.children.push(node);
+      }
+      into = node.children as Record<string, unknown>[];
+    }
+    into.push({ name, path, dir: false });
+  }
+  return root;
+}
+
 function mockApi() {
   vi.stubGlobal(
     "fetch",
-    vi.fn((url: string) => {
+    vi.fn((url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
       calls.push(url);
+      methods.push({ method, url });
+      const path = decodeURIComponent(url.replace("/api/r/n/source/", ""));
+      if (url.includes("/source/") && method === "POST") {
+        if (files.includes(path))
+          return Promise.resolve({
+            ok: false,
+            status: 409,
+            statusText: "Conflict",
+            json: () => Promise.resolve({ code: "exists", error: "a note by that name already exists" }),
+          } as Response);
+        files.push(path);
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          statusText: "Created",
+          json: () => Promise.resolve({ root: "n", path, source: "", revision: "r1" }),
+        } as Response);
+      }
       let body: unknown;
       if (url === "/api/roots") body = { roots: [{ slug: "n", path: "/n", kind: "notes" }] };
-      else if (url === "/api/r/n/tree")
-        body = {
-          name: "",
-          path: "",
-          dir: true,
-          children: [
-            { name: "docs", path: "docs", dir: true, children: [{ name: "a.md", path: "docs/a.md", dir: false }] },
-            { name: "b.md", path: "b.md", dir: false },
-          ],
-        };
+      else if (url === "/api/r/n/tree") body = treeOf(files);
       else if (url === "/api/r/n/tags") body = { tags: [{ name: "x", count: 1, notes: ["b.md"] }] };
       else if (url.startsWith("/api/r/n/search"))
         body = { hits: [{ path: "b.md", line: 3, text: "a needle here", matches: [[2, 8]] }], truncated: false };
@@ -55,6 +92,8 @@ function mockApi() {
 
 beforeEach(() => {
   calls.length = 0;
+  methods.length = 0;
+  files = ["docs/a.md", "b.md"];
   localStorage.clear();
   resetSessions();
   vi.stubGlobal("EventSource", FakeEventSource);
@@ -424,5 +463,69 @@ describe("RootView tag chip", () => {
     expect(chip.textContent).toContain("#x");
     expect(chip.getAttribute("aria-label")).toBe("Clear the tag filter x");
     expect(chip.getAttribute("href")).toBe("/r/n/docs/a.md");
+  });
+});
+
+function mountAt(url: string, note?: string) {
+  history.replaceState(null, "", url);
+  return render(
+    <LocationProvider>
+      <RootView slug="n" note={note} />
+    </LocationProvider>,
+  );
+}
+const treeCalls = () => calls.filter((u) => u === "/api/r/n/tree").length;
+const submit = () => fireEvent.submit(document.querySelector(".modal form")!);
+
+/**
+ * Creating from the navigator. Nothing here refreshes the tree by hand —
+ * the daemon's change batch is what updates it, exactly as it does for a
+ * note written by another tool.
+ */
+describe("creating a note", () => {
+  const posts = () => methods.filter((c) => c.method === "POST");
+  const nameBox = () => screen.getByLabelText("Title or path");
+
+  it("creates a bare title in the open note's folder and opens it in the editor", async () => {
+    mountAt("/r/n/docs/a.md", "docs/a.md");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "New note" }));
+    // The prompt says where a bare title lands: the open note's folder.
+    expect(document.querySelector(".modal-folder")!.textContent).toBe("docs");
+    fireEvent.input(nameBox(), { target: { value: "Shopping" } });
+    submit();
+
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    expect(posts()[0].url).toBe("/api/r/n/source/docs/Shopping.md");
+    await waitFor(() => expect(location.pathname).toBe("/r/n/docs/Shopping.md"));
+    expect(document.querySelector(".modal")).toBeNull();
+  });
+
+  it("puts a bare title in the root when no note is open", async () => {
+    mountAt("/r/n/");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "New note" }));
+    fireEvent.input(nameBox(), { target: { value: "Shopping" } });
+    submit();
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    expect(posts()[0].url).toBe("/api/r/n/source/Shopping.md");
+  });
+
+  it("lets the change batch put the new note in the navigator, with no refresh of its own", async () => {
+    mountAt("/r/n/docs/a.md", "docs/a.md");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+    const before = treeCalls();
+
+    fireEvent.click(screen.getByRole("button", { name: "New note" }));
+    fireEvent.input(nameBox(), { target: { value: "Shopping" } });
+    submit();
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    // The create path asks for no tree of its own.
+    expect(treeCalls()).toBe(before);
+    expect(screen.queryByText("Shopping.md")).toBeNull();
+
+    FakeEventSource.last!.emit(["docs/Shopping.md"]);
+    await waitFor(() => expect(screen.getByText("Shopping.md")).toBeTruthy());
   });
 });
