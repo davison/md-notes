@@ -60,7 +60,7 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     await fixture?.stop();
   });
 
-  it("creates a note from the navigator, named in a prompt, and opens it in the editor", async () => {
+  it("creates a note from the top bar, named in a prompt, and opens it in the editor", async () => {
     await page.goto(`${origin}/r/notes/`);
     await page.locator(".tree").waitFor();
     assert.equal(exists("Shopping list.md"), false);

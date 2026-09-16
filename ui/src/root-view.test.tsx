@@ -483,7 +483,7 @@ const treeCalls = () => calls.filter((u) => u === "/api/r/n/tree").length;
 const submit = () => fireEvent.submit(document.querySelector(".modal form")!);
 
 /**
- * Creating from the navigator. Nothing here refreshes the tree by hand —
+ * Creating from the top bar. Nothing here refreshes the tree by hand —
  * the daemon's change batch is what updates it, exactly as it does for a
  * note written by another tool.
  */
