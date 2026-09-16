@@ -314,7 +314,7 @@ Source errors return JSON `{code, error}` with these statuses:
 | 409 | `conflict` | Retain the draft and fetch current source before choosing how to reconcile |
 | 413 | `too_large` | Source or request exceeds the size limit |
 | 415 | `invalid_body` | Send `Content-Type: application/json` |
-| 422 | `unsupported_source` | The file is nonregular or contains invalid UTF-8 |
+| 422 | `unsupported_source` | The file is nonregular, contains invalid UTF-8, or is a chain of symlinks nothing will follow to the end |
 | 428 | `revision_required` | Read the source first and include its revision |
 | 500 | `io_error` | Retain the draft and retry after checking disk/storage health |
 
@@ -384,7 +384,7 @@ Both refuse with the save's `{code, error}` body
 | The extension is not `.md` or `.markdown` | 404 | `not_markdown` |
 | A path component exists but is not a directory (`hello.md/child.md`) | 404 | `not_found` |
 | The note or the root does not exist (delete) | 404 | `not_found` |
-| The path resolves outside the root, lexically or through a symlink — including a symlink with no target, or a chain of them, ending outside, and whether it stands where the note does or where one of its folders does | 403 | `outside_root` |
+| The path resolves outside the root, lexically or through a symlink — including a symlink with no target, or a chain of them as long as the resolver itself follows (see below), ending outside, and whether it stands where the note does or where one of its folders does | 403 | `outside_root` |
 | The file is read-only (delete) | 403 | `permission_denied` |
 | The target is a directory or a symlink inside the root (delete) | 422 | `unsupported_source` |
 | The name is already taken, by a file, a directory or a link inside the root (create) | 409 | `exists` |
@@ -393,11 +393,29 @@ A name the filesystem will not take is the caller's mistake rather than the
 daemon's fault, and is answered as one: the length a name may be belongs to the
 filesystem — `NAME_MAX`, 255 bytes per component — so the kernel's refusal is
 translated, not anticipated by a limit of the daemon's own
-([#88](https://github.com/davison/md-notes/issues/88)). A symlink with no target
-is followed lexically, hop by hop, because the first name it gives may be inside
-the root and the second outside; nothing is created or removed either way, and
-what the walk decides is only which refusal the caller is shown
-([#82](https://github.com/davison/md-notes/issues/82)).
+([#88](https://github.com/davison/md-notes/issues/88)).
+
+A symlink with no target is followed lexically, hop by hop, because the first
+name it gives may be inside the root and the second outside. The walk follows as
+many links as the resolver behind every other check follows — 255, which is
+`filepath.EvalSymlinks`'s own budget, and far past the 40 the kernel will resolve
+in a single lookup — so every chain that reaches the daemon as a missing path is
+answered by it. A chain longer than that nothing will follow to the end: the
+resolver refuses it before the walk is reached, and the name is answered as one
+held by something unresolvable — `409 exists` to create, because the name is
+taken, and `422 unsupported_source` to delete, to read and to save, because what
+holds it is nothing any of them can act on — never followed and never written
+over. Nothing is created or removed
+in any of these cases, and what the walk decides is only which refusal the caller
+is shown ([#82](https://github.com/davison/md-notes/issues/82)).
+
+`GET` and `PUT` on one of these dangling-link paths answer `404 not_found` rather
+than `403 outside_root`: confinement there is the resolver's alone, and to it a
+link with no target is simply missing. The split is deliberate — this milestone's
+requirement is the create and delete codes, and widening the read and save paths
+is a behaviour change no requirement asks for — and it is recorded with its
+trade-off at
+[#99](https://github.com/davison/md-notes/issues/99#issuecomment-5703933261).
 
 Creating and deleting a note reaches every open page for that root through the
 [events stream](#live-updates) as an ordinary change batch, so a navigator needs no
