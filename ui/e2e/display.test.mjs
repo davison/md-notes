@@ -32,9 +32,9 @@ const DARK_BG = "rgb(27, 27, 27)";
 /**
  * Every control the stylesheet's tap-target block names, by its selector —
  * `ui/src/style.css`, the `@media (pointer: coarse), (hover: none),
- * (max-width: 60rem)` block. Each is a class rather than a position, so a
- * control that moves — #85 is taking `.new-note` into the top bar — is still
- * the same control to this list.
+ * (max-width: 60rem)` block. Each is a class rather than a position, which is
+ * what let `.new-note` move from the navigator to the top bar in #85 without
+ * this list changing.
  */
 const TAP_GROUPS = [
   ".tree .dir",
@@ -276,12 +276,12 @@ describe("the display settings and the tap targets", { skip: blocker ?? false },
       await page.click(".settings-toggle");
       await page.waitForSelector(".settings-panel", { state: "detached" });
 
-      // The create control and the dialog behind it. Where the control lives
-      // is the application's business and is moving (#85): if it is on screen
-      // it is clicked where it stands, and only otherwise is the drawer it
-      // lives in today opened to reach it.
-      const create = page.locator(".new-note");
-      if (!(await create.isVisible())) await openDrawer("notes");
+      // The create control and the dialog behind it. Since #85 the control is
+      // a top-bar button at every width, on screen with the drawer shut —
+      // which is also why the drawer must be shut here, its backdrop being
+      // what makes the top bar inert while it is open.
+      const create = page.locator(".topbar .new-note");
+      assert.equal(await create.isVisible(), true, "the create control is in the top bar");
       await create.click();
       // Open and ready, not merely present: the dialog's own Escape listener
       // is attached by an effect a frame after the element is in the page,
