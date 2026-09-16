@@ -278,15 +278,16 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
       hasTouch: true,
       isMobile: true,
     });
-    const small = await phone.newPage();
-    await small.goto(`${origin}/r/notes/index.md`);
-    await small.locator(".note-bar").waitFor();
+    try {
+      const small = await phone.newPage();
+      await small.goto(`${origin}/r/notes/index.md`);
+      await small.locator(".note-bar").waitFor();
 
-    // The delete action is in the note bar at this width too, and is a
-    // 40 px target.
-    const del = small.locator(".note-bar .delete-note");
-    const delBox = await del.boundingBox();
-    assert.ok(delBox.height >= TAP_TARGET, `the delete target is ${delBox.height}px tall`);
+      // The delete action is in the note bar at this width too, and is a
+      // 40 px target.
+      const del = small.locator(".note-bar .delete-note");
+      const delBox = await del.boundingBox();
+      assert.ok(delBox.height >= TAP_TARGET, `the delete target is ${delBox.height}px tall`);
 
     // The create control is in the top bar at this width too — on screen
     // without opening the drawer, which is the point of #85 — and a square
@@ -301,29 +302,31 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     // The label is dropped at this width; the accessible name is not.
     assert.equal(await small.locator(".new-note-label").isVisible(), false);
 
-    await create.click();
-    await dialogReady(small);
-    const box = small.locator(".modal-name");
-    // The dialog is over the drawer rather than inside it: it is wider than
-    // the drawer, which is min(20rem, 85vw) = 331px here.
-    const modalBox = await small.locator(".modal").boundingBox();
-    assert.ok(modalBox.width > 331, `the dialog is ${modalBox.width}px wide`);
-    for (const button of await small.locator(".modal button").all()) {
-      const b = await button.boundingBox();
-      assert.ok(b.height >= TAP_TARGET, `a dialog button is ${b.height}px tall`);
+      await create.click();
+      await dialogReady(small);
+      const box = small.locator(".modal-name");
+      // The dialog is over the drawer rather than inside it: it is wider than
+      // the drawer, which is min(20rem, 85vw) = 331px here.
+      const modalBox = await small.locator(".modal").boundingBox();
+      assert.ok(modalBox.width > 331, `the dialog is ${modalBox.width}px wide`);
+      for (const button of await small.locator(".modal button").all()) {
+        const b = await button.boundingBox();
+        assert.ok(b.height >= TAP_TARGET, `a dialog button is ${b.height}px tall`);
+      }
+
+      await box.fill("From the phone");
+      await small.locator(".modal button.primary").click();
+      await small.waitForURL(`${origin}/r/notes/From%20the%20phone.md`);
+      assert.equal(exists("From the phone.md"), true);
+      await small.locator(".cm-editor").waitFor();
+
+      // And delete it again from here, to close the loop at this width.
+      await small.locator(".note-bar .delete-note").click();
+      await small.locator(".modal button.primary").click();
+      await small.waitForURL(`${origin}/r/notes/`);
+      assert.equal(exists("From the phone.md"), false);
+    } finally {
+      await phone.close();
     }
-
-    await box.fill("From the phone");
-    await small.locator(".modal button.primary").click();
-    await small.waitForURL(`${origin}/r/notes/From%20the%20phone.md`);
-    assert.equal(exists("From the phone.md"), true);
-    await small.locator(".cm-editor").waitFor();
-
-    // And delete it again from here, to close the loop at this width.
-    await small.locator(".note-bar .delete-note").click();
-    await small.locator(".modal button.primary").click();
-    await small.waitForURL(`${origin}/r/notes/`);
-    assert.equal(exists("From the phone.md"), false);
-    await phone.close();
   });
 });
