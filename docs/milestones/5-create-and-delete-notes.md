@@ -96,22 +96,36 @@ issue instead
 ([#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702275665)), so that
 the record shows the requirement changed after delivery and why.
 
-The sequencing is the one thing about how this milestone ran that nobody wrote down.
-Unlike M4, which opened with a coordinator decision fixing scope, ordering and the open
-defaults ([#55](https://github.com/davison/md-notes/issues/55#issuecomment-5656096967)),
-M5 has no such comment: [#74](https://github.com/davison/md-notes/issues/74) carries only
-the operator's findings and the supersession decision. The order is legible from the task
-bodies — #77 says "Depends on the daemon endpoints task", #78 says "Depends on the UI
-task for the create and delete flows", #75 says "Take this first: every other task in the
-milestone merges through the gate it guards" — and the merge times bear it out, but it is
-**inferred, not recorded**. So is the decision to answer the operator's findings with a
-fix task inside the milestone rather than with a capture for the next one; nothing weighs
-that choice anywhere.
+Why a fix task rather than a capture for M6 is recorded in the same late scope decision
+([#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702824535)): both
+findings concern behaviour M5-R2 and M5-R3 themselves deliver, and the rule is that an
+operator or QA finding against an *open* requirement becomes a fix task, so QA verifies
+the requirement as it will ship. The cost was M5-R2's supersession. **Rejected:**
+deferring the findings and closing M5 with the control in the navigator — shipping a
+milestone the operator had already said was wrong.
+
+How the milestone was sequenced is recorded, but late. M4 opened with a coordinator
+decision fixing scope, ordering and the open defaults
+([#55](https://github.com/davison/md-notes/issues/55#issuecomment-5656096967)); M5 ran
+without one, and the equivalent decision was written only after this record named its
+absence as a gap ([#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702824535)).
+It says what the order was and why: one capture per task, with the daemon task #76 split
+from the UI task #77 so the API could be reviewed on its own and the UI briefed from its
+final shape; #75 and #76 in parallel as independent packages; #77 after #76 merged; #78
+in two stages, the ported M4 checks at once and the create and delete flows after #77;
+QA and #79 last. The task bodies say the same thing from the inside — #75's "Take this
+first: every other task in the milestone merges through the gate it guards", #77's
+"Depends on the daemon endpoints task", #78's "Depends on the UI task for the create and
+delete flows" — and the merge times bear it out. What is worth keeping straight is that
+the reasoning was reconstructed after the milestone rather than set before it; the record
+is complete, the discipline was not.
 
 No human decision gate (`cc:needs-decision`) was raised anywhere in this milestone — the
-third of the five so far where none was. One judgment call was flagged for the operator
-and never answered on the record; see [Where the record is
-silent](#where-the-record-is-silent).
+third of the five so far where none was, and here that is a gap rather than an absence of
+occasion: one judgment call was flagged for the operator, put to them twice and never
+answered, and was settled by a coordinator decision instead of by a gate
+([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5702824267)). See
+[Where the record is silent](#where-the-record-is-silent).
 
 ## Requirement outcomes
 
@@ -244,9 +258,18 @@ URL ([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5700724927
   in two for no gain the operator asked for, and the UI would need to know which roots
   are writable before it could decide whether to show the controls.
 - **This was the milestone's one ask-the-human point**, recorded as the default rather
-  than taken silently and flagged to the coordinator to put to the operator. No operator
-  answer is on the record; `TestCreateAndDeleteInARootOpenedAtRuntime` pins the behaviour,
-  so reversing it breaks a test rather than passing quietly.
+  than taken silently and flagged to the coordinator to put to the operator. The operator
+  never answered. The coordinator put it to them twice on 2026-09-16 with the reversal
+  cost stated, and — after this record named the silence as a gap — recorded that the
+  default stands as shipped on the coordinator's authority under the standing merge
+  confirmation, until the operator says otherwise
+  ([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5702824267)). That is
+  a record of the question having been asked, not an answer to it, and no
+  `cc:needs-decision` gate was ever raised, which the same comment calls the stricter form
+  this should have taken. Reversing it is `kind == notes` guards in the two handlers, their
+  refusal tables, and the introduction's API and tailnet sections;
+  `TestCreateAndDeleteInARootOpenedAtRuntime` pins the current behaviour, so a reversal
+  breaks a test rather than passing quietly.
 
 ### The refusal table was amended by the review, not the code by the table
 
@@ -642,7 +665,7 @@ approved on the first pass with non-blocking findings; one requested changes.
 | [#81](https://github.com/davison/md-notes/pull/81) | approve, then approve on the delta | `TestEachChangeRestartsTheQuietWindow` did not catch the mutation it names: the reviewer's mutant passed it 50/50, because the absence check was a bare non-blocking receive that could not see a batch the immediately preceding `Advance` had caused. The answer was better than the suggestion — a barrier on each side of the check, so the whole class of missed absence goes, plus a third change so the contents discriminate as well as the timing. The mutant now fails 50 of 50. The header comment that overclaimed was narrowed |
 | [#83](https://github.com/davison/md-notes/pull/83) | approve | The `busy` guard covered the buttons and not `Escape`, the backdrop or the `Tab` trap; the reviewer demonstrated it with the write verbs delayed 2.5 s. Fixed, with the decision above, and the `Tab` hole turned out to be one step earlier than the empty focusable list — disabling the focused control drops focus to the body. The review also asked for the browser case that #78 later could not keep |
 | [#84](https://github.com/davison/md-notes/pull/84) | **request changes**, then approve | One blocking finding — the ripgrep diagnostic that hung instead of printing — and four non-blocking. All five fixed. `TAP_GROUPS` gained `.new-note`, `.modal button` and `.modal-name`; the last was measured **nowhere**, so a regression dropping the name box below the 40 px floor had been passing the suite. The reviewer then went looking for the teeth rather than taking them: a rule shrinking only `.modal-name` fails five checks, one per coarse profile |
-| [#86](https://github.com/davison/md-notes/pull/86) | approve | Six non-blocking findings, **none with a recorded disposition**. Finding 4 — that M5-R2's wording now contradicts the shipped UI and belongs in this record — was acted on, as the decision on [#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702275665). Findings 2 and 3 are answered in this document. Finding 1 was found again by QA, on both files that carry the drift, and is taken in this task's pull request; finding 6 is still in the tree, see [Known gaps](#known-gaps-at-the-boundary). Finding 5 notes that the new unit case has no teeth of its own — it passes against `main`, because the DOM order never changed and the bug was purely CSS — which the PR itself says, and which leaves the browser check as the only thing between that bug and a repeat |
+| [#86](https://github.com/davison/md-notes/pull/86) | approve | Six non-blocking findings, and the one PR in this milestone whose approve was merged with no fix pass and no reply. Their disposition was recorded after the merge, and after this record named its absence as a gap ([#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702824030)): finding 4 — that M5-R2's wording now contradicts the shipped UI — is the decision on [#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702275665); findings 3 and 6 are captured as [#91](https://github.com/davison/md-notes/issues/91); finding 2 is a wrong sentence in the PR body that stays as written, corrected here and now on the PR as well; findings 1 and 5 are noted with no action — and finding 1 was found again by QA, on both files that carry the drift, so it is taken in this task's pull request after all. Finding 5's point survives: the new unit case passes unchanged against `main`, because the DOM order never changed and the bug was purely CSS, which leaves the browser check as the only thing between that bug and a repeat |
 
 Every PR carries the operator's confirmation as a comment: "reviewed and accepted by
 @davison as both author and operator (pure solo tier, SPEC §6) — no independent principal
@@ -670,6 +693,7 @@ Raised by this milestone's reviews, for a later task to adopt:
 | [#87](https://github.com/davison/md-notes/issues/87) | the review of [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505) | A vitest teardown flake in `ui/src/note-view.test.tsx`: the reviewer's first `make check` failed with an unhandled `ReferenceError: window is not defined` from a preact effect timer firing after jsdom teardown, in a file the PR did not touch; six later runs were clean. The same shape #46 was for the Go side |
 | [#88](https://github.com/davison/md-notes/issues/88) | M5 QA, on [#76](https://github.com/davison/md-notes/issues/76#issuecomment-5702672668) | A basename at the filesystem's `NAME_MAX` is refused `500 io_error` and logged as a server fault, on the save path as well as on create. One `errors.Is(err, syscall.ENAMETOOLONG)` arm in the source error mapping answers `400 invalid_path` instead |
 | [#89](https://github.com/davison/md-notes/issues/89) | M5 QA, on [#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702704529) | Two edges in `ui/e2e`: a `drawerReady` helper beside `dialogReady`, the drawer's `Escape` effect attaching a frame late being the same race; and an owner for the standing condition left by the retired `Escape` decision |
+| [#91](https://github.com/davison/md-notes/issues/91) | the review of [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505), findings 3 and 6, dispositioned at [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702824030) | The note bar still scrolls sideways under an unbreakable long failure message — 479 px in a 320 px bar after #86, against 558 px before, so improved and not fixed — and `ui/e2e/create-delete.test.mjs` passes a `name` field to `browser.newContext`, which Playwright ignores |
 
 ## Known gaps at the boundary
 
@@ -682,54 +706,49 @@ surprise someone who has not read this far:
 | `ui/src/note-view.test.tsx` can fail `make check` on a teardown race it does not own; six of seven runs were clean and the file was untouched by the PR that surfaced it | [#87](https://github.com/davison/md-notes/issues/87) |
 | **Renaming a note is still not in the application at all.** M5 delivered two of the three verbs the README used to defer to other tools; renaming was never in scope and nothing in the milestone weighs it | [#74](https://github.com/davison/md-notes/issues/74), [the README](../../README.md) |
 | The `Escape`-stops-propagation rule is held by unit tests only. It is genuinely held — the capture-phase `document` listener in `ui/src/dialog.test.tsx` asserts the effect, not the call — but no browser check covers it, because after #85 no layer a reader can reach sits under a dialog | [#78](https://github.com/davison/md-notes/issues/78#issuecomment-5702378000), [#84](https://github.com/davison/md-notes/pull/84#issuecomment-5702513643) |
-| `ui/e2e/create-delete.test.mjs` hands `{ name, viewport, hasTouch, isMobile }` straight to `browser.newContext(layout)`; `name` is not a context option and Playwright tolerates it today | [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505), finding 6 — no disposition recorded, and still true on `main` |
+| `ui/e2e/create-delete.test.mjs` hands `{ name, viewport, hasTouch, isMobile }` straight to `browser.newContext(layout)`; `name` is not a context option and Playwright tolerates it today | [#91](https://github.com/davison/md-notes/issues/91), from [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505) finding 6 |
 | A too-long note name is refused `500 io_error` and logged as a server fault, on the save path as much as on create; the reader is told "could not read or save note" and not why. Not a breach of M5-R2, because the save answers the same way, but create is the first UI path that lets a reader reach it | [#88](https://github.com/davison/md-notes/issues/88), [#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702723351) |
 | The drawer's `Escape` effect attaches a frame after its element is in the page — the race `dialogReady` already blunts for dialogs. The shipped `layout.test.mjs` waits correctly; the next drawer check written will meet it | [#89](https://github.com/davison/md-notes/issues/89) |
-| `min-width: 0` on `.save-status` does not settle what the record says it settles. Measured with an unbreakable long failure message: the note bar's `scrollWidth` at 320 px falls from 558 to 479, and at 1280 px the delete button's right edge is at 995 either way — outside the pane. There is no `overflow-wrap` or `overflow: hidden` on `.save-status`, so the box may shrink but its text does not. Pre-existing, not made worse, and **never captured** | [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505), finding 3 |
+| `min-width: 0` on `.save-status` does not settle what the record says it settles. Measured with an unbreakable long failure message: the note bar's `scrollWidth` at 320 px falls from 558 to 479, and at 1280 px the delete button's right edge is at 995 either way — outside the pane. There is no `overflow-wrap` or `overflow: hidden` on `.save-status`, so the box may shrink but its text does not. Pre-existing and improved rather than fixed | [#91](https://github.com/davison/md-notes/issues/91), from [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505) finding 3 |
 | The new unit case in `ui/src/note-pane.test.tsx` for the delete button's position has no teeth of its own: it passes unchanged against `main`, because the DOM order never changed and the bug was purely CSS. The browser check is the only thing standing between that bug and a repeat | [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505), finding 5 |
 | The e2e suite runs in Chromium only, and the iPhone 14 profile is its viewport in Chromium rather than in WebKit. Chromium is the one browser CI downloads, and it is what M4 measured in | [#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426) |
 | The suite's device profiles are frozen literals and deliberately no longer track Playwright's device registry, so a real device whose viewport changes will not be noticed by a dependency bump — that is a decision to retake the numbers | [#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426) |
-| `mdn open ~/some/project` now admits `DELETE` as well as `PUT` for the markdown under it, for as long as that root is registered, and over the tailnet as well as on loopback. The operator was never asked | [#76](https://github.com/davison/md-notes/issues/76#issuecomment-5700724927) |
+| `mdn open ~/some/project` now admits `DELETE` as well as `PUT` for the markdown under it, for as long as that root is registered, and over the tailnet as well as on loopback. The operator was asked twice and has not answered; the default stands on the coordinator's authority, and **no `cc:needs-decision` gate was raised**, which is the stricter form this should have taken | [#76](https://github.com/davison/md-notes/issues/76#issuecomment-5700724927), [#76](https://github.com/davison/md-notes/issues/76#issuecomment-5702824267) |
 | M5-R2's text on [#74](https://github.com/davison/md-notes/issues/74) still says the create control is "in the navigator". It is in the top bar, by the operator's own finding, and the requirement is deliberately unedited | [#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702275665) |
 
 ## Where the record is silent
 
-- **Nothing records how this milestone was sequenced, or why.** M4 opened with a
-  coordinator decision fixing scope, ordering and the open defaults; M5 has no equivalent
-  comment on [#74](https://github.com/davison/md-notes/issues/74). The order is legible
-  from the task bodies' "depends on" lines and from the merge times, and it held, but the
-  reasoning is inferred rather than recorded — including why the daemon and the UI halves
-  of M5-R2 and M5-R3 were split across two tasks at all.
-- **The one ask-the-human point was flagged and never answered.** #76 recorded "create
-  and delete accept any registered root" as the default rather than taking it silently,
-  and flagged it to the coordinator to put to the operator
-  ([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5700724927)). No
-  operator answer appears anywhere on the record, and no `cc:needs-decision` gate was
-  raised. The behaviour shipped, it is pinned by a test, and reversing it is a guard
-  clause in two handlers — but a judgment call the implementer explicitly wanted a human
-  on was settled by silence.
-- **Nothing weighs the fix task against a capture.** The operator's two findings could
-  have become backlog captures for M6, as QA findings in this project usually do. They
-  became [#85](https://github.com/davison/md-notes/issues/85) inside the milestone, which
-  is why M5-R2's wording had to be superseded rather than simply carried forward. The
-  choice is visible in what happened and argued nowhere.
-- **Six review findings on [#86](https://github.com/davison/md-notes/pull/86) have no
-  recorded disposition.** The review approved and the PR merged with the operator's
-  confirmation and no reply comment, so five of the six were neither taken, deferred nor
-  declined on the record. Two of them are still true in the tree, one became
-  [#87](https://github.com/davison/md-notes/issues/87) by the coordinator's hand rather
-  than the task's, and the rest are answered here for the first time. Every other PR in
-  this milestone carries an implementer's reply naming what it did with each finding;
-  this is the one that does not.
+- **Four of this milestone's silences were closed by writing them down after the fact,
+  and that is itself the finding.** The scope and sequencing decision
+  ([#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702824535)), the
+  standing of the unanswered ask-the-human point
+  ([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5702824267)) and the
+  disposition of PR #86's six review findings
+  ([#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702824030)) were all
+  written after this record's first draft named their absence. Each is now traceable and
+  each is honest about being late. What none of them can undo is the order of events: the
+  work was sequenced, a judgment call was shipped and six findings were merged past
+  *before* the reasoning existed on the record, so nobody reviewing at the time could have
+  read it. M4 wrote its scope decision before the work; M5 wrote it afterwards.
+- **The ask-the-human point was never raised as a gate.** #76 flagged "create and delete
+  accept any registered root" for the operator, the coordinator put it to them twice, and
+  no answer came; the default stands on the coordinator's authority under the standing
+  merge confirmation. No `cc:needs-decision` was raised at any point, which the decision
+  itself names as the stricter form
+  ([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5702824267)). A
+  judgment call the implementer explicitly wanted a human on was settled by silence and
+  then ratified by the same identity that took it.
+- **PR [#86](https://github.com/davison/md-notes/pull/86) merged with no fix pass and no
+  reply to its review.** Every other PR in this milestone carries an implementer's reply
+  naming what it did with each finding. This one carries the approve, the operator's
+  confirmation and nothing else, and the disposition arrived after the merge. Two of the
+  six are still true in the tree, captured as
+  [#91](https://github.com/davison/md-notes/issues/91).
 - **Nothing says what the create and delete flows cost the eager bundle beyond the
   measurement.** PR #83 records +1,107 bytes of brotli JavaScript (+7.0%) and +313 bytes
   of CSS (+9.5%) on a first load, reproduced to the byte by its reviewer, and notes the
   editor chunk is unchanged. No budget exists to weigh those against; M4's asset work set
   none, and this milestone did not either.
-- **[#89](https://github.com/davison/md-notes/issues/89) cites "observations 3 and 4"
-  of the QA verdict comment, which as posted carries no numbered observations.** The two
-  edges it describes are stated in the capture's own text, so nothing is lost — but the
-  citation cannot be followed to what it names.
 - **The operator has seen the UI and nothing else.** The operator opened the merged
   application on 2026-09-16 and produced the two findings that became #85. That is the
   only human judgement anywhere in the milestone: every other trade-off here was struck
