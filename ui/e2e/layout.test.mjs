@@ -18,6 +18,7 @@ import {
   DESKTOP,
   PHONES,
   PIXEL_7,
+  TAP_TARGET,
   loadPlaywright,
   missingPrerequisite,
   openNote,
@@ -278,7 +279,7 @@ describe("the layout at phone widths and above", { skip: blocker ?? false }, () 
       assert.equal(chip.label, "Clear the tag filter alpha");
       assert.equal(chip.text, "#alpha×");
       assert.equal(chip.href, "/r/notes/alpha.md", "the chip clears the filter, keeping the note");
-      assert.ok(chip.height >= 40, `the chip is ${chip.height} px tall`);
+      assert.ok(chip.height >= TAP_TARGET, `the chip is ${chip.height} px tall`);
 
       // The filter is doing something: the tree is the two tagged notes.
       const files = await p.evaluate(() => [...document.querySelectorAll(".tree a.file")].map((a) => a.textContent));
