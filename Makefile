@@ -57,6 +57,8 @@ check: vet test build extension
 #     pnpm --dir ui exec playwright install chromium
 #
 # The suite skips rather than fails when the browser or the binary is absent.
+# The script names the files by glob rather than passing the directory:
+# `node --test e2e/` is a module path to Node 24, not a directory to walk.
 e2e: build
 	pnpm --dir ui e2e
 
