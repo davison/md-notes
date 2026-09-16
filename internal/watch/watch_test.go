@@ -37,9 +37,16 @@ func group(g tree.Group, names ...string) []tree.Dir {
 // relisting, has to wait for something outside the process. Those use the
 // bounds below. Each is one-sided: it bounds how long the test is prepared to
 // wait for something it expects, so a slow machine makes the test slower and
-// never wrong. No test asserts that nothing happened by waiting on the wall
-// clock — that assertion is only made where the fake clock proves no timer
-// could have fired.
+// never wrong.
+//
+// No test of the debounce concludes an absence from the wall clock: those
+// assertions are made through the fake clock, which says when every batch it
+// owes has been delivered. Three tests of the relisting still do — the drain
+// loops that take 100ms of silence for "ripgrep has finished", before proving
+// that a directory is live. They wait on ripgrep rather than on the debounce,
+// they are unchanged here, and their 100ms is a raw literal rather than a
+// named bound like the two below. They are the honest exception to the
+// paragraph above.
 const (
 	// batchWait is how long a test waits for a batch the kernel owes it,
 	// against a 50ms quiet window: twenty times the window, which is the
@@ -123,11 +130,14 @@ func next(t *testing.T, w *Watcher) Batch {
 	return Batch{}
 }
 
-// noBatchYet asserts that nothing has been emitted. It does not wait, and it
-// does not need to: it is only used where the fake clock has fired no timer
-// since the last handled call, so no batch can be on its way.
-func noBatchYet(t *testing.T, w *Watcher) {
+// noBatchYet asserts that nothing has been emitted. It does not wait on the
+// wall clock and it does not need to: Advance returns only once the loop has
+// taken every fire it caused, and handled returns only once the loop is back
+// at its select, so a batch the watcher had decided to send has been sent by
+// the time the receive below runs. A batch that is not there is not there.
+func noBatchYet(t *testing.T, w *Watcher, root string) {
 	t.Helper()
+	handled(w, root)
 	select {
 	case b := <-w.Events():
 		t.Fatalf("unexpected batch %v", b.Paths)
@@ -187,14 +197,14 @@ func TestBurstIsOneBatch(t *testing.T) {
 		send(w, root, "n.md", fsnotify.Write)
 	}
 	handled(w, root)
-	noBatchYet(t, w) // no quiet window has elapsed, so nothing is out
+	noBatchYet(t, w, root) // no quiet window has elapsed, so nothing is out
 	c.Advance(quiet)
 	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"n.md"}) {
 		t.Fatalf("batch = %v", b.Paths)
 	}
 	// However long the stream is left alone for, there is no second batch.
 	c.Advance(time.Hour)
-	noBatchYet(t, w)
+	noBatchYet(t, w, root)
 }
 
 // The batch is held for the whole quiet window and released the moment it
@@ -204,7 +214,7 @@ func TestBatchWaitsForTheWholeQuietWindow(t *testing.T) {
 	send(w, root, "n.md", fsnotify.Write)
 	handled(w, root)
 	c.Advance(quiet - time.Millisecond)
-	noBatchYet(t, w)
+	noBatchYet(t, w, root)
 	c.Advance(time.Millisecond)
 	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"n.md"}) {
 		t.Fatalf("batch = %v", b.Paths)
@@ -213,22 +223,37 @@ func TestBatchWaitsForTheWholeQuietWindow(t *testing.T) {
 
 // Every change restarts the quiet window, which is what makes a burst one
 // batch however long the burst runs for.
+//
+// Three changes, not two, and each one lands after the window the change
+// before it opened would have ended. A watcher that armed the window only for
+// the change that starts a batch would let the first two go at 50ms and carry
+// the third alone, so the first batch is wrong in its contents and not merely
+// early: the assertion holds whether or not the absence checks see anything.
 func TestEachChangeRestartsTheQuietWindow(t *testing.T) {
 	w, c, root := newFakeClockWatcher(t)
 	send(w, root, "a.md", fsnotify.Create)
 	handled(w, root)
 	c.Advance(quiet - 10*time.Millisecond)
-	noBatchYet(t, w)
+	noBatchYet(t, w, root)
+
+	// The window a.md opened would have ended at 50ms; b.md at 40ms moves it
+	// to 90ms.
 	send(w, root, "b.md", fsnotify.Create)
 	handled(w, root)
-	// The first file's window would have ended here had the second not
-	// restarted it.
 	c.Advance(10 * time.Millisecond)
-	noBatchYet(t, w)
+	noBatchYet(t, w, root)
+
+	// And c.md at 50ms moves it to 100ms.
+	send(w, root, "c.md", fsnotify.Create)
+	handled(w, root)
 	c.Advance(quiet - 10*time.Millisecond)
-	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"a.md", "b.md"}) {
-		t.Fatalf("batch = %v, want both files in one batch", b.Paths)
+	noBatchYet(t, w, root)
+
+	c.Advance(10 * time.Millisecond)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"a.md", "b.md", "c.md"}) {
+		t.Fatalf("batch = %v, want all three changes in one batch", b.Paths)
 	}
+	noBatchYet(t, w, root)
 }
 
 // A stream that never goes quiet still yields a batch: maxWait caps how long
@@ -246,7 +271,7 @@ func TestBusyStreamFlushesAtMaxWait(t *testing.T) {
 		handled(w, root)
 		c.Advance(40 * time.Millisecond)
 		if i < 7 {
-			noBatchYet(t, w) // 280ms of stream, and no 50ms of quiet
+			noBatchYet(t, w, root) // 280ms of stream, and no 50ms of quiet
 		}
 	}
 	// The eighth change lands at 280ms, so its window is cut to the 20ms the
@@ -416,7 +441,7 @@ func TestOverflowAsksForFullRefresh(t *testing.T) {
 	// The error and the events share one select, so an event taken after it
 	// proves the overflow was handled and its timer armed.
 	handled(w, root)
-	noBatchYet(t, w)
+	noBatchYet(t, w, root)
 	c.Advance(quiet)
 	if b := next(t, w); len(b.Paths) != 0 {
 		t.Fatalf("after overflow got %v, want an empty full-refresh batch", b.Paths)
@@ -438,7 +463,7 @@ func TestHiddenIgnored(t *testing.T) {
 	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"visible.md"}) {
 		t.Fatalf("batch = %v, want the hidden paths dropped", b.Paths)
 	}
-	noBatchYet(t, w)
+	noBatchYet(t, w, root)
 }
 
 // A permission change is not a content change, so it is not reported.
@@ -451,7 +476,7 @@ func TestChmodIgnored(t *testing.T) {
 	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"b.md"}) {
 		t.Fatalf("batch = %v, want the chmod dropped", b.Paths)
 	}
-	noBatchYet(t, w)
+	noBatchYet(t, w, root)
 }
 
 func TestCloseEndsEvents(t *testing.T) {
