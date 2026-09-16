@@ -5,7 +5,9 @@
  * clip needs and a generic converter cannot know. Every link and image is
  * resolved against the page's own URL, so a note that has left the browser
  * still points at something. A code block keeps what a page puts beside it —
- * a caption, a filename — and loses only the copy button.
+ * a caption, a filename — and loses only the copy button. And a table the
+ * plugin declines, because it has no header row or because it spans or nests,
+ * is written as the nearest readable GFM rather than left as the page's HTML.
  * The functions are pure and take the base URL as an argument rather than
  * reading `document`, which is what lets them be tested under Node and run
  * unchanged inside the page.
@@ -219,6 +221,159 @@ function imageSource(node: HTMLElement): string | null {
   return candidates.find((value) => !/^data:/i.test(value.trim())) ?? candidates[0] ?? null;
 }
 
+/** A cell as it will be written: its text, and the border its column takes. */
+interface Cell {
+  text: string;
+  border: string;
+}
+
+/** The delimiter row's spelling of an `align` attribute. */
+const ALIGNMENT: Record<string, string> = { left: ":--", right: "--:", center: ":-:" };
+
+/**
+ * A `colspan` or `rowspan`, clamped. `rowspan="0"` means "to the end of the
+ * section" in HTML and is read as one here; a four-figure span is a page's
+ * mistake or an attack on this converter's memory, and nothing legible needs
+ * one.
+ */
+function span(cell: HTMLElement, name: string): number {
+  const value = Number.parseInt(cell.getAttribute(name) ?? "", 10);
+  return Number.isNaN(value) ? 1 : Math.min(Math.max(value, 1), 100);
+}
+
+/**
+ * The table's own rows, walked rather than taken from `HTMLTableElement.rows`.
+ *
+ * That property is a descendant search in the DOM the tests run under, so a
+ * table with a table inside a cell reports the inner table's rows as its own
+ * and the clip grows rows that belong to another grid — while a browser's
+ * `rows` does not. Walking the children is the same answer in both, which for
+ * a converter that is tested under Node and runs in Chromium is the point.
+ */
+function rowsOf(table: HTMLElement): HTMLElement[] {
+  const rows: HTMLElement[] = [];
+  for (const child of Array.from(table.children)) {
+    if (child.nodeName === "TR") rows.push(child as HTMLElement);
+    if (child.nodeName !== "THEAD" && child.nodeName !== "TBODY" && child.nodeName !== "TFOOT") {
+      continue;
+    }
+    for (const row of Array.from(child.children)) {
+      if (row.nodeName === "TR") rows.push(row as HTMLElement);
+    }
+  }
+  return rows;
+}
+
+/**
+ * A row's own cells, which `children` gives and `querySelectorAll` would not:
+ * a nested table's cells are not this row's.
+ */
+function cellsOf(row: HTMLElement): HTMLElement[] {
+  return Array.from(row.children).filter(
+    (child) => child.nodeName === "TD" || child.nodeName === "TH",
+  ) as HTMLElement[];
+}
+
+/**
+ * One cell's content, converted and then flattened onto a single line: a GFM
+ * cell holds inline content only, and a newline inside one ends the row.
+ *
+ * The conversion re-enters the same service on the cell, rather than reading
+ * the `content` Turndown has already assembled, because the table is built
+ * from its own geometry — which cell sits in which column — and that is lost
+ * once the cells are one string. Re-entry is safe: `turndown` clones its
+ * input and holds no state between calls.
+ */
+function cellText(service: TurndownService, cell: HTMLElement): string {
+  return service
+    .turndown(cell)
+    .replace(/\s*\n+\s*/g, " ")
+    .replace(/\|/g, "\\|")
+    .trim();
+}
+
+function borderFor(cell: HTMLElement): string {
+  return ALIGNMENT[(cell.getAttribute("align") ?? "").toLowerCase()] ?? "---";
+}
+
+/**
+ * The table laid out as a rectangle, the way HTML defines one: each cell is
+ * placed at the first free column of its row and claims the rectangle its
+ * `colspan` and `rowspan` cover, the covered cells are empty, and every row is
+ * padded to the width of the widest. A spanning table is then a grid that
+ * still lines up, with every value written once and in the column it was
+ * written in — which is what GFM can carry of it, since it has no spans.
+ */
+function tableGrid(service: TurndownService, table: HTMLElement): Cell[][] {
+  const grid: Cell[][] = [];
+  const rows = rowsOf(table);
+  rows.forEach((row, index) => {
+    const line = (grid[index] ??= []);
+    let column = 0;
+    for (const cell of cellsOf(row)) {
+      while (line[column] !== undefined) column += 1;
+      const placed: Cell = { text: cellText(service, cell), border: borderFor(cell) };
+      const columns = span(cell, "colspan");
+      for (let down = 0; down < span(cell, "rowspan"); down += 1) {
+        const covered = (grid[index + down] ??= []);
+        for (let across = 0; across < columns; across += 1) {
+          covered[column + across] =
+            down === 0 && across === 0 ? placed : { text: "", border: placed.border };
+        }
+      }
+      column += columns;
+    }
+  });
+  const width = grid.reduce((widest, line) => Math.max(widest, line.length), 0);
+  return grid.map((line) =>
+    Array.from({ length: width }, (_, column) => line[column] ?? { text: "", border: "---" }),
+  );
+}
+
+/**
+ * Whether the first row is the header. The GFM plugin's test, minus the part
+ * about which row it is: only the first is ever asked here.
+ */
+function isHeaderRow(row: HTMLElement): boolean {
+  if (row.parentNode?.nodeName === "THEAD") return true;
+  const cells = cellsOf(row);
+  return cells.length > 0 && cells.every((cell) => cell.nodeName === "TH");
+}
+
+function tableLine(cells: Cell[]): string {
+  return `| ${cells.map((cell) => cell.text).join(" | ")} |`;
+}
+
+/** Whether this table sits inside another table's cell. */
+function insideCell(node: HTMLElement): boolean {
+  for (let parent: Node | null = node.parentNode; parent !== null; parent = parent.parentNode) {
+    if (parent.nodeName === "TD" || parent.nodeName === "TH") return true;
+  }
+  return false;
+}
+
+/**
+ * A nested table's values on one line — cells joined with ` / `, rows with
+ * `; `.
+ *
+ * GFM has no way to put a table inside a cell, and the alternatives are worse:
+ * raw HTML is the defect this is fixing, and lifting the inner table out to
+ * stand on its own separates it from the row it describes. This keeps every
+ * value, in order, inside the cell it belongs to, and the table around it
+ * stays a table.
+ */
+function nestedTable(grid: Cell[][]): string {
+  return grid
+    .map((line) =>
+      line
+        .map((cell) => cell.text)
+        .filter((text) => text !== "")
+        .join(" / "),
+    )
+    .filter((line) => line !== "")
+    .join("; ");
+}
+
 /**
  * A Turndown service configured for clipping, with `baseUrl` as the page every
  * relative URL is resolved against.
@@ -260,6 +415,39 @@ export function clipTurndown(baseUrl: string): TurndownService {
       if (container === null) return `\n\n${block}\n\n`;
       const [before, after] = aroundTheCode(service, container, pre);
       return `\n\n${[before, block, after].filter((part) => part !== "").join("\n\n")}\n\n`;
+    },
+  });
+
+  // The GFM plugin converts a table only when its first row is a heading row
+  // and `keep`s every other table as the page's own HTML (#45), and its cell
+  // rules ignore `colspan` and `rowspan`, so a spanning table comes out as
+  // rows of different widths. This rule takes every table and writes it from
+  // the table's geometry: a header row synthesised when the page has none —
+  // GFM requires one, and promoting a data row would assert something the page
+  // does not — spans laid out on a rectangular grid, and a nested table
+  // flattened into the cell that holds it. Rules added later win, so this one
+  // is reached before both the plugin's rule and its `keep`.
+  service.addRule("clipTable", {
+    filter: "table",
+    replacement: (_content, node) => {
+      const grid = tableGrid(service, node);
+      const caption = Array.from(node.children).find((child) => child.nodeName === "CAPTION");
+      const title =
+        caption === undefined ? "" : service.turndown(caption as HTMLElement).trim();
+      if (insideCell(node)) return [title, nestedTable(grid)].filter((p) => p !== "").join(": ");
+      if (grid.length === 0) return title === "" ? "" : `\n\n${title}\n\n`;
+      const rows = rowsOf(node);
+      const headed = rows[0] !== undefined && isHeaderRow(rows[0]);
+      const header = headed
+        ? grid[0]!
+        : grid[0]!.map(() => ({ text: "", border: "---" }) as Cell);
+      const body = headed ? grid.slice(1) : grid;
+      const table = [
+        tableLine(header),
+        `| ${header.map((cell) => cell.border).join(" | ")} |`,
+        ...body.map(tableLine),
+      ].join("\n");
+      return `\n\n${[title, table].filter((part) => part !== "").join("\n\n")}\n\n`;
     },
   });
 
