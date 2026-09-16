@@ -23,10 +23,13 @@ do a few things well and nothing else:
 The design as a whole. Milestone one built the daemon and the reading half of
 the web UI, milestone two the editor, milestone three the browser extension
 with the authentication it needed, milestone four made the result usable on
-the devices it is read from and cheap on the wire, and milestone five made
+the devices it is read from and cheap on the wire, milestone five made
 the app the only tool the notes need day to day — notes are created and
-deleted in it, and a browser-level suite holds the result in CI; the inbox is
-still ahead.
+deleted in it, and a browser-level suite holds the result in CI — and
+milestone six took up what five left behind: clipping works from another
+tailnet node, the clipper converts the tables and code blocks it used to
+mangle, the refusals say what is wrong, and the note bar and the
+deleted-on-disk banner do what they promise. The inbox is still ahead.
 
 - **Daemon.** One static Go binary. Serves the web UI, watches one or more
   root folders, renders markdown server-side, shells out to ripgrep for
@@ -146,9 +149,12 @@ switch view, move to another note, leave the window or type `:w` — the
 note bar says whether the draft is saved, saving, failed or in conflict, and
 the browser tab carries the same news as a leading `•` for unsaved work or
 `⚠` for a conflict.
-A refused save keeps the draft and offers a retry; a note changed or
-deleted on disk under an unsaved draft raises a banner that keeps the
-draft until you say what to do with it.
+A refused save keeps the draft and offers a retry — a long reason is cut
+with an ellipsis rather than widening the bar, and hovering it shows the
+whole. A note changed or deleted on disk under an unsaved draft raises a
+banner that keeps the draft until you say what to do with it; for a
+deleted one, **Recreate the note** puts the file back with the draft in
+it in a single confirmation.
 
 Notes are created and deleted from the app as well as edited in it. **New
 note**, in the top bar beside the home link, asks for a title or a path
@@ -231,10 +237,13 @@ header. `mdn token --rotate` ends every session as well as every stored
 token, which is how you revoke a device.
 
 What a caller reaches over the tailnet is narrower than on loopback: the
-UI's own API — the reads, the source save, the events stream, search and
-tags — but not `POST /api/roots` and not `POST /api/clip`. Registering a
-folder is the step from "read my notes" to "read any file on this
-machine", so it stays on the machine.
+UI's own API — the reads, creating, saving and deleting a note, the events
+stream, search and tags — and `POST /api/clip` to a caller presenting the
+token, but not `POST /api/roots`. Registering a folder is the step from
+"read my notes" to "read any file on this machine", so it stays on the
+machine. The clip does not: it writes one file into the notes root's clips
+directory, at a name the daemon chooses, which is narrower than the note
+save the tailnet already admits.
 
 This is where the single-user premise stretches. On loopback the people
 who can reach the daemon are the processes running as you. Under
@@ -258,7 +267,10 @@ the page's right-click menu, turn the readable article — or just the selection
 — into markdown and post it to the daemon. The popup shows the title, editable
 before saving, and then a link that opens the new note in the app. A clip
 lands under `clips/` in the notes root with `title`, `source`, `clipped` and
-`tags: [clip]` above it, and appears in the navigator without a refresh.
+`tags: [clip]` above it, and appears in the navigator without a refresh. This
+works with the daemon URL set to the `tailnet_host` name as well as to
+loopback, so a browser on another tailnet node clips into the same notes;
+registering a folder is the one action that stays on the daemon's machine.
 
 **Opening local files.** Switch on **Allow access to file URLs** in its
 details and a local `.md` or `.markdown` file opens in md-notes instead of
@@ -289,7 +301,19 @@ and deleted from the app rather than from a shell or a file manager, with
 `POST` and `DELETE` on the note's own source resource behind the same
 confinement as the save; the `internal/watch` timing tests are driven by an
 injected clock instead of the wall clock; and the browser-level checks that
-lived in session scratchpads are a `ui/e2e` suite running in CI.
+lived in session scratchpads are a `ui/e2e` suite running in CI. Milestone
+six took up the backlog that five raised: `POST /api/clip` joined the tailnet
+allow-list, so the extension pointed at the `tailnet_host` URL clips into the
+notes while registering a folder stays on the machine; the clipper writes a
+headerless, spanning or nested table as markdown instead of leaving the
+page's own HTML, keeps the caption and the filename line beside a code block
+and drops only the chrome, and declines to squash a page laid out in a table
+into one cell; a name the filesystem calls too long is answered `400
+invalid_path` instead of `500`, and a dangling symlink chain out of the root
+is answered `403 outside_root` on create and delete however long it is; and
+the note bar no longer scrolls sideways under a long failure message, with
+the deleted-on-disk banner offering to recreate the note from the draft in
+one step.
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
 today, [docs/extension.md](docs/extension.md) the extension,
 [docs/e-ink.md](docs/e-ink.md) the e-ink tablet, and the milestone
@@ -298,7 +322,8 @@ records
 [two](docs/milestones/2-editor-autosave-and-live-update.md),
 [three](docs/milestones/3-clipper-authentication-and-tailnet.md),
 [four](docs/milestones/4-polish-phone-e-ink-and-the-bundle.md),
-[five](docs/milestones/5-create-and-delete-notes.md))
+[five](docs/milestones/5-create-and-delete-notes.md),
+[six](docs/milestones/6-tailnet-clipping-and-the-m5-backlog.md))
 record the decisions behind them. The inbox, which turns URLs shared from a
 phone into clips, follows in a later milestone. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which

@@ -411,9 +411,10 @@ is shown ([#82](https://github.com/davison/md-notes/issues/82)).
 
 `GET` and `PUT` on one of these dangling-link paths answer `404 not_found` rather
 than `403 outside_root`: confinement there is the resolver's alone, and to it a
-link with no target is simply missing. The split is deliberate — this milestone's
-requirement is the create and delete codes, and widening the read and save paths
-is a behaviour change no requirement asks for — and it is recorded with its
+link with no target is simply missing. The split is deliberate — the requirement
+that fixed these codes ([M6-R3](milestones/6-tailnet-clipping-and-the-m5-backlog.md))
+is about create and delete, and widening the read and save paths is a behaviour
+change no requirement asks for — and it is recorded with its
 trade-off at
 [#99](https://github.com/davison/md-notes/issues/99#issuecomment-5703933261).
 
@@ -506,7 +507,7 @@ Clip errors use the same `{code, error}` envelope as
 | 400 | `invalid_body` | Malformed JSON, a missing or empty field, a relative `url`, or a `kind` that is neither `page` nor `selection` |
 | 401 | `unauthorized` | An `Authorization` header that is not the current token |
 | 403 | `cross_origin` | A foreign `Origin` and no `Authorization` header at all — the [guard](#refusals) answers, and the handler never runs |
-| 403 | `outside_root` | `clips_dir` resolves outside the notes root |
+| 403 | `outside_root` | `clips_dir` resolves outside the notes root, a dangling symlink chain out of it included ([#82](https://github.com/davison/md-notes/issues/82)) |
 | 403 | `permission_denied` | The clips directory is not writable |
 | 409 | `conflict` | The dated name and every suffix are taken |
 | 413 | `too_large` | The markdown or the request exceeds the size limit |
@@ -1281,9 +1282,9 @@ fixed and did not go on to narrow.
   cookie gets the check too — `SameSite=Strict` is not left as the only thing
   between a foreign page and a write.
 - Under `tailnet_host` nothing at all is served unauthenticated, and what an
-  authenticated caller reaches is the UI's own API: `POST /api/roots` and
-  `POST /api/clip` stay on the machine, and so does any endpoint added later until
-  somebody decides otherwise.
+  authenticated caller reaches is the UI's own API, plus `POST /api/clip` to a
+  caller presenting the token: `POST /api/roots` stays on the machine, and so does
+  any endpoint added later until somebody decides otherwise.
 - Every path a request names is resolved through one function: it is cleaned and
   rejected if it leaves the root lexically, then symlinks are evaluated and it is
   rejected again if the real path leaves the root. A symlink pointing back inside the

@@ -7,3 +7,4 @@
 | M3 | Browser extension clipper, daemon authentication and tailnet access | [#35](https://github.com/davison/md-notes/issues/35) | [Done](docs/milestones/3-clipper-authentication-and-tailnet.md) |
 | M4 | Polish: mobile layout, e-ink, dark code colours, sync docs, tailnet extension, asset caching | [#55](https://github.com/davison/md-notes/issues/55) | [Done](docs/milestones/4-polish-phone-e-ink-and-the-bundle.md) |
 | M5 | Create and delete notes, a deterministic watch test, browser checks in CI | [#74](https://github.com/davison/md-notes/issues/74) | [Done](docs/milestones/5-create-and-delete-notes.md) |
+| M6 | Clipping over the tailnet, clipper conversion fixes, and the M5 backlog | [#96](https://github.com/davison/md-notes/issues/96) | [Done](docs/milestones/6-tailnet-clipping-and-the-m5-backlog.md) |

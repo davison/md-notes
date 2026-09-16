@@ -43,7 +43,8 @@ effect at once.
 Tap targets do not need a setting. The application's own controls — tree
 entries, tags and the clear link, search hits and the search box, the drawer's
 tabs, the top bar's buttons including **New note**, the note bar's including
-**Delete**, the frontmatter disclosure, both dialogs' buttons and the create
+**Delete**, the frontmatter disclosure, the conflict banner's buttons including
+**Recreate the note**, both dialogs' buttons and the create
 prompt's name box — are at least 40 pixels tall wherever the browser
 reports a touch or stylus pointer, including the wide layout you get by zooming
 out. A mouse keeps the compact rows. Links *inside* a note are the exception,

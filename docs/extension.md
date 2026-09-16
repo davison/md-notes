@@ -240,9 +240,12 @@ cell holds a code block or a heading; `role="presentation"` (or `role="none"`)
 settles it the other way. A table only one cell wide is judged more strictly,
 since that is the shape a page wraps an article in: it stays a table when its
 cells hold plain values, and becomes blocks when one of them holds a paragraph,
-a list or a table of its own. (One consequence worth knowing: with a
+a list or a table of its own. (Two consequences worth knowing: with a
 line-number wrapper, the numbers arrive as a small code block of their own
-above the code.)
+above the code; and because a `th` settles the question whatever the cells
+hold, a table that uses `th` cells as row labels with a code block in the
+value cell stays a grid, so that code is flattened onto one line —
+[#107](https://github.com/davison/md-notes/issues/107).)
 
 Every link and image is made **absolute against the page's own URL**, so a note
 still points at something once it has left the browser. Three deliberate
