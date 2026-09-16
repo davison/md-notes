@@ -549,10 +549,6 @@ func TestTailnetNarrowsWhatTheCredentialReaches(t *testing.T) {
 			bearerHeader(tok, "Content-Type", "application/json")},
 		{"register a root with the session", "POST", "/api/roots", `{"path":"` + elsewhere + `"}`,
 			map[string]string{"Cookie": cookie, "Content-Type": "application/json", "Origin": tailnetOrigin}},
-		{"clip with the token", "POST", "/api/clip", clipBody("Remote", "# x\n"),
-			bearerHeader(tok, "Content-Type", "application/json")},
-		{"clip with the session", "POST", "/api/clip", clipBody("Remote", "# x\n"),
-			map[string]string{"Cookie": cookie, "Content-Type": "application/json", "Origin": tailnetOrigin}},
 	} {
 		resp := tdo(t, ts, c.method, c.path, c.body, c.hdr)
 		if resp.StatusCode != http.StatusForbidden {
@@ -568,6 +564,12 @@ func TestTailnetNarrowsWhatTheCredentialReaches(t *testing.T) {
 	// allow-list, so nothing new is reachable off the machine by default.
 	for _, c := range []struct{ method, path string }{
 		{"POST", "/api/whatever"},
+		// The clip endpoint is one method, not a resource: M6-R1 admits the
+		// POST the extension makes and nothing else that might be hung off
+		// the same path later.
+		{"GET", "/api/clip"},
+		{"PUT", "/api/clip"},
+		{"DELETE", "/api/clip"},
 		{"DELETE", "/api/r/notes/tree"},
 		{"POST", "/api/r/notes/note/hello.md"},
 		{"PUT", "/api/r/notes/tree"},
@@ -590,6 +592,146 @@ func TestTailnetNarrowsWhatTheCredentialReaches(t *testing.T) {
 		bearerHeader(tok, "Content-Type", "application/json")); resp.StatusCode != http.StatusCreated {
 		t.Errorf("clip on loopback: status %d, want 201", resp.StatusCode)
 	}
+}
+
+// A clip is admitted under the tailnet name and lands in the clips
+// directory exactly as it does on loopback, while registering a root is
+// still refused with its message unchanged. M6-R1, adopting
+// [#95](https://github.com/davison/md-notes/issues/95): #39 kept clipping
+// off the allow-list when no write at all crossed the name, and M5-R2
+// admitted a create at any path inside any registered root, which is
+// wider than the one file into `clips_dir` this endpoint writes.
+func TestTailnetAdmitsAClip(t *testing.T) {
+	ts, base := newTailnetServer(t)
+	tok := daemonToken(t, base)
+	cookie := login(t, ts, base)
+	clipsDir := filepath.Join(base, "notes", "clips")
+
+	// The extension's clip, over the name, with the token it holds.
+	resp := tdo(t, ts, "POST", "/api/clip", clipBody("Remote By Token", "# Heading\n\nBody text.\n"),
+		bearerHeader(tok, "Content-Type", "application/json"))
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("clip: status %d, want 201: %s", resp.StatusCode, readAll(t, resp.Body))
+	}
+	var created struct{ Root, Path string }
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	// The clips directory under the notes root, at a name the daemon
+	// chooses from the date and the title — the caller names no path at
+	// all, which is what makes this narrower than the source create M5-R2
+	// already admits.
+	if want := "clips/" + time.Now().Format("2006-01-02") + "-remote-by-token.md"; created.Root != "notes" || created.Path != want {
+		t.Fatalf("created = %+v, want the notes root and %s", created, want)
+	}
+	body, err := os.ReadFile(filepath.Join(base, "notes", filepath.FromSlash(created.Path)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{
+		"---\ntitle: Remote By Token\n",
+		"source: https://example.com/article\n",
+		"tags: [clip]\n",
+		"---\n\n# Heading\n\nBody text.\n",
+	} {
+		if !strings.Contains(string(body), fragment) {
+			t.Errorf("clip lacks %q:\n%s", fragment, body)
+		}
+	}
+
+	// The login session is not a second way in. `POST /api/clip` has
+	// required the bearer token since #39 — nothing on the daemon's own
+	// origin calls it — and the allow-list entry does not change that, on
+	// the name any more than on loopback. So a browser logged in at the
+	// tailnet name cannot clip; the extension holding the token can.
+	if resp := tdo(t, ts, "POST", "/api/clip", clipBody("Remote By Session", "# x\n"),
+		map[string]string{"Cookie": cookie, "Content-Type": "application/json", "Origin": tailnetOrigin}); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("clip with the session: status %d, want 401", resp.StatusCode)
+	}
+
+	// "Exactly as they do on loopback" is the requirement's wording, so it
+	// is compared rather than described: the same request over the two
+	// paths produces the same file, modulo the `clipped` stamp and the
+	// suffix the second one gets for colliding with the first.
+	remote := tdo(t, ts, "POST", "/api/clip", clipBody("Same Both Ways", "# Same\n"),
+		bearerHeader(tok, "Content-Type", "application/json"))
+	if remote.StatusCode != http.StatusCreated {
+		t.Fatalf("clip over the tailnet: status %d: %s", remote.StatusCode, readAll(t, remote.Body))
+	}
+	local := do(t, ts, "POST", "/api/clip", clipBody("Same Both Ways", "# Same\n"),
+		bearerHeader(tok, "Content-Type", "application/json"))
+	if local.StatusCode != http.StatusCreated {
+		t.Fatalf("clip on loopback: status %d: %s", local.StatusCode, readAll(t, local.Body))
+	}
+	day := time.Now().Format("2006-01-02")
+	overTailnet := readClip(t, filepath.Join(clipsDir, day+"-same-both-ways.md"))
+	onLoopback := readClip(t, filepath.Join(clipsDir, day+"-same-both-ways-2.md"))
+	if overTailnet != onLoopback {
+		t.Errorf("the clip differs by the path it arrived on:\n--- tailnet\n%s\n--- loopback\n%s", overTailnet, onLoopback)
+	}
+
+	// The step this milestone does not take. Registering a root is still
+	// the path from a network credential to any directory on the machine,
+	// and answers what it always did.
+	resp = tdo(t, ts, "POST", "/api/roots", `{"path":"`+t.TempDir()+`"}`,
+		bearerHeader(tok, "Content-Type", "application/json"))
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("register a root: status %d, want 403", resp.StatusCode)
+	}
+	var refusal struct{ Code, Error string }
+	if err := json.NewDecoder(resp.Body).Decode(&refusal); err != nil {
+		t.Fatal(err)
+	}
+	if refusal.Code != "loopback_only" {
+		t.Errorf("register a root: code %q, want loopback_only", refusal.Code)
+	}
+	if want := "this endpoint is served on loopback only; it is not reachable under " + tailnetName; refusal.Error != want {
+		t.Errorf("register a root: message %q, want %q", refusal.Error, want)
+	}
+
+	// Admitting the endpoint admits nothing about who may reach it: the
+	// clip is behind the same challenge and the same Origin rule as every
+	// other write under the name.
+	before := clipCount(t, clipsDir)
+	if resp := tdo(t, ts, "POST", "/api/clip", clipBody("Nobody", "# x\n"),
+		map[string]string{"Content-Type": "application/json"}); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("clip with no credential: status %d, want 401", resp.StatusCode)
+	}
+	if resp := tdo(t, ts, "POST", "/api/clip", clipBody("Foreign", "# x\n"),
+		map[string]string{"Cookie": cookie, "Content-Type": "application/json", "Origin": "https://evil.example"}); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("cross-origin clip: status %d, want 403", resp.StatusCode)
+	} else if code := guardCode(t, resp); code != "cross_origin" {
+		t.Errorf("cross-origin clip: code %q, want cross_origin", code)
+	}
+	if after := clipCount(t, clipsDir); after != before {
+		t.Errorf("a refused clip wrote a file: %d clips, want %d", after, before)
+	}
+}
+
+// readClip reads a clip with its `clipped` stamp removed, so two clips
+// taken a moment apart are comparable.
+func readClip(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.HasPrefix(line, "clipped: ") {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
+func clipCount(t *testing.T, dir string) int {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(entries)
 }
 
 // Creating and deleting a note is admitted under the tailnet name on the
