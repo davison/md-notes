@@ -442,6 +442,7 @@ describe("RootView top bar", () => {
     expect([...document.querySelector(".topbar")!.children].map((n) => n.className)).toEqual([
       "drawer-toggle nav-toggle",
       "brand",
+      "new-note",
       "root-name",
       "path",
       "topbar-spacer",
@@ -489,6 +490,19 @@ const submit = () => fireEvent.submit(document.querySelector(".modal form")!);
 describe("creating a note", () => {
   const posts = () => methods.filter((c) => c.method === "POST");
   const nameBox = () => screen.getByLabelText("Title or path");
+
+  it("puts the create control in the top bar, not in the navigator", async () => {
+    // The navigator's list scrolls; the top bar does not, and on a long
+    // tree the control used to be above everything and out of sight (#85).
+    mountAt("/r/n/docs/a.md", "docs/a.md");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+    expect(document.querySelector(".topbar .new-note")).toBeTruthy();
+    expect(document.querySelector(".nav .new-note")).toBeNull();
+    // Named the same whether or not the stylesheet is showing its label.
+    const control = screen.getByRole("button", { name: "New note" });
+    expect(control.querySelector(".new-note-label")!.textContent).toBe("New note");
+    expect(control.closest(".topbar")).toBeTruthy();
+  });
 
   it("creates a bare title in the open note's folder and opens it in the editor", async () => {
     mountAt("/r/n/docs/a.md", "docs/a.md");

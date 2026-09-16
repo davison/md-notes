@@ -4,7 +4,7 @@ import { fetchTags, fetchTree, listRoots, noteURL, type Root, type Tag, type Tre
 import { Drawer, FindToggle, NavToggle, useDrawer } from "./drawer";
 import { affects, affectsTree, type LiveUpdate, useEvents } from "./events";
 import { Navigator } from "./navigator";
-import { NewNoteDialog } from "./new-note";
+import { NewNoteButton, NewNoteDialog } from "./new-note";
 import { folderOf } from "./note-name";
 import { NotePane, UnsavedDrafts, useUnsavedGuard } from "./note-pane";
 import { SearchPane } from "./search-pane";
@@ -140,6 +140,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
       <header class="topbar">
         <NavToggle state={drawer} />
         <a href="/" class="brand">mdn</a>
+        <NewNoteButton onClick={() => setCreating(true)} />
         <span class="root-name">{root.slug}</span>
         <span class="path">{root.path}</span>
         <span class="topbar-spacer" />
@@ -150,11 +151,6 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
       </header>
       <Drawer state={drawer}>
         <aside class="nav">
-          <div class="nav-actions">
-            <button type="button" class="new-note" onClick={() => setCreating(true)}>
-              New note
-            </button>
-          </div>
           <LiveUpdateNotice live={live} />
           {treeError && <p class="error">{treeError}</p>}
           {!tree && !treeError && <p class="muted">Loading…</p>}
