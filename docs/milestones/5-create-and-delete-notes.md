@@ -173,7 +173,14 @@ outside file removes only the name inside the root; a note another process remov
 shows the daemon's refusal inside the dialog and keeps it open to be read. And QA read
 `Store.Delete` as the gate requires rather than only exercising it, confirming that
 `parent.Remove(base)` on one basename is the only call in the path that changes the
-filesystem and that `grep -rn "RemoveAll" internal/ cmd/` is empty. Thirteen browser
+filesystem. QA's sentence for the second half of that — `grep -rn "RemoveAll" internal/
+cmd/` "is empty" — is not what the command prints, and this record checked rather than
+repeated it: the grep returns five lines, none of them a call in the delete path. One is
+the comment at `internal/source/write.go:109` that says "never RemoveAll", and the other
+four are `os.RemoveAll` fixture cleanups in `internal/watch/watch_test.go` and
+`internal/roots/roots_test.go`. `internal/source` contains the word once, in that comment.
+The claim the gate needs — no `RemoveAll` in the package that deletes notes — holds; the
+command quoted for it does not prove it on its own. Thirteen browser
 probes of its own on the shipped harness — 320 px, the backdrop dismissal the suite does
 not take, a vanished note, the delete control's `x` across view → edit → view at 1440 px
 and at 320 px — none of which failed.
@@ -450,8 +457,10 @@ hidden ([#85](https://github.com/davison/md-notes/issues/85#issuecomment-5702099
 Where the dependency lives was a deviation and is recorded below. The design half is that
 `ui/e2e/harness.mjs` is the rig every file imports — Playwright resolution, a free port, a
 `waitFor` poll, a `mkdtemp` fixture tree, a daemon on a temporary root with its own
-`--config`, `--state` and `--token-file`, the device profiles — about seventy lines, where
-four copies of it is how four files come to disagree about which port is free
+`--config`, `--state` and `--token-file`, the device profiles. The decision estimated the
+rig at "about seventy lines" before it was written; the shipped `ui/e2e/harness.mjs` is
+260 lines, 157 of them not comment or blank. Four copies of that is how four files come to
+disagree about which port is free
 ([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701662110),
 [#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701859723)).
 
@@ -600,8 +609,13 @@ on a machine with different fonts.
 Two requirements were delivered, reviewed and merged, and then changed inside the same
 milestone because the operator used the result
 ([#74](https://github.com/davison/md-notes/issues/74#issuecomment-5701985349)). The fix
-task was opened rather than a capture filed for M6. Nothing on the record weighs that
-choice; see [Where the record is silent](#where-the-record-is-silent).
+task was opened rather than a capture filed for M6, on the rule that a finding against an
+*open* requirement becomes a fix task so QA verifies the requirement as it will ship —
+which is recorded, but only after this record's first draft named its absence
+([#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702824535)). What the
+late comment cannot undo is that the deviation was taken before the reasoning for it
+existed anywhere a reviewer could read; see
+[Where the record is silent](#where-the-record-is-silent).
 
 ## Corrections to the record itself
 
@@ -709,6 +723,7 @@ surprise someone who has not read this far:
 | `ui/e2e/create-delete.test.mjs` hands `{ name, viewport, hasTouch, isMobile }` straight to `browser.newContext(layout)`; `name` is not a context option and Playwright tolerates it today | [#91](https://github.com/davison/md-notes/issues/91), from [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505) finding 6 |
 | A too-long note name is refused `500 io_error` and logged as a server fault, on the save path as much as on create; the reader is told "could not read or save note" and not why. Not a breach of M5-R2, because the save answers the same way, but create is the first UI path that lets a reader reach it | [#88](https://github.com/davison/md-notes/issues/88), [#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702723351) |
 | The drawer's `Escape` effect attaches a frame after its element is in the page — the race `dialogReady` already blunts for dialogs. The shipped `layout.test.mjs` waits correctly; the next drawer check written will meet it | [#89](https://github.com/davison/md-notes/issues/89) |
+| The deleted-on-disk banner still tells the reader to "recreate the file with another tool" (`ui/src/note-pane.tsx`). It is not false — the *editor* still cannot recreate a note — but **New note** can, and the introduction now says so where the string does not | [#90](https://github.com/davison/md-notes/pull/90#issuecomment-5703126600), finding 6 — a string in code, left for a capture rather than changed in a documentation task |
 | `min-width: 0` on `.save-status` does not settle what the record says it settles. Measured with an unbreakable long failure message: the note bar's `scrollWidth` at 320 px falls from 558 to 479, and at 1280 px the delete button's right edge is at 995 either way — outside the pane. There is no `overflow-wrap` or `overflow: hidden` on `.save-status`, so the box may shrink but its text does not. Pre-existing and improved rather than fixed | [#91](https://github.com/davison/md-notes/issues/91), from [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505) finding 3 |
 | The new unit case in `ui/src/note-pane.test.tsx` for the delete button's position has no teeth of its own: it passes unchanged against `main`, because the DOM order never changed and the bug was purely CSS. The browser check is the only thing standing between that bug and a repeat | [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505), finding 5 |
 | The e2e suite runs in Chromium only, and the iPhone 14 profile is its viewport in Chromium rather than in WebKit. Chromium is the one browser CI downloads, and it is what M4 measured in | [#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426) |
