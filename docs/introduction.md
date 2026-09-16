@@ -904,11 +904,18 @@ Autosave stops while the conflict stands, the draft stays in the editor, and
 switching to View shows the file as it is on disk with the banner and the draft
 still there.
 
-A note **deleted** on disk under a draft raises a banner with **Copy draft** and
-**Discard draft** only. The editor cannot recreate the file, because the save API has
-no create-on-missing path; recreating it — with **New note** under the same name, or
-with another tool — turns the conflict back into a changed one, where **Keep my
-draft** writes the draft over it. A clean note whose file is deleted is kept the same
+A note **deleted** on disk under a draft raises a banner with **Recreate the note**,
+**Copy draft** and **Discard draft**. The editor cannot save the draft back itself,
+because the save API has no create-on-missing path, but **New note** can write it
+again, and **Recreate the note** is that prompt opened with the lost note's path
+already in the box and the draft as the new note's body: one confirmation puts the
+file back and the editor carries on over it with nothing lost. It is still the
+prompt — the name can be changed before it is confirmed, and a path taken again in
+the meantime comes back as the ordinary "already exists" refusal, with the name kept
+for correcting. **Copy draft** remains for a draft that is going somewhere else
+entirely. The file recreated any other way — another tool, or **New note** under the
+same name with different text — turns the conflict back into a changed one instead,
+where **Keep my draft** writes the draft over it. A clean note whose file is deleted is kept the same
 way rather than dropped, since the text on screen may be the only copy left. This is
 also the path a note deleted from *another* tab takes, and is why deleting a note
 raises no second dialog there

@@ -2,7 +2,7 @@ import { useId, useState } from "preact/hooks";
 import { createNote } from "./api";
 import { Dialog } from "./dialog";
 import { newNotePath } from "./note-name";
-import { markCreated } from "./session";
+import { markCreated, noteRecreated } from "./session";
 
 /**
  * The create control. It sits in the top bar beside the home link rather
@@ -32,20 +32,33 @@ export function NewNoteButton({ onClick }: { onClick: () => void }) {
  * `folder` is the navigator's selected folder: the folder of the open note,
  * or the root when no note is open. The dialog says which it is, because a
  * bare title lands there and a name with a "/" does not.
+ *
+ * `name` and `body` are how the deleted-on-disk banner recovers a note: the
+ * same prompt, opened with the lost note's path already in the box and the
+ * orphaned draft as the text to write. It is still the prompt — the name
+ * can be changed before it is confirmed, and a path that has been taken
+ * again since comes back as the daemon's ordinary "already exists" refusal,
+ * with the name kept for correcting.
  */
 export function NewNoteDialog({
   slug,
   folder,
+  name: initialName = "",
+  body,
   onClose,
   onCreated,
 }: {
   slug: string;
   folder: string;
+  /** What the name box starts with; empty for an ordinary new note. */
+  name?: string;
+  /** The new note's text. Undefined creates an empty note. */
+  body?: string;
   onClose: () => void;
   /** The created note's path, in the daemon's own cleaned form. */
   onCreated: (path: string) => void;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const id = useId();
@@ -58,11 +71,16 @@ export function NewNoteDialog({
     }
     setBusy(true);
     setError(null);
-    createNote(slug, wanted.path).then(
+    createNote(slug, wanted.path, body).then(
       (note) => {
-        // The note opens in the editor, and at the daemon's path rather
-        // than the one that was sent.
-        markCreated(slug, note.path);
+        // A session already open on this path and holding the draft that
+        // was just written takes the file back in place — the pane is the
+        // editor the banner was drawn over, and it must not be told to
+        // open as a brand new note. Anything else opens in the editor, at
+        // the daemon's path rather than the one that was sent.
+        if (!noteRecreated(slug, note.path, { source: note.source, revision: note.revision })) {
+          markCreated(slug, note.path);
+        }
         onCreated(note.path);
       },
       (e: Error) => {
@@ -86,6 +104,9 @@ export function NewNoteDialog({
         spellcheck={false}
         onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)}
       />
+      {body !== undefined && body !== "" && (
+        <p class="modal-hint">The draft you have open is written into the new note.</p>
+      )}
       <p class="modal-hint">
         A name with no <code>/</code> is created in{" "}
         <span class="modal-folder">{folder === "" ? "the root of this folder" : <code>{folder}</code>}</span>, and gains{" "}

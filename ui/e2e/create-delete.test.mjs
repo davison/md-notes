@@ -294,6 +294,84 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     }
   });
 
+  it("recreates a note deleted under another tab's draft, from the banner", async () => {
+    // The second tab's path (#92): the file goes while this tab holds a
+    // draft the daemon has refused, the banner names New note, and its
+    // control writes the draft back under the same name in one step.
+    await page.goto(`${origin}/r/notes/`);
+    await page.locator(".tree").waitFor();
+    await page.getByRole("button", { name: "New note" }).click();
+    await nameBox().fill("Vanishing");
+    await confirmButton().click();
+    await page.waitForURL(`${origin}/r/notes/Vanishing.md`);
+
+    // The second tab is a phone, so the banner's new control is measured
+    // against the 40 px floor where that rule applies. `display.test.mjs`
+    // keeps `.conflict button` out of its tap-target sweep because a
+    // conflict was not reachable from a browser; this one reaches it.
+    const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    const other = await phone.newPage();
+    try {
+      // Every save from this tab is refused, so its draft is still unsaved
+      // when the file goes — the deterministic form of "unsaved edits".
+      await other.route("**/api/r/notes/source/**", (route) =>
+        route.request().method() === "PUT"
+          ? route.fulfill({
+              status: 500,
+              contentType: "application/json",
+              body: JSON.stringify({ code: "io_error", error: "the daemon is not taking saves" }),
+            })
+          : route.continue(),
+      );
+      await other.goto(`${origin}/r/notes/Vanishing.md`);
+      await other.locator(".note-bar").waitFor();
+      await other.getByRole("button", { name: "Edit" }).click();
+      await other.locator(".cm-editor").waitFor();
+      await other.locator(".cm-content").click();
+      await other.keyboard.press("i");
+      await other.waitForFunction(() => !document.querySelector(".cm-scroller").classList.contains("cm-vimMode"));
+      await other.keyboard.type("Draft that outlived the file");
+      await other.locator(".save-status.error").waitFor();
+
+      // The first tab deletes it out from under the second.
+      await page.locator(".note-bar .delete-note").click();
+      await confirmButton().click();
+      await page.waitForURL(`${origin}/r/notes/`);
+      assert.equal(exists("Vanishing.md"), false, "the file is gone");
+
+      const banner = other.locator(".conflict");
+      await banner.waitFor({ timeout: 15000 });
+      assert.match(await banner.textContent(), /New note/, "the banner names the way back");
+      assert.equal(await other.locator(".modal").count(), 0, "and raises no dialog of its own");
+      const target = await other.getByRole("button", { name: "Recreate the note" }).boundingBox();
+      assert.ok(target.height >= TAP_TARGET, `the recreate target is ${target.height}px tall`);
+
+      // Cancelling the prompt keeps both the banner and the draft.
+      await other.getByRole("button", { name: "Recreate the note" }).click();
+      await dialogReady(other);
+      assert.equal(await other.locator(".modal-name").inputValue(), "Vanishing.md", "the path is pre-filled");
+      await other.locator(".modal button", { hasText: "Cancel" }).click();
+      await waitFor(() => other.locator(".modal").count().then((n) => n === 0), "the prompt to close");
+      assert.equal(exists("Vanishing.md"), false, "cancelling wrote nothing");
+      assert.equal(await banner.count(), 1, "the banner is still up");
+      assert.match(await other.locator(".cm-content").textContent(), /Draft that outlived the file/);
+
+      // Confirming writes the draft back and ends the conflict in place.
+      await other.getByRole("button", { name: "Recreate the note" }).click();
+      await dialogReady(other);
+      await other.locator(".modal button.primary").click();
+      await waitFor(() => exists("Vanishing.md"), "the note to come back");
+      assert.match(fs.readFileSync(notePath("Vanishing.md"), "utf8"), /Draft that outlived the file/);
+      await waitFor(() => banner.count().then((n) => n === 0), "the banner to go");
+      await other.locator(".cm-editor").waitFor();
+      assert.match(await other.locator(".cm-content").textContent(), /Draft that outlived the file/);
+      assert.equal(await other.locator(".save-status").textContent(), "Saved");
+      assert.equal(other.url(), `${origin}/r/notes/Vanishing.md`, "and the tab is still on the note");
+    } finally {
+      await phone.close();
+    }
+  });
+
   it("closes the prompt on Escape and leaves the editor under it untouched", async () => {
     // What this holds: a reader who opens the prompt over a half-typed note,
     // changes their mind and presses Escape gets the prompt closed and the

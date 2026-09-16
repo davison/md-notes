@@ -249,8 +249,9 @@ you have unsaved work:
 | The editor, with an unsaved draft | A conflict banner: **Keep my draft**, **Load the file**, **Copy draft** |
 
 A draft is never dropped for you. [Conflicts](introduction.md#conflicts)
-describes the three buttons and the deleted-file case, where only **Copy draft**
-and **Discard draft** are offered because the save API cannot recreate a file.
+describes the three buttons and the deleted-file case, where the save API cannot
+recreate a file and **Recreate the note** writes the draft back through the create
+prompt instead, beside **Copy draft** and **Discard draft**.
 
 Note that this is a *second* kind of conflict, separate from Syncthing's. The
 banner is the daemon noticing that the file on disk moved under your draft.

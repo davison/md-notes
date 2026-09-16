@@ -17,7 +17,8 @@ function mockApi() {
       const json = (status: number, body: unknown) =>
         Promise.resolve({ ok: status < 300, status, statusText: "S", json: () => Promise.resolve(body) } as Response);
       if (taken.has(path)) return json(409, { code: "exists", error: "a note by that name already exists" });
-      return json(201, { root: "n", path, source: "", revision: "r1" });
+      const sent = init?.body ? (JSON.parse(init.body as string) as { source?: string }).source ?? "" : "";
+      return json(201, { root: "n", path, source: sent, revision: "r1" });
     }),
   );
 }
@@ -32,10 +33,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function mount(folder = "docs") {
+function mount(folder = "docs", opened: { name?: string; body?: string } = {}) {
   const created = vi.fn();
   const closed = vi.fn();
-  render(<NewNoteDialog slug="n" folder={folder} onClose={closed} onCreated={created} />);
+  render(<NewNoteDialog slug="n" folder={folder} onClose={closed} onCreated={created} {...opened} />);
   return { created, closed };
 }
 
@@ -113,6 +114,37 @@ describe("NewNoteDialog", () => {
     cleanup();
     mount("");
     expect(document.querySelector(".modal-folder")!.textContent).toBe("the root of this folder");
+  });
+
+  it("opens on a path and a draft, and writes the draft as the new note's body", async () => {
+    // The deleted-on-disk banner's way back (#92): the same prompt, with
+    // the lost note's path in the box and the orphaned draft as the text.
+    const { created } = mount("docs", { name: "docs/lost.md", body: "rescued\n" });
+    expect(nameBox().value).toBe("docs/lost.md");
+    expect(document.querySelector(".modal")!.textContent).toContain("The draft you have open is written");
+    submit();
+    await waitFor(() => expect(created).toHaveBeenCalledWith("docs/lost.md"));
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe("/api/r/n/source/docs/lost.md");
+    expect(calls[0].type).toBe("application/json");
+    expect(JSON.parse(calls[0].body as string)).toEqual({ source: "rescued\n" });
+  });
+
+  it("is still the prompt: the pre-filled path can be corrected after a refusal", async () => {
+    const { created } = mount("docs", { name: "docs/Taken.md", body: "rescued\n" });
+    submit();
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("a note by that name already exists"));
+    expect(nameBox().value).toBe("docs/Taken.md");
+    expect(created).not.toHaveBeenCalled();
+    type("docs/Taken elsewhere.md");
+    submit();
+    await waitFor(() => expect(created).toHaveBeenCalledWith("docs/Taken elsewhere.md"));
+    expect(JSON.parse(calls.at(-1)!.body as string)).toEqual({ source: "rescued\n" });
+  });
+
+  it("says nothing about a draft when there is no body to write", () => {
+    mount("docs");
+    expect(document.querySelector(".modal")!.textContent).not.toContain("The draft you have open");
   });
 
   it("writes nothing when it is cancelled", () => {

@@ -5,6 +5,7 @@ import {
   flushAll,
   getSession,
   hasStoredDraft,
+  noteRecreated,
   resetSessions,
   unsavedSessions,
 } from "./session";
@@ -362,6 +363,53 @@ describe("Session: conflicts", () => {
     await s.changed();
     expect(s.state.status).toBe("clean");
     expect(s.state.draft).toBe("back\n");
+  });
+
+  it("noteRecreated ends a deleted conflict when the draft is what was written", async () => {
+    const s = await opened();
+    const g = s.state.generation;
+    s.edit("mine\n");
+    daemon.file = null;
+    await s.flush();
+    expect(s.state.status).toBe("conflict");
+
+    // The create prompt has written the draft back under the same name.
+    expect(noteRecreated("n", "a.md", { source: "mine\n", revision: "r7" })).toBe(true);
+    expect(s.state.status).toBe("clean");
+    expect(s.state.conflict).toBeNull();
+    expect(s.state.base).toEqual({ source: "mine\n", revision: "r7" });
+    expect(s.state.draft).toBe("mine\n");
+    expect(s.state.generation).toBe(g + 1);
+    expect(unsavedSessions()).toEqual([]);
+    expect(hasStoredDraft("n", "a.md")).toBe(false);
+  });
+
+  it("noteRecreated leaves a draft alone when the new note says something else", async () => {
+    // An ordinary New note at a path this tab still holds a draft for. The
+    // draft is what the banner is there to protect, so it stays, and the
+    // change stream turns the banner into the changed-on-disk one.
+    const s = await opened();
+    s.edit("mine\n");
+    daemon.file = null;
+    await s.flush();
+
+    expect(noteRecreated("n", "a.md", { source: "", revision: "r7" })).toBe(false);
+    expect(s.state.status).toBe("conflict");
+    expect(s.state.draft).toBe("mine\n");
+
+    daemon.write("");
+    await s.changed();
+    expect(s.state.conflict?.kind).toBe("changed");
+  });
+
+  it("noteRecreated ignores a changed conflict and an unknown note", async () => {
+    const s = await opened();
+    s.edit("mine\n");
+    daemon.write("theirs\n");
+    await s.flush();
+    expect(noteRecreated("n", "a.md", { source: "mine\n", revision: "r7" })).toBe(false);
+    expect(s.state.status).toBe("conflict");
+    expect(noteRecreated("n", "never-opened.md", { source: "", revision: "r1" })).toBe(false);
   });
 
   it("discard on a changed conflict loads the file", async () => {

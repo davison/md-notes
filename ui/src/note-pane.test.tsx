@@ -191,7 +191,6 @@ describe("NotePane", () => {
     expect(message.contains(retry)).toBe(false);
   });
 
-
   it("navigating away saves pending edits", async () => {
     const r = render(<NotePane slug="n" path="a.md" />);
     await waitFor(() => expect(screen.getByText("body")).toBeTruthy());
@@ -285,10 +284,53 @@ describe("NotePane", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("deleted on disk"));
     expect(screen.queryByRole("button", { name: "Keep my draft" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Load the file" })).toBeNull();
+    // No shell to open the create prompt: no recreate control either.
+    expect(screen.queryByRole("button", { name: "Recreate the note" })).toBeNull();
     expect(screen.getByRole("button", { name: "Copy draft" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Discard draft" }));
     await waitFor(() => expect(screen.getAllByText("note no longer exists").length).toBeGreaterThan(0));
     expect(document.querySelector(".cm-editor")).toBeNull();
+  });
+
+  it("names New note in the deleted banner and hands the path and the draft back", async () => {
+    // #92: the banner used to end at "recreate the file with another
+    // tool", which stopped being the whole truth when the application
+    // grew a create control. The control here is the one step back: the
+    // shell is handed the lost note's path and the draft to write.
+    const recreate = vi.fn();
+    const { rerender } = render(<NotePane slug="n" path="docs/a.md" version={0} onRecreate={recreate} />);
+    await waitFor(() => expect(screen.getByText("body")).toBeTruthy());
+    fireEvent.keyDown(document.body, ctrlE);
+    await waitFor(() => expect(editorText()).toContain("body"));
+    type("mine\n");
+    file = null;
+    rerender(<NotePane slug="n" path="docs/a.md" version={1} onRecreate={recreate} />);
+
+    const banner = await waitFor(() => screen.getByRole("alert"));
+    expect(banner.textContent).toContain("New note");
+    expect(banner.textContent).toContain("Recreate the note");
+    expect(banner.textContent).not.toContain("another tool");
+
+    fireEvent.click(screen.getByRole("button", { name: "Recreate the note" }));
+    expect(recreate).toHaveBeenCalledWith("docs/a.md", "mine\n");
+    // Asking is not writing: nothing has been sent, and the draft and the
+    // banner are exactly where they were.
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(editorText()).toContain("mine");
+  });
+
+  it("offers no recreate control on a note that only changed on disk", async () => {
+    const recreate = vi.fn();
+    const { rerender } = render(<NotePane slug="n" path="a.md" version={0} onRecreate={recreate} />);
+    await waitFor(() => expect(screen.getByText("body")).toBeTruthy());
+    fireEvent.keyDown(document.body, ctrlE);
+    await waitFor(() => expect(editorText()).toContain("body"));
+    type("mine\n");
+    file = { source: "theirs\n", revision: "r9" };
+    rerender(<NotePane slug="n" path="a.md" version={1} onRecreate={recreate} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Keep my draft" })).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Recreate the note" })).toBeNull();
   });
 
   it("shows a read failure in the editor", async () => {
