@@ -417,6 +417,59 @@ describe("htmlToMarkdown", () => {
     );
   });
 
+  // Not every `<table>` is a table. A page laying an article out in one, and
+  // Pygments' line-number wrapper, hold the structure the note is for, and a
+  // grid built out of them squashes it onto one line
+  // (review of PR #105).
+
+  it("converts a layout table as blocks, keeping the data table inside it", () => {
+    const html =
+      '<table width="100%"><tr><td>' +
+      "<h2>Quarterly</h2><p>Some prose.</p>" +
+      "<table><thead><tr><th>Quarter</th><th>Spend</th></tr></thead>" +
+      "<tbody><tr><td>Q1</td><td>10</td></tr><tr><td>Q2</td><td>20</td></tr></tbody></table>" +
+      "<p>After.</p>" +
+      "</td></tr></table>";
+    const md = htmlToMarkdown(html, PAGE);
+    expect(md).toBe(
+      [
+        "## Quarterly",
+        "",
+        "Some prose.",
+        "",
+        "| Quarter | Spend |",
+        "| --- | --- |",
+        "| Q1 | 10 |",
+        "| Q2 | 20 |",
+        "",
+        "After.",
+      ].join("\n"),
+    );
+    expect(md).not.toContain("<table>");
+  });
+
+  it("keeps the code in a line-number wrapper, line breaks and language and all", () => {
+    // Pygments, Sphinx and MkDocs put the line numbers in one cell and the
+    // code in another. Flattened into a grid the code becomes one line, and a
+    // note cannot get it back.
+    const html =
+      '<table class="highlighttable"><tr>' +
+      '<td class="linenos"><pre>1\n2</pre></td>' +
+      '<td class="code"><div class="highlight">' +
+      '<pre><code class="language-go">func main() {\n}</code></pre>' +
+      "</div></td>" +
+      "</tr></table>";
+    const md = htmlToMarkdown(html, PAGE);
+    expect(md).toBe("```\n1\n2\n```\n\n```go\nfunc main() {\n}\n```");
+    expect(md).not.toContain("<table");
+  });
+
+  it("takes the page's own word for it when a table says role=presentation", () => {
+    expect(
+      htmlToMarkdown('<table role="presentation"><tr><td>Left</td><td>Right</td></tr></table>', PAGE),
+    ).toBe("Left\n\nRight");
+  });
+
   it("drops script and style content", () => {
     const md = htmlToMarkdown("<div><script>alert(1)</script><style>p{}</style><p>Text</p></div>", PAGE);
     expect(md).toBe("Text");

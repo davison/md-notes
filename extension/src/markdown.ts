@@ -275,6 +275,49 @@ function cellsOf(row: HTMLElement): HTMLElement[] {
 }
 
 /**
+ * Content a cell cannot be flattened around: a `pre`, whose line breaks *are*
+ * the code, and a heading, which no page writes inside a data cell.
+ *
+ * Matched by name over the cell's descendants rather than with a selector
+ * list, because the DOM the tests run under answers `querySelector("pre, h1")`
+ * with the first element it finds whatever its name is, and every table would
+ * be a layout table.
+ */
+const CELL_BLOCK = new Set(["PRE", "H1", "H2", "H3", "H4", "H5", "H6"]);
+
+function holdsBlock(cell: HTMLElement): boolean {
+  return Array.from(cell.querySelectorAll("*")).some((child) => CELL_BLOCK.has(child.nodeName));
+}
+
+/**
+ * Whether this table is carrying data, and not a page's layout.
+ *
+ * A `<table>` is not always a table. An old manual lays its page out in one,
+ * Pygments and Sphinx put the line numbers in one cell and the code in
+ * another, and the note wants none of that squashed into a grid: writing a
+ * heading, two paragraphs and a data table onto one line destroys exactly the
+ * structure the clip is for. The test, in order:
+ *
+ * - `role="presentation"` (or `none`) is the page saying so itself;
+ * - a `th` anywhere is the page saying the opposite — a header means the rows
+ *   below it are data, whatever else is in them;
+ * - otherwise a table no row of which has two cells is a wrapper, not a grid;
+ * - and a cell holding a `pre` or a heading is a layout cell: that is the
+ *   line-number wrapper, and the manual.
+ *
+ * What is not a data table is converted as ordinary blocks instead — never as
+ * the page's own HTML, which is the defect this all started from.
+ */
+function isDataTable(table: HTMLElement): boolean {
+  const role = (table.getAttribute("role") ?? "").toLowerCase();
+  if (role === "presentation" || role === "none") return false;
+  const rows = rowsOf(table).map(cellsOf);
+  if (rows.some((cells) => cells.some((cell) => cell.nodeName === "TH"))) return true;
+  if (rows.reduce((widest, cells) => Math.max(widest, cells.length), 0) < 2) return false;
+  return !rows.some((cells) => cells.some(holdsBlock));
+}
+
+/**
  * One cell's content, converted and then flattened onto a single line: a GFM
  * cell holds inline content only, and a newline inside one ends the row.
  *
@@ -344,12 +387,30 @@ function tableLine(cells: Cell[]): string {
   return `| ${cells.map((cell) => cell.text).join(" | ")} |`;
 }
 
-/** Whether this table sits inside another table's cell. */
-function insideCell(node: HTMLElement): boolean {
+/**
+ * Whether this table sits in a cell of a table that is being written as a grid
+ * — the only place a table has to be flattened, because only there is it
+ * standing where GFM allows inline content and nothing else.
+ *
+ * A table inside a *layout* table's cell is not flattened: that cell is going
+ * to be written as ordinary blocks, where a real table is welcome. When the
+ * cell is the root of a conversion it has no table above it at all, which is
+ * the re-entrant call `cellText` makes — and that call is only ever made for a
+ * table already judged a grid.
+ */
+function insideGridCell(node: HTMLElement): boolean {
+  let cell: Node | null = null;
   for (let parent: Node | null = node.parentNode; parent !== null; parent = parent.parentNode) {
-    if (parent.nodeName === "TD" || parent.nodeName === "TH") return true;
+    if (parent.nodeName === "TD" || parent.nodeName === "TH") {
+      cell = parent;
+      break;
+    }
   }
-  return false;
+  if (cell === null) return false;
+  for (let parent: Node | null = cell.parentNode; parent !== null; parent = parent.parentNode) {
+    if (parent.nodeName === "TABLE") return isDataTable(parent as HTMLElement);
+  }
+  return true;
 }
 
 /**
@@ -418,23 +479,43 @@ export function clipTurndown(baseUrl: string): TurndownService {
     },
   });
 
+  // A table a page is using for layout — one cell wrapped round an article,
+  // Pygments' line-number wrapper — is not a grid and must not be written as
+  // one: its cells hold the structure the note is for. Its parts are converted
+  // as ordinary blocks instead, which is what these rules are for; the GFM
+  // plugin's own cell and row rules would write pipes around them.
+  service.addRule("clipTableBlocks", {
+    filter: ["td", "th", "caption"],
+    replacement: (content) => (content.trim() === "" ? "" : `\n\n${content.trim()}\n\n`),
+  });
+  service.addRule("clipTableParts", {
+    filter: ["tr", "thead", "tbody", "tfoot"],
+    replacement: (content) => content,
+  });
+
   // The GFM plugin converts a table only when its first row is a heading row
   // and `keep`s every other table as the page's own HTML (#45), and its cell
   // rules ignore `colspan` and `rowspan`, so a spanning table comes out as
-  // rows of different widths. This rule takes every table and writes it from
-  // the table's geometry: a header row synthesised when the page has none —
-  // GFM requires one, and promoting a data row would assert something the page
-  // does not — spans laid out on a rectangular grid, and a nested table
-  // flattened into the cell that holds it. Rules added later win, so this one
-  // is reached before both the plugin's rule and its `keep`.
+  // rows of different widths. This rule takes every table that is carrying
+  // data and writes it from the table's geometry: a header row synthesised
+  // when the page has none — GFM requires one, and promoting a data row would
+  // assert something the page does not — spans laid out on a rectangular grid,
+  // and a nested table flattened into the cell that holds it. Rules added
+  // later win, so this one is reached before both the plugin's rule and its
+  // `keep`, and no table reaches the note as HTML either way.
   service.addRule("clipTable", {
     filter: "table",
-    replacement: (_content, node) => {
+    replacement: (content, node) => {
+      // Not a grid: the rules above have already converted the cells as
+      // blocks, so the content is the page's own structure, in order.
+      if (!isDataTable(node)) return `\n\n${content.trim()}\n\n`;
       const grid = tableGrid(service, node);
       const caption = Array.from(node.children).find((child) => child.nodeName === "CAPTION");
       const title =
         caption === undefined ? "" : service.turndown(caption as HTMLElement).trim();
-      if (insideCell(node)) return [title, nestedTable(grid)].filter((p) => p !== "").join(": ");
+      if (insideGridCell(node)) {
+        return [title, nestedTable(grid)].filter((part) => part !== "").join(": ");
+      }
       if (grid.length === 0) return title === "" ? "" : `\n\n${title}\n\n`;
       const rows = rowsOf(node);
       const headed = rows[0] !== undefined && isHeaderRow(rows[0]);
