@@ -2,11 +2,13 @@
  * HTML to GitHub-flavoured markdown, for a clipped page or selection.
  *
  * Turndown with its GFM plugin does the work; what is added here is the part a
- * clip needs and a generic converter cannot know: every link and image is
+ * clip needs and a generic converter cannot know. Every link and image is
  * resolved against the page's own URL, so a note that has left the browser
- * still points at something. The functions are pure and take the base URL as
- * an argument rather than reading `document`, which is what lets them be
- * tested under Node and run unchanged inside the page.
+ * still points at something. A code block keeps what a page puts beside it —
+ * a caption, a filename — and loses only the copy button.
+ * The functions are pure and take the base URL as an argument rather than
+ * reading `document`, which is what lets them be tested under Node and run
+ * unchanged inside the page.
  */
 
 import TurndownService from "turndown";
@@ -40,29 +42,88 @@ const LANGUAGE_PATTERNS = [
 const HIGHLIGHT_CLASS = /(?:^|\s)highlight(?:$|[\s-])/;
 
 /**
- * The `pre` a highlight wrapper is wrapping, or null when this is not one.
+ * A class that names a copy-to-clipboard control rather than content.
+ *
+ * `clipboard` matches anywhere in the attribute, because `zeroclipboard-container`
+ * is GitHub's own name for the thing; `copy` has to be a word of its own, so a
+ * caption class is not mistaken for a button on the strength of the letters.
+ * Where the two rules disagree with a page, the cost is a lost caption one way
+ * and a stray "Copy" in the note the other; this pair is a judgement, not a
+ * specification.
+ */
+const CHROME_CLASS = /clipboard|(?:^|[\s_-])copy(?:$|[\s_-])/i;
+
+/**
+ * The `pre` a code-block container is wrapping, or null when this element is
+ * not one.
  *
  * The test is deliberately looser than the GFM plugin's, which asks that the
  * div's first *node* is a `pre` and that the class carries
  * `highlight-source-…` or `highlight-text-…`. This one accepts any
  * `div.highlight` — a bare `highlight` with a `data-lang` is a common shape —
- * and looks at the first *element* child, so the whitespace between
- * `<div class="highlight">` and `<pre>` does not disqualify a block the way
- * it would there.
+ * and a `figure.highlight` beside it, and it takes the first `pre` among the
+ * element children *wherever it sits*: a filename strip or a copy button
+ * before the code no longer costs the block the language its wrapper names,
+ * which is what the old first-element test did.
  *
- * The code is then taken from that `pre` and not from the div, because
- * GitHub's rendered markup puts a clipboard-copy container beside it. A div
- * whose first element is something else is not treated as a code block at
- * all, so its content is converted normally — but note that looking at
- * elements means a bare text node *before* the `pre` is dropped rather than
- * kept. That shape is rare and there is no good answer to it here; the
- * alternative, treating the div as prose, loses the language instead.
+ * The code is then taken from that `pre` and not from the container, because
+ * what sits beside it is a mixture — GitHub's clipboard container on one hand,
+ * a caption or a filename that belongs in the note on the other. `aroundTheCode`
+ * sorts them.
  */
-function highlightPre(node: HTMLElement): HTMLElement | null {
-  if (node.nodeName !== "DIV") return null;
+function containerPre(node: HTMLElement): HTMLElement | null {
+  if (node.nodeName !== "DIV" && node.nodeName !== "FIGURE") return null;
   if (!HIGHLIGHT_CLASS.test(node.getAttribute("class") ?? "")) return null;
-  const first = node.children[0];
-  return first !== undefined && first.nodeName === "PRE" ? (first as HTMLElement) : null;
+  for (const child of Array.from(node.children)) {
+    if (child.nodeName === "PRE") return child as HTMLElement;
+  }
+  return null;
+}
+
+/**
+ * Whether a node beside the code is a control rather than content: a button,
+ * GitHub's `clipboard-copy` element, anything a class names as a copy control,
+ * and anything the page has already hidden from a screen reader — which is how
+ * a decorative icon or a duplicated label announces itself.
+ */
+function isChrome(node: ChildNode): boolean {
+  if (node.nodeType !== 1) return false;
+  const element = node as HTMLElement;
+  if (element.nodeName === "BUTTON" || element.nodeName === "CLIPBOARD-COPY") return true;
+  if (element.getAttribute("role") === "button") return true;
+  if (element.getAttribute("aria-hidden") === "true") return true;
+  return CHROME_CLASS.test(element.getAttribute("class") ?? "");
+}
+
+/**
+ * What a code-block container holds before and after its `pre`, converted as
+ * ordinary markdown with the chrome dropped.
+ *
+ * Each side is gathered into one throwaway element and converted in a single
+ * pass rather than node by node, so a caption written as several inline nodes
+ * stays one paragraph, and a bare text node beside the `pre` is kept rather
+ * than lost. Turndown clones whatever it is handed before touching it, so
+ * nothing here reaches the document the clip came from.
+ */
+function aroundTheCode(
+  service: TurndownService,
+  container: HTMLElement,
+  pre: HTMLElement,
+): [string, string] {
+  const sides = [
+    container.ownerDocument.createElement("div"),
+    container.ownerDocument.createElement("div"),
+  ];
+  let side = 0;
+  for (const child of Array.from(container.childNodes)) {
+    if (child === pre) {
+      side = 1;
+      continue;
+    }
+    if (isChrome(child)) continue;
+    sides[side]!.appendChild(child.cloneNode(true));
+  }
+  return [service.turndown(sides[0]!).trim(), service.turndown(sides[1]!).trim()];
 }
 
 /** `value` resolved against `base`, or null when it is not a URL at all. */
@@ -185,18 +246,20 @@ export function clipTurndown(baseUrl: string): TurndownService {
   // otherwise claim that shape before this rule saw it. This one also takes
   // `lang-x`, `highlight-source-x` and `data-lang`, covers a `pre` with no
   // `code` child, and lengthens the fence when the code contains one.
-  // Note the discarded `content`: when a highlight wrapper matches, anything
-  // after its `pre` — GitHub's copy button, but also a caption or a filename
-  // strip if a page puts one there — is dropped from the note rather than
-  // converted beside the code. Telling those apart is a judgement, not a
-  // patch; a capture covers it.
+  // What a container holds *beside* the `pre` is sorted rather than dropped:
+  // a caption after the code and a filename line before it are content and are
+  // converted around the fence; a copy button is chrome and is not (#47).
   service.addRule("clipFencedCode", {
-    filter: (node) => node.nodeName === "PRE" || highlightPre(node) !== null,
+    filter: (node) => node.nodeName === "PRE" || containerPre(node) !== null,
     replacement: (_content, node, options) => {
-      const pre = node.nodeName === "PRE" ? node : highlightPre(node)!;
+      const container = node.nodeName === "PRE" ? null : node;
+      const pre = container === null ? node : containerPre(container)!;
       const code = (pre.textContent ?? "").replace(/\n+$/, "");
       const fence = fenceFor(code, options.fence ?? "```");
-      return `\n\n${fence}${codeLanguage(node, pre)}\n${code}\n${fence}\n\n`;
+      const block = `${fence}${codeLanguage(node, pre)}\n${code}\n${fence}`;
+      if (container === null) return `\n\n${block}\n\n`;
+      const [before, after] = aroundTheCode(service, container, pre);
+      return `\n\n${[before, block, after].filter((part) => part !== "").join("\n\n")}\n\n`;
     },
   });
 
