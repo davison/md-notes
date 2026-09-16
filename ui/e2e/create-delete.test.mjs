@@ -441,31 +441,42 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
       const p = await probed.newPage();
       // Wraps every keydown listener the page registers on `window` or
       // `document`, recording which target's listener actually ran. The
-      // wrapper delegates, so the application behaves exactly as it would
-      // without it; `removeEventListener` unwraps, so a listener that is
-      // taken off really is taken off.
+      // wrapper delegates with the `this` real dispatch would have given the
+      // listener — the target it was registered on — and books each wrapper
+      // under its phase, so the same function registered for capture and for
+      // bubble keeps a removable wrapper apiece. `removeEventListener`
+      // unwraps, so a listener that is taken off really is taken off.
+      //
+      // A listener registered as an object with `handleEvent` is left alone
+      // and is invisible here. That under-reports rather than over-reports:
+      // it can only hide a listener from the assertion below, never invent
+      // one, so the control — which requires a document-level listener to be
+      // seen — is what would fail first if the application ever moved to that
+      // form.
       await p.addInitScript(() => {
         window.__escapeSeen = [];
+        const phaseOf = (options) => (options === true || (options && options.capture) ? "capture" : "bubble");
         for (const [name, target] of [
           ["window", window],
           ["document", document],
         ]) {
           const add = EventTarget.prototype.addEventListener.bind(target);
           const remove = EventTarget.prototype.removeEventListener.bind(target);
-          const wrapped = new Map();
+          const wrapped = { capture: new Map(), bubble: new Map() };
           target.addEventListener = function (type, fn, options) {
             if (type !== "keydown" || typeof fn !== "function") return add(type, fn, options);
             const seen = (e) => {
               if (e.key === "Escape") window.__escapeSeen.push(name);
-              return fn(e);
+              return fn.call(target, e);
             };
-            wrapped.set(fn, seen);
+            wrapped[phaseOf(options)].set(fn, seen);
             return add(type, seen, options);
           };
           target.removeEventListener = function (type, fn, options) {
-            const seen = type === "keydown" && wrapped.get(fn);
+            const book = wrapped[phaseOf(options)];
+            const seen = type === "keydown" && book.get(fn);
             if (!seen) return remove(type, fn, options);
-            wrapped.delete(fn);
+            book.delete(fn);
             return remove(type, seen, options);
           };
         }
