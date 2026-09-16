@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import type { ComponentChildren } from "preact";
 import { deleteNote, fetchNote, noteURL } from "./api";
 import { Dialog } from "./dialog";
 import { NoteView } from "./note-view";
@@ -317,29 +318,75 @@ function DeleteNote({
   );
 }
 
+/**
+ * One save state, as the note bar draws it: a message that truncates, and
+ * whatever control belongs beside it.
+ *
+ * The message is a box of its own rather than the text of the status
+ * element, because the two need opposite rules. The status is a flex item
+ * that must shrink (#85 gave it `min-width: 0`); the message inside it must
+ * be clipped when it will not fit, and a daemon message with no space in it
+ * cannot be broken any other way — before this the bar itself grew wider
+ * than the pane and scrolled sideways, 479 px inside a 320 px bar (#91).
+ * The full text stays in the `title`, and **Retry** sits outside the
+ * clipped box, so the one control here is never what gets cut off.
+ */
+function Status({
+  tone,
+  full,
+  action,
+  children,
+}: {
+  tone?: "muted" | "error";
+  /** The whole message, for the title, when it is long enough to be cut. */
+  full?: string;
+  action?: ComponentChildren;
+  children: ComponentChildren;
+}) {
+  return (
+    <span class={tone ? `save-status ${tone}` : "save-status"}>
+      <span class="save-message" title={full}>
+        {children}
+      </span>
+      {action}
+    </span>
+  );
+}
+
 function SaveStatus({ session, state, mode }: { session: Session; state: SessionState; mode: Mode }) {
   switch (state.status) {
     case "loading":
-      return mode === "edit" ? <span class="save-status muted">Loading…</span> : null;
+      return mode === "edit" ? <Status tone="muted">Loading…</Status> : null;
     case "error":
-      return mode === "edit" ? <span class="save-status error">{state.error?.message}</span> : null;
+      return mode === "edit" ? (
+        <Status tone="error" full={state.error?.message}>
+          {state.error?.message}
+        </Status>
+      ) : null;
     case "clean":
-      return <span class="save-status muted">Saved</span>;
+      return <Status tone="muted">Saved</Status>;
     case "pending":
-      return <span class="save-status">Unsaved changes</span>;
+      return <Status>Unsaved changes</Status>;
     case "saving":
-      return <span class="save-status">Saving…</span>;
-    case "failed":
+      return <Status>Saving…</Status>;
+    case "failed": {
+      const message = `Save failed: ${state.error?.message}. Draft kept.`;
       return (
-        <span class="save-status error">
-          Save failed: {state.error?.message}. Draft kept.{" "}
-          <button type="button" onClick={() => void session.retry()}>
-            Retry
-          </button>
-        </span>
+        <Status
+          tone="error"
+          full={message}
+          action={
+            <button type="button" onClick={() => void session.retry()}>
+              Retry
+            </button>
+          }
+        >
+          {message}
+        </Status>
       );
+    }
     case "conflict":
-      return <span class="save-status error">Conflict: draft kept</span>;
+      return <Status tone="error">Conflict: draft kept</Status>;
   }
 }
 

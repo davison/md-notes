@@ -335,7 +335,26 @@ code {
  * shrinks rather than pushing its neighbours about.
  */
 .save-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   min-width: 0;
+}
+
+/*
+ * And the message inside it is clipped rather than allowed to widen the
+ * bar. `min-width: 0` alone shrinks the box and not its text, so a failure
+ * message the daemon hands over with nothing in it to break on — a long
+ * path, a quoted name — still pushed the bar past the pane and scrolled it
+ * sideways (#91). One line, an ellipsis where it runs out, and the whole
+ * message in the title attribute. The retry button is a sibling rather than
+ * part of this text, so it is never the thing that is cut off.
+ */
+.save-message {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .unsaved-drafts {
