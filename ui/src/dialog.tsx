@@ -36,22 +36,29 @@ export function Dialog({
   children: ComponentChildren;
 }) {
   const box = useRef<HTMLDivElement>(null);
+  const parked = useRef(false);
   const id = useId();
 
   // Escape is answered on the window in the capture phase, and stopped
   // there. The drawer and the editor listen for it on the document, which
   // capture reaches later, so the dialog on top answers first and alone —
   // cancelling a name prompt must not also close the drawer underneath it.
+  //
+  // While a write is in flight the keystroke is still consumed but answers
+  // nothing: `busy` disables both buttons to say "not now", and a dismissal
+  // that still worked would be the one way out that cannot be seen to be
+  // disabled — it would leave the prompt gone while the request it started
+  // carried on to navigate or delete behind it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
       e.stopPropagation();
-      onCancel();
+      if (!busy) onCancel();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onCancel]);
+  }, [busy, onCancel]);
 
   useEffect(() => {
     const from = document.activeElement as HTMLElement | null;
@@ -61,12 +68,43 @@ export function Dialog({
     return () => from?.focus();
   }, []);
 
+  /**
+   * While busy every control is disabled, so the element that had focus is
+   * no longer focusable: the browser drops focus to the body, outside the
+   * dialog, where nothing holds it. The dialog itself takes focus for the
+   * length of the request — it is why the box carries tabindex="-1" — and
+   * hands it back when the answer arrives, to the text box when there is
+   * one, since a refusal is a name to correct.
+   */
+  useEffect(() => {
+    const root = box.current;
+    if (!root) return;
+    if (busy) {
+      const active = document.activeElement as HTMLElement | null;
+      if (!active || !root.contains(active) || active.matches("[disabled]")) {
+        parked.current = true;
+        root.focus();
+      }
+      return;
+    }
+    if (!parked.current) return;
+    parked.current = false;
+    (root.querySelector<HTMLElement>("input, textarea") ?? root.querySelector<HTMLElement>(FOCUSABLE))?.focus();
+  }, [busy]);
+
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Tab") return;
     const root = box.current;
     if (!root) return;
     const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)];
-    if (items.length === 0) return;
+    if (items.length === 0) {
+      // A confirmation with a write in flight has no enabled control at
+      // all: there is nothing to cycle between, and the dialog holds focus
+      // rather than letting Tab walk into the page behind it.
+      e.preventDefault();
+      root.focus();
+      return;
+    }
     const first = items[0];
     const last = items[items.length - 1];
     const active = document.activeElement;
@@ -86,8 +124,16 @@ export function Dialog({
 
   return (
     <>
-      <div class="modal-backdrop" onClick={onCancel} />
-      <div ref={box} class="modal" role="dialog" aria-modal="true" aria-labelledby={id} onKeyDown={onKeyDown}>
+      <div class="modal-backdrop" onClick={() => !busy && onCancel()} />
+      <div
+        ref={box}
+        class="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={id}
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+      >
         <form onSubmit={submit}>
           <h2 id={id} class="modal-title">
             {title}

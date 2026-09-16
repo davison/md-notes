@@ -91,6 +91,44 @@ describe("Dialog", () => {
     expect(document.activeElement).toBe(last);
   });
 
+  it("cannot be dismissed while a write is in flight, and still owns Escape", () => {
+    // The dialog disables its controls to say "not now"; Escape and the
+    // backdrop have to mean the same thing, or the one way out that still
+    // works is the one that cannot be seen to be disabled. The keystroke is
+    // still consumed here, so the drawer underneath does not answer it.
+    const cancel = vi.fn();
+    const below = vi.fn();
+    document.addEventListener("keydown", below, true);
+    render(
+      <Dialog title="t" confirmLabel="Delete" busy onConfirm={() => {}} onCancel={cancel}>
+        <p>body</p>
+      </Dialog>,
+    );
+    fireEvent.keyDown(document.querySelector(".modal")!, { key: "Escape" });
+    document.removeEventListener("keydown", below, true);
+    expect(cancel).not.toHaveBeenCalled();
+    expect(below).not.toHaveBeenCalled();
+    fireEvent.click(document.querySelector(".modal-backdrop")!);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it("keeps focus and Tab inside itself when every control is disabled", () => {
+    // A confirmation with a write in flight has no enabled control at all,
+    // so there is nothing for the trap to cycle between and nothing holding
+    // focus: without this the browser drops focus to the body and Tab walks
+    // into the page behind the dialog.
+    render(
+      <Dialog title="t" confirmLabel="Delete" busy onConfirm={() => {}} onCancel={() => {}}>
+        <p>body</p>
+      </Dialog>,
+    );
+    const box = document.querySelector(".modal")!;
+    expect(box.contains(document.activeElement)).toBe(true);
+    const consumed = !fireEvent.keyDown(box, { key: "Tab" });
+    expect(consumed).toBe(true);
+    expect(document.activeElement).toBe(box);
+  });
+
   it("does not confirm twice while a request is in flight", () => {
     const confirm = vi.fn();
     render(
