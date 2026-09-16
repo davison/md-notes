@@ -233,6 +233,26 @@ func TestSourceErrorResponses(t *testing.T) {
 	}
 }
 
+// A basename the kernel refuses as too long is the caller's mistake and
+// not a server fault, on the save path as much as on create. The limit is
+// the filesystem's NAME_MAX, so the test provokes the kernel rather than
+// asserting a length of the daemon's own, and the message has to name it.
+func TestSaveSourceNameTooLong(t *testing.T) {
+	ts, _ := newTestServer(t)
+	resp := do(t, ts, "PUT", "/api/r/notes/source/"+tooLongName,
+		sourceBody(t, "draft", "1-whatever"), map[string]string{"Content-Type": "application/json"})
+	var body map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("body is not the {code, error} envelope: %v", err)
+	}
+	if resp.StatusCode != 400 || body["code"] != "invalid_path" {
+		t.Fatalf("got %d %v; want 400 invalid_path", resp.StatusCode, body)
+	}
+	if !strings.Contains(body["error"], "255") {
+		t.Errorf("message does not name the limit: %q", body["error"])
+	}
+}
+
 func TestSaveSourceUnicodeEscapes(t *testing.T) {
 	ts, _ := newTestServer(t)
 	for _, tc := range []struct{ encoded, want string }{
