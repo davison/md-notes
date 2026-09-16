@@ -166,3 +166,34 @@ export async function saveSource(
   if (!res.ok) throw await sourceErrorFrom(res);
   return (await res.json()) as Source;
 }
+
+/** A note the daemon has just created. */
+export interface CreatedNote {
+  root: string;
+  /**
+   * The daemon's cleaned form of the path, which is not always the string
+   * that was sent: this is the note to route to, read and save.
+   */
+  path: string;
+  source: string;
+  revision: string;
+}
+
+/**
+ * Creates a note that does not exist yet, empty. No body and no
+ * Content-Type: the daemon takes that as "an empty note", and a
+ * Content-Type with nothing behind it is refused. Rejects with a
+ * SourceError carrying the daemon's code — "exists" for a name already
+ * taken, "invalid_path", "not_markdown", "outside_root".
+ */
+export async function createNote(slug: string, path: string): Promise<CreatedNote> {
+  const res = await fetch(sourceURL(slug, path), { method: "POST" });
+  if (!res.ok) throw await sourceErrorFrom(res);
+  return (await res.json()) as CreatedNote;
+}
+
+/** Deletes one markdown note. Rejects with a SourceError. */
+export async function deleteNote(slug: string, path: string): Promise<void> {
+  const res = await fetch(sourceURL(slug, path), { method: "DELETE" });
+  if (!res.ok) throw await sourceErrorFrom(res);
+}
