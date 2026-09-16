@@ -389,6 +389,12 @@ Both refuse with the save's `{code, error}` body
 | The target is a directory or a symlink inside the root (delete) | 422 | `unsupported_source` |
 | The name is already taken, by a file, a directory or a link inside the root (create) | 409 | `exists` |
 
+The outside-root row is the contract, and it holds for every live symlink and for a
+dangling *file* symlink. Two spellings do not reach it yet and are answered with a
+different code — a dangling *directory* symlink out of the root, and a dangling two-hop
+chain — which is [#82](https://github.com/davison/md-notes/issues/82). Neither creates nor
+removes anything: what is wrong is the code the caller is shown, not the confinement.
+
 Creating and deleting a note reaches every open page for that root through the
 [events stream](#live-updates) as an ordinary change batch, so a navigator needs no
 special handling for either.
