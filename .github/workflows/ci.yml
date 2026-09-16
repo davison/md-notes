@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # On demand, against any ref: the browser job below has to be shown green
+  # over three consecutive runs before M5 closes, and a branch without a
+  # pull request has nothing else that would start one.
+  workflow_dispatch:
 
 jobs:
   check:
