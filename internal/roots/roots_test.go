@@ -720,7 +720,7 @@ func TestEscapesIsLexical(t *testing.T) {
 		{root, "gone.md", false},
 		{root, "sub/gone.md", false},
 		{sub, "../gone.md", false},
-		{sub, "gone.md", true == false},
+		{sub, "gone.md", false},
 		{root, "../gone.md", true},
 		{sub, "../../gone.md", true},
 		{root, filepath.Join(base, "gone.md"), true},
