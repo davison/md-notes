@@ -70,8 +70,9 @@ make install    # copies ./mdn to ~/.local/bin/mdn (PREFIX=... to change)
 ```
 
 `make e2e` drives the built daemon through a real browser — the phone
-layout, the drawer, the display settings, the tap targets and the asset
-cache — and needs Chromium, which is a separate download:
+layout, the drawer, the display settings, the tap targets, the asset cache,
+and creating and deleting a note — and needs Chromium, which is a separate
+download:
 
 ```
 pnpm --dir ui exec playwright install chromium
