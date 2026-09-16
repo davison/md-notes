@@ -83,7 +83,7 @@ func Write(root roots.Root, dir string, c Clip, now time.Time) (string, error) {
 	}
 	defer handle.Close()
 	if dir != "." {
-		if err := ensureDir(root, handle, dir); err != nil {
+		if err := root.EnsureDir(handle, dir); err != nil {
 			return "", err
 		}
 	}
@@ -112,28 +112,6 @@ func Write(root roots.Root, dir string, c Clip, now time.Time) (string, error) {
 		return rel, nil
 	}
 	return "", ErrCrowded
-}
-
-// ensureDir makes dir inside the root, and reports a dir that resolves out
-// of it as ErrOutside rather than as whatever the handle happens to say.
-// The handle is the enforcement; this is the diagnosis.
-func ensureDir(root roots.Root, handle *os.Root, dir string) error {
-	switch _, err := root.Resolve(dir); {
-	case err == nil:
-		return nil
-	case errors.Is(err, roots.ErrOutside):
-		return err
-	case !errors.Is(err, os.ErrNotExist):
-		return err
-	}
-	if err := handle.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	// A symlink raced in under the new directory is still outside.
-	if _, err := root.Resolve(dir); err != nil {
-		return err
-	}
-	return nil
 }
 
 // writeAll writes the note and makes its bytes durable before reporting

@@ -417,3 +417,105 @@ func TestOpenConfinesToTheRoot(t *testing.T) {
 		t.Error("a file appeared above the root")
 	}
 }
+
+// Relative is the check a path that does not exist yet can still be put
+// through: the same lexical confinement Resolve applies, with nothing
+// asked of the filesystem.
+func TestRelativeConfinesPathsThatDoNotExist(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(root, filepath.Join(t.TempDir(), "s.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	only := r.List()[0]
+
+	for rel, want := range map[string]string{
+		"new.md":               "new.md",
+		"/new.md":              "new.md",
+		"a/b/new.md":           filepath.Join("a", "b", "new.md"),
+		"./a/../new.md":        "new.md",
+		"a/b/../../new.md":     "new.md",
+		"":                     ".",
+		"/":                    ".",
+		"missing/nowhere.md":   filepath.Join("missing", "nowhere.md"),
+		"sub/./deep/note.md":   filepath.Join("sub", "deep", "note.md"),
+		"trailing/slash.md/":   filepath.Join("trailing", "slash.md"),
+		"double//slash/a.md":   filepath.Join("double", "slash", "a.md"),
+		"unicode/café note.md": filepath.Join("unicode", "café note.md"),
+	} {
+		got, err := only.Relative(rel)
+		if err != nil {
+			t.Errorf("Relative(%q) error %v", rel, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("Relative(%q) = %q, want %q", rel, got, want)
+		}
+	}
+
+	for _, rel := range []string{"..", "../secret.md", "a/../../secret.md", "/../secret.md", "../"} {
+		if _, err := only.Relative(rel); !errors.Is(err, ErrOutside) {
+			t.Errorf("Relative(%q) err = %v, want ErrOutside", rel, err)
+		}
+	}
+
+	// It says nothing about symlinks, by design: a link is only knowable
+	// once the path exists, and the caller must still open the result
+	// through a handle on the root.
+	if err := os.Symlink(base, filepath.Join(root, "out")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := only.Relative("out/secret.md"); err != nil || got != filepath.Join("out", "secret.md") {
+		t.Errorf("Relative through a link = %q, %v", got, err)
+	}
+	if _, err := only.Resolve("out/secret.md"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Resolve should be the one to look: %v", err)
+	}
+}
+
+func TestEnsureDirMakesParentsAndRefusesAnEscape(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(base, "elsewhere"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(base, "elsewhere"), filepath.Join(root, "out")); err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(root, filepath.Join(t.TempDir(), "s.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	only := r.List()[0]
+	handle, err := only.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+
+	if err := only.EnsureDir(handle, filepath.Join("a", "b", "c")); err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "a", "b", "c")); err != nil || !info.IsDir() {
+		t.Fatalf("directory not made: %v", err)
+	}
+	// Again, on a directory that now exists.
+	if err := only.EnsureDir(handle, filepath.Join("a", "b", "c")); err != nil {
+		t.Fatalf("EnsureDir on an existing directory: %v", err)
+	}
+	for _, dir := range []string{"out", filepath.Join("out", "deeper"), filepath.Join("..", "elsewhere")} {
+		if err := only.EnsureDir(handle, dir); !errors.Is(err, ErrOutside) {
+			t.Errorf("EnsureDir(%q) err = %v, want ErrOutside", dir, err)
+		}
+	}
+	if entries, err := os.ReadDir(filepath.Join(base, "elsewhere")); err != nil || len(entries) != 0 {
+		t.Fatalf("made a directory outside the root: %v %v", entries, err)
+	}
+}

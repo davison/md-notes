@@ -301,16 +301,11 @@ func (root Root) Open() (*os.Root, error) {
 // the real path, suitable for opening. A path that does not exist returns
 // an error wrapping os.ErrNotExist.
 func (root Root) Resolve(rel string) (string, error) {
-	sep := string(filepath.Separator)
-	cleaned := filepath.Clean(strings.TrimLeft(filepath.FromSlash(rel), sep))
-	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+sep) {
-		return "", ErrOutside
+	cleaned, err := root.Relative(rel)
+	if err != nil {
+		return "", err
 	}
-	lexical := filepath.Join(root.Path, cleaned)
-	if !within(root.Path, lexical) {
-		return "", ErrOutside
-	}
-	real, err := filepath.EvalSymlinks(lexical)
+	real, err := filepath.EvalSymlinks(filepath.Join(root.Path, cleaned))
 	if err != nil {
 		return "", err
 	}
@@ -318,6 +313,55 @@ func (root Root) Resolve(rel string) (string, error) {
 		return "", ErrOutside
 	}
 	return real, nil
+}
+
+// Relative is the lexical half of Resolve: it cleans rel and confines it
+// to the root without touching the filesystem, returning the path relative
+// to the root. It is what a target that does not exist yet can be checked
+// with — a note about to be created has no real path to evaluate — and it
+// is not confinement on its own: the caller must go on to open the result
+// through a handle on the root, so that a symlink cannot make the same
+// name mean somewhere else.
+func (root Root) Relative(rel string) (string, error) {
+	sep := string(filepath.Separator)
+	cleaned := filepath.Clean(strings.TrimLeft(filepath.FromSlash(rel), sep))
+	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+sep) {
+		return "", ErrOutside
+	}
+	if !within(root.Path, filepath.Join(root.Path, cleaned)) {
+		return "", ErrOutside
+	}
+	return cleaned, nil
+}
+
+// EnsureDir makes dir inside the root, through handle, and reports a dir
+// that resolves out of it as ErrOutside rather than as whatever the handle
+// happens to say. The handle is the enforcement; this is the diagnosis,
+// and it starts from the deepest component that exists, so that a
+// directory yet to be made under a link out of the root is still reported
+// as the escape it is.
+func (root Root) EnsureDir(handle *os.Root, dir string) error {
+	for d := dir; ; d = filepath.Dir(d) {
+		_, err := root.Resolve(d)
+		if err == nil {
+			if d == dir {
+				return nil
+			}
+			break
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if parent := filepath.Dir(d); parent == d {
+			break
+		}
+	}
+	if err := handle.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	// A symlink raced in under the new directory is still outside.
+	_, err := root.Resolve(dir)
+	return err
 }
 
 // within reports whether path is root or lies beneath it. Both must be
