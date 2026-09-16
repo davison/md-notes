@@ -42,13 +42,24 @@ describe("the layout at phone widths and above", { skip: blocker ?? false }, () 
     await fixture?.stop();
   });
 
-  /** A page in a fresh context, closed by the caller through the returned handle. */
+  /**
+   * A page in a fresh context, closed by the caller through the returned
+   * handle. Anything the page throws is collected rather than raised from
+   * the listener, and reported when the context closes.
+   */
   const page = async (profile, extra = {}) => {
     const { name, ...options } = profile;
     const context = await browser.newContext({ ...options, ...extra });
     const p = await context.newPage();
-    p.on("pageerror", (e) => assert.fail(`${name}: the page threw ${e.message}`));
-    return [p, () => context.close()];
+    const thrown = [];
+    p.on("pageerror", (e) => thrown.push(e.message));
+    return [
+      p,
+      async () => {
+        await context.close();
+        if (thrown.length > 0) assert.fail(`${name}: the page threw ${thrown.join("; ")}`);
+      },
+    ];
   };
 
   for (const profile of PHONES) {
