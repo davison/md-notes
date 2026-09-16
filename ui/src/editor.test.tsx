@@ -17,8 +17,38 @@ function viewOf(container: Element): EditorView {
   return EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
 }
 
-beforeEach(() => resetSessions());
-afterEach(() => cleanup());
+/**
+ * A session over a daemon holding one note, for the cases that change the
+ * file on disk under an open editor. The returned record is live: assign to
+ * `source` and `revision` and the next read sees it.
+ */
+function served(source: string) {
+  const file = { source, revision: "r1" };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: () => Promise.resolve({ ...file }),
+      } as Response),
+    ),
+  );
+  return { file, session: new Session("n", "a.md") };
+}
+
+beforeEach(() => {
+  resetSessions();
+  // Sessions mirror an unsaved draft to storage under a key that is the
+  // note's, not the object's: a new Session over the same note would
+  // otherwise recover the previous case's draft on its first read.
+  localStorage.clear();
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("line endings", () => {
   it("picks the ending a note uses most, not the first it contains", () => {
@@ -122,13 +152,15 @@ describe("Editor", () => {
     expect(viewOf(second.container).state.selection.main.anchor).toBe(4);
   });
 
-  it("keeps the caret and the scroll when a recreate writes the draft back", () => {
+  it.each([
+    ["LF", "one\ntwo\nthree\nfour\n", "one\ntwo\nthree!\nfour\n"],
+    ["CRLF", "one\r\ntwo\r\nthree\r\nfour\r\n", "one\r\ntwo\r\nthree!\r\nfour\r\n"],
+  ])("keeps the caret and the note's %s endings when a recreate writes the draft back", (_, draft, typed) => {
     // The deleted-on-disk banner's way back writes the draft to disk byte
     // for byte and the session takes the file in place, bumping the
     // generation so the pane refetches the note's title (#100). The
     // document has not changed, so the reader's place in it must not
     // either — on a long note that is where they were reading.
-    const draft = "one\ntwo\nthree\nfour\n";
     const s = session(draft);
     s.state = {
       ...s.state,
@@ -137,7 +169,9 @@ describe("Editor", () => {
     };
     const { container, rerender } = render(<Editor session={s} />);
     const view = viewOf(container);
-    view.dispatch({ selection: { anchor: 12 } });
+    // Offsets are into the document CodeMirror holds, which is LF whatever
+    // the note's own ending is: the end of the third line, either way.
+    view.dispatch({ selection: { anchor: 13 } });
     const before = s.state.generation;
 
     expect(s.recreated({ source: draft, revision: "r2" })).toBe(true);
@@ -145,8 +179,62 @@ describe("Editor", () => {
     rerender(<Editor session={s} />);
 
     const after = viewOf(container);
-    expect(after.state.doc.toString()).toBe(draft);
-    expect(after.state.selection.main.anchor).toBe(12);
+    expect(after.state.doc.toString()).toBe("one\ntwo\nthree\nfour\n");
+    expect(after.state.selection.main.anchor).toBe(13);
+    // And the kept state still writes the note back in its own ending.
+    after.dispatch({ changes: { from: 13, insert: "!" } });
+    expect(s.state.draft).toBe(typed);
+  });
+
+  it.each([
+    ["a CRLF note normalised to LF", "one\r\ntwo\r\n", "one\ntwo\n", "one\ntwo\nthree\n"],
+    ["an LF note gaining CRLF", "one\ntwo\n", "one\r\ntwo\r\n", "one\r\ntwo\r\nthree\r\n"],
+  ])("follows the file's endings when they change on disk under a clean session (%s)", async (_, before, after, expected) => {
+    // The ordinary clean adoption: no conflict, no banner, nothing for the
+    // reader to decide — the file is rewritten with the same text in the
+    // other ending, the session takes it and bumps the generation, and the
+    // editor keeps the state it had parked because the document did not
+    // change. What must not survive that is the ending the state was built
+    // with: the next keystroke writes the whole file, and it writes it in
+    // the ending the file has now.
+    const { file, session: s } = served(before);
+    await s.open();
+    expect(s.state.draft).toBe(before);
+    const { container, rerender } = render(<Editor session={s} />);
+    viewOf(container).dispatch({ selection: { anchor: 4 } });
+
+    file.source = after;
+    file.revision = "r2";
+    await s.changed();
+    expect(s.state.draft).toBe(after);
+    rerender(<Editor session={s} />);
+
+    const view = viewOf(container);
+    // The parked state was kept — which is what puts the case in reach.
+    expect(view.state.selection.main.anchor).toBe(4);
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "three\n" } });
+    expect(s.state.draft).toBe(expected);
+  });
+
+  it("follows the file's endings through Load the file", () => {
+    // The same staleness by the other door: an endings-only change under an
+    // unsaved draft, resolved by taking the file.
+    const crlf = "a\r\nb\r\n";
+    const lf = "a\nb\n";
+    const s = session(crlf);
+    s.state = {
+      ...s.state,
+      status: "conflict",
+      conflict: { kind: "changed", current: { source: lf, revision: "r2" } },
+    };
+    const { container, rerender } = render(<Editor session={s} />);
+    s.loadFile();
+    expect(s.state.draft).toBe(lf);
+    rerender(<Editor session={s} />);
+
+    const view = viewOf(container);
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "c\n" } });
+    expect(s.state.draft).toBe("a\nb\nc\n");
   });
 
   it("rebuilds from the draft when the generation changes", () => {

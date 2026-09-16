@@ -75,9 +75,20 @@ export function withLineEnding(text: string, ending: string): string {
   return ending === "\n" ? text : text.replaceAll("\n", ending);
 }
 
-/** Builds the editor state for a draft; exported so tests can drive the keymap. */
+/**
+ * Builds the editor state for a draft; exported so tests can drive the
+ * keymap.
+ *
+ * The ending is read from the session's draft as each edit is written back,
+ * rather than captured here when the state is built. Both answer the same
+ * question — the draft carries the note's endings, and an edit through
+ * `withLineEnding` keeps them — but a captured one is a second copy of the
+ * note's state that can go stale while the document does not: the file's
+ * endings can change on disk under a session with nothing unsaved, or under
+ * **Load the file**, and the draft that arrives has the same text in the
+ * other ending. Read at write time there is nothing to keep in step.
+ */
 export function createState(doc: string, session: Session): EditorState {
-  const ending = lineEnding(doc);
   return EditorState.create({
     doc,
     extensions: [
@@ -92,7 +103,9 @@ export function createState(doc: string, session: Session): EditorState {
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
       theme,
       EditorView.updateListener.of((u) => {
-        if (u.docChanged) session.edit(withLineEnding(u.state.doc.toString(), ending));
+        if (u.docChanged) {
+          session.edit(withLineEnding(u.state.doc.toString(), lineEnding(session.state.draft)));
+        }
       }),
     ],
   });
@@ -122,7 +135,10 @@ function flushFor(view: EditorView) {
  * Whether a parked editor state already holds this draft. CodeMirror
  * splits a document on any line ending and joins the text it hands back
  * with LF, while the draft keeps the note's own ending, so the two are
- * compared on that footing.
+ * compared on that footing — a draft that differs from the parked document
+ * only in its endings is the same document, and the ending it is written
+ * back in is read from the draft at that moment rather than from anything
+ * this state remembers.
  */
 function holdsDraft(state: EditorState, draft: string): boolean {
   return state.doc.toString() === draft.replace(/\r\n?/g, "\n");
