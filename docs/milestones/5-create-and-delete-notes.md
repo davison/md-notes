@@ -115,21 +115,63 @@ silent](#where-the-record-is-silent).
 
 ## Requirement outcomes
 
-> **Placeholder — to be completed from the independent QA verdict.** Independent QA for
-> M5 is running against `main` at
-> [`3a8f100`](https://github.com/davison/md-notes/commit/3a8f100) while this record is
-> being written. The verdict column below, the link to QA's comment on
-> [#74](https://github.com/davison/md-notes/issues/74) and the table of QA's findings and
-> their disposition are filled in before this document's pull request opens. Nothing else
-> in this record depends on them.
+The verdicts below are drawn from the independent QA comment on the milestone issue
+([#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702704529)), run
+against a clean worktree of merged `main` at
+[`3a8f100`](https://github.com/davison/md-notes/commit/3a8f100) — never the operator's
+checkout — with every daemon on its own temporary root, `--config`, `--state` and
+`--token-file` under QA's scratchpad, and the daemon on port 7337 and `~/.local/state/mdn`
+untouched. The floor first: `make check` exit 0, `go test -race -count=50
+./internal/watch/` ok in 88.9 s, and `make e2e` green three consecutive times at 35 tests
+each. QA judged M5-R2 and M5-R3 with the top-bar decision
+([#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702275665)) in force
+and re-verified both of the operator's findings as fixed. It raised three findings, none
+blocking; the coordinator's disposition of them is at
+[#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702723351).
 
 | ID | Requirement | Status |
 |----|-------------|--------|
-| M5-R1 | Deterministic watch tests: the quiet window driven by an injected clock or an explicit, argued tolerance, the package green at `-count=50` under `-race` locally and in CI, the run recorded on the PR | _awaiting QA verdict_ |
-| M5-R2 | Create a note: an endpoint that refuses to overwrite, refuses empty, non-markdown and escaping names with the save's error shape, makes missing parents, is admitted over the tailnet like the save; a UI control that asks for a title or path before anything is written, opens the note in the editor, and reaches the navigator through the events stream in both layouts | _awaiting QA verdict_ |
-| M5-R3 | Delete a note: a note-bar action behind a confirmation naming the file, cancelling removing nothing; an endpoint that deletes exactly one markdown file inside the root, refusing directories, symlinks, non-markdown targets and read-only files; the app leaving for the root's home, the navigator live, another tab's draft answered by the existing banner | _awaiting QA verdict_ |
-| M5-R4 | Browser-level checks in CI: a `ui/e2e` Playwright suite sharing the extension suite's dependency and runner, driven by `make e2e`, running in CI against the built daemon in a cached Chromium, porting M4's scratchpad checks and covering create and delete, deterministic over three consecutive CI runs with its per-run cost recorded | _awaiting QA verdict_ |
-| M5-R5 | Documentation and record: user documentation reflecting create and delete, the API table gaining the new endpoints, the roadmap row, and this record linking delivered work, decisions, gates and QA verdicts | _awaiting QA verdict_ |
+| M5-R1 | Deterministic watch tests: the quiet window driven by an injected clock or an explicit, argued tolerance, the package green at `-count=50` under `-race` locally and in CI, the run recorded on the PR | [Satisfied](https://github.com/davison/md-notes/issues/74#issuecomment-5702704529) — no finding; QA mutation-tested the suite and reproduced the old flake's conditions at `GOMAXPROCS=1` under load |
+| M5-R2 | Create a note: an endpoint that refuses to overwrite, refuses empty, non-markdown and escaping names with the save's error shape, makes missing parents, is admitted over the tailnet like the save; a UI control that asks for a title or path before anything is written, opens the note in the editor, and reaches the navigator through the events stream in both layouts | [Satisfied](https://github.com/davison/md-notes/issues/74#issuecomment-5702704529) — one non-blocking finding, a too-long name answered `500`, captured as [#88](https://github.com/davison/md-notes/issues/88) |
+| M5-R3 | Delete a note: a note-bar action behind a confirmation naming the file, cancelling removing nothing; an endpoint that deletes exactly one markdown file inside the root, refusing directories, symlinks, non-markdown targets and read-only files; the app leaving for the root's home, the navigator live, another tab's draft answered by the existing banner | [Satisfied](https://github.com/davison/md-notes/issues/74#issuecomment-5702704529) — no finding; the safety gate was read as well as exercised |
+| M5-R4 | Browser-level checks in CI: a `ui/e2e` Playwright suite sharing the extension suite's dependency and runner, driven by `make e2e`, running in CI against the built daemon in a cached Chromium, porting M4's scratchpad checks and covering create and delete, deterministic over three consecutive CI runs with its per-run cost recorded | [Satisfied](https://github.com/davison/md-notes/issues/74#issuecomment-5702704529) — one cosmetic finding, a case name naming the superseded location, taken in this task |
+| M5-R5 | Documentation and record: user documentation reflecting create and delete, the API table gaining the new endpoints, the roadmap row, and this record linking delivered work, decisions, gates and QA verdicts | [Not testable at the verdict](https://github.com/davison/md-notes/issues/74#issuecomment-5702704529), this task not having run — "verdict to be superseded once #79 lands". Everything QA listed as missing on `3a8f100` is this task's declared scope and is delivered in its pull request |
+
+M5-R5 is the one row no verdict yet settles, and for the same reason M2-R6, M3-R7 and
+M4-R8 were not settled: QA graded it against `main` as it stood before this task, and what
+it graded as missing — the README's Editing paragraph, the introduction's two statements
+and its API table, `docs/milestones/5-*.md` and the roadmap row — is the list this
+document's pull request delivers. The closure gate on
+[#74](https://github.com/davison/md-notes/issues/74) requires both that every requirement
+verdict is satisfied *and* that the milestone document is merged, so this PR's merge is a
+precondition of closure rather than the verdict itself.
+
+**What QA did beyond the requirement text** is worth recording, because it is where the
+confidence in this milestone actually comes from. On the create path: twenty concurrent
+pairs of tabs racing for the same name produced **exactly one `201` and one `409` every
+time**, which is `O_CREATE|O_EXCL` doing what its comment claims; a unicode title with
+leading and trailing spaces trims and lands in the open note's folder; a title of only
+`.md` is refused in the prompt with the typed text kept and nothing written; encoded NUL
+and newline are `400`. On the delete path: a **non-empty** directory named `full.md` is
+`422` with all three files beneath it still present; a note replaced on disk by a symlink
+to a file outside the root is refused `403` with the outside file intact; a hardlink to an
+outside file removes only the name inside the root; a note another process removed first
+shows the daemon's refusal inside the dialog and keeps it open to be read. And QA read
+`Store.Delete` as the gate requires rather than only exercising it, confirming that
+`parent.Remove(base)` on one basename is the only call in the path that changes the
+filesystem and that `grep -rn "RemoveAll" internal/ cmd/` is empty. Thirteen browser
+probes of its own on the shipped harness — 320 px, the backdrop dismissal the suite does
+not take, a vanished note, the delete control's `x` across view → edit → view at 1440 px
+and at 320 px — none of which failed.
+
+QA's three findings, and what was done with each
+([#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702723351)):
+
+| Finding | Disposition |
+|---------|-------------|
+| A basename of about 300 characters is refused `500 io_error` and logged as a server fault, where the reader sees "could not read or save note" ([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5702672668)) | Captured as [#88](https://github.com/davison/md-notes/issues/88). Not a breach of M5-R2: the requirement asks for "the same error shape as the source save", and `PUT` on the same name answers the same way. The boundary is the filesystem's `NAME_MAX` — a 252-character basename creates normally — and create is simply the first UI path that lets a reader provoke it. **Rejected:** a second fix task inside M5 for a one-line error mapping, which would hold the milestone open for something the next `internal/source` task can carry with [#82](https://github.com/davison/md-notes/issues/82) |
+| `ui/e2e/create-delete.test.mjs`'s first case is still named "creates a note **from the navigator**" ([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5702677509)), and `ui/src/root-view.test.tsx`'s prologue above the moved block still says "Creating from the navigator" ([#85](https://github.com/davison/md-notes/issues/85#issuecomment-5702680749)) — each contradicting a case directly beneath it | Folded into this task, the same pass that reconciles the top-bar wording everywhere else. Two strings, no behaviour change; they are the only code in this document's pull request |
+| Two sharp edges in `ui/e2e`: the drawer's `Escape` effect attaches a frame after its element is in the page, the race the harness already blunts for dialogs with `dialogReady`, and the standing condition in the retired `Escape` decision — "rewrite the browser case if a document-level handler is ever put under a dialog again" — has no owner | Captured as [#89](https://github.com/davison/md-notes/issues/89) |
 
 ## Decisions
 
@@ -600,7 +642,7 @@ approved on the first pass with non-blocking findings; one requested changes.
 | [#81](https://github.com/davison/md-notes/pull/81) | approve, then approve on the delta | `TestEachChangeRestartsTheQuietWindow` did not catch the mutation it names: the reviewer's mutant passed it 50/50, because the absence check was a bare non-blocking receive that could not see a batch the immediately preceding `Advance` had caused. The answer was better than the suggestion — a barrier on each side of the check, so the whole class of missed absence goes, plus a third change so the contents discriminate as well as the timing. The mutant now fails 50 of 50. The header comment that overclaimed was narrowed |
 | [#83](https://github.com/davison/md-notes/pull/83) | approve | The `busy` guard covered the buttons and not `Escape`, the backdrop or the `Tab` trap; the reviewer demonstrated it with the write verbs delayed 2.5 s. Fixed, with the decision above, and the `Tab` hole turned out to be one step earlier than the empty focusable list — disabling the focused control drops focus to the body. The review also asked for the browser case that #78 later could not keep |
 | [#84](https://github.com/davison/md-notes/pull/84) | **request changes**, then approve | One blocking finding — the ripgrep diagnostic that hung instead of printing — and four non-blocking. All five fixed. `TAP_GROUPS` gained `.new-note`, `.modal button` and `.modal-name`; the last was measured **nowhere**, so a regression dropping the name box below the 40 px floor had been passing the suite. The reviewer then went looking for the teeth rather than taking them: a rule shrinking only `.modal-name` fails five checks, one per coarse profile |
-| [#86](https://github.com/davison/md-notes/pull/86) | approve | Six non-blocking findings, **none with a recorded disposition**. Finding 4 — that M5-R2's wording now contradicts the shipped UI and belongs in this record — was acted on, as the decision on [#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702275665). Findings 2 and 3 are answered in this document. Findings 1 and 6 are still in the tree; see [Known gaps](#known-gaps-at-the-boundary). Finding 5 notes that the new unit case has no teeth of its own — it passes against `main`, because the DOM order never changed and the bug was purely CSS — which the PR itself says, and which leaves the browser check as the only thing between that bug and a repeat |
+| [#86](https://github.com/davison/md-notes/pull/86) | approve | Six non-blocking findings, **none with a recorded disposition**. Finding 4 — that M5-R2's wording now contradicts the shipped UI and belongs in this record — was acted on, as the decision on [#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702275665). Findings 2 and 3 are answered in this document. Finding 1 was found again by QA, on both files that carry the drift, and is taken in this task's pull request; finding 6 is still in the tree, see [Known gaps](#known-gaps-at-the-boundary). Finding 5 notes that the new unit case has no teeth of its own — it passes against `main`, because the DOM order never changed and the bug was purely CSS — which the PR itself says, and which leaves the browser check as the only thing between that bug and a repeat |
 
 Every PR carries the operator's confirmation as a comment: "reviewed and accepted by
 @davison as both author and operator (pure solo tier, SPEC §6) — no independent principal
@@ -626,6 +668,8 @@ Raised by this milestone's reviews, for a later task to adopt:
 |---------|------|-----------|
 | [#82](https://github.com/davison/md-notes/issues/82) | the follow-up review of [#80](https://github.com/davison/md-notes/pull/80#issuecomment-5701203689) | Three residual findings, all on paths that are already refused, so none can turn a refusal into a permit: a dangling *directory* symlink out of the root answers `500 io_error` rather than `403 outside_root`; a dangling two-hop chain answers `409 exists` or `422 unsupported_source` rather than `403 outside_root`; and `TestEscapesIsLexical` carries a `true == false` literal |
 | [#87](https://github.com/davison/md-notes/issues/87) | the review of [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505) | A vitest teardown flake in `ui/src/note-view.test.tsx`: the reviewer's first `make check` failed with an unhandled `ReferenceError: window is not defined` from a preact effect timer firing after jsdom teardown, in a file the PR did not touch; six later runs were clean. The same shape #46 was for the Go side |
+| [#88](https://github.com/davison/md-notes/issues/88) | M5 QA, on [#76](https://github.com/davison/md-notes/issues/76#issuecomment-5702672668) | A basename at the filesystem's `NAME_MAX` is refused `500 io_error` and logged as a server fault, on the save path as well as on create. One `errors.Is(err, syscall.ENAMETOOLONG)` arm in the source error mapping answers `400 invalid_path` instead |
+| [#89](https://github.com/davison/md-notes/issues/89) | M5 QA, on [#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702704529) | Two edges in `ui/e2e`: a `drawerReady` helper beside `dialogReady`, the drawer's `Escape` effect attaching a frame late being the same race; and an owner for the standing condition left by the retired `Escape` decision |
 
 ## Known gaps at the boundary
 
@@ -638,8 +682,9 @@ surprise someone who has not read this far:
 | `ui/src/note-view.test.tsx` can fail `make check` on a teardown race it does not own; six of seven runs were clean and the file was untouched by the PR that surfaced it | [#87](https://github.com/davison/md-notes/issues/87) |
 | **Renaming a note is still not in the application at all.** M5 delivered two of the three verbs the README used to defer to other tools; renaming was never in scope and nothing in the milestone weighs it | [#74](https://github.com/davison/md-notes/issues/74), [the README](../README.md) |
 | The `Escape`-stops-propagation rule is held by unit tests only. It is genuinely held — the capture-phase `document` listener in `ui/src/dialog.test.tsx` asserts the effect, not the call — but no browser check covers it, because after #85 no layer a reader can reach sits under a dialog | [#78](https://github.com/davison/md-notes/issues/78#issuecomment-5702378000), [#84](https://github.com/davison/md-notes/pull/84#issuecomment-5702513643) |
-| `ui/e2e/create-delete.test.mjs` still has a test titled "creates a note **from the navigator**". The control it clicks is in the top bar. A reader chasing that title from a failure line is sent to the wrong place | [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505), finding 1 — no disposition recorded, and still true on `main` |
-| The same file hands `{ name, viewport, hasTouch, isMobile }` straight to `browser.newContext(layout)`; `name` is not a context option and Playwright tolerates it today | [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505), finding 6 — no disposition recorded, and still true on `main` |
+| `ui/e2e/create-delete.test.mjs` hands `{ name, viewport, hasTouch, isMobile }` straight to `browser.newContext(layout)`; `name` is not a context option and Playwright tolerates it today | [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505), finding 6 — no disposition recorded, and still true on `main` |
+| A too-long note name is refused `500 io_error` and logged as a server fault, on the save path as much as on create; the reader is told "could not read or save note" and not why. Not a breach of M5-R2, because the save answers the same way, but create is the first UI path that lets a reader reach it | [#88](https://github.com/davison/md-notes/issues/88), [#74](https://github.com/davison/md-notes/issues/74#issuecomment-5702723351) |
+| The drawer's `Escape` effect attaches a frame after its element is in the page — the race `dialogReady` already blunts for dialogs. The shipped `layout.test.mjs` waits correctly; the next drawer check written will meet it | [#89](https://github.com/davison/md-notes/issues/89) |
 | `min-width: 0` on `.save-status` does not settle what the record says it settles. Measured with an unbreakable long failure message: the note bar's `scrollWidth` at 320 px falls from 558 to 479, and at 1280 px the delete button's right edge is at 995 either way — outside the pane. There is no `overflow-wrap` or `overflow: hidden` on `.save-status`, so the box may shrink but its text does not. Pre-existing, not made worse, and **never captured** | [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505), finding 3 |
 | The new unit case in `ui/src/note-pane.test.tsx` for the delete button's position has no teeth of its own: it passes unchanged against `main`, because the DOM order never changed and the bug was purely CSS. The browser check is the only thing standing between that bug and a repeat | [#86](https://github.com/davison/md-notes/pull/86#issuecomment-5702263505), finding 5 |
 | The e2e suite runs in Chromium only, and the iPhone 14 profile is its viewport in Chromium rather than in WebKit. Chromium is the one browser CI downloads, and it is what M4 measured in | [#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426) |
@@ -681,10 +726,15 @@ surprise someone who has not read this far:
   of CSS (+9.5%) on a first load, reproduced to the byte by its reviewer, and notes the
   editor chunk is unchanged. No budget exists to weigh those against; M4's asset work set
   none, and this milestone did not either.
+- **[#89](https://github.com/davison/md-notes/issues/89) cites "observations 3 and 4"
+  of the QA verdict comment, which as posted carries no numbered observations.** The two
+  edges it describes are stated in the capture's own text, so nothing is lost — but the
+  citation cannot be followed to what it names.
 - **The operator has seen the UI and nothing else.** The operator opened the merged
   application on 2026-09-16 and produced the two findings that became #85. That is the
   only human judgement anywhere in the milestone: every other trade-off here was struck
-  between an implementer and a reviewer sharing one identity, under the standing merge
-  confirmation on [#74](https://github.com/davison/md-notes/issues/74). The daemon's
-  refusal set, the tailnet rule, the clock seam and the whole of the browser suite were
-  reviewed by model sessions only.
+  between an implementer, a reviewer and a QA session sharing one identity, under the
+  standing merge confirmation on [#74](https://github.com/davison/md-notes/issues/74).
+  The daemon's refusal set, the tailnet rule, the clock seam and the whole of the browser
+  suite were judged by model sessions only — thoroughly, and by nobody who will be
+  surprised by them in daily use.
