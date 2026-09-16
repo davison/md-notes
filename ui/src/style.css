@@ -355,6 +355,116 @@ code {
   margin-bottom: 0;
 }
 
+/*
+ * The modal dialog: the name of a new note, and the confirmation before a
+ * note is deleted. Drawn in the palette's own tokens, so the light override
+ * needs nothing here, and with no transition of any kind, so the no-motion
+ * setting needs nothing either. Above the drawer (z-index 30) because at
+ * narrow widths the control that opened it is inside the drawer.
+ */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgb(0 0 0 / 45%);
+}
+
+.modal {
+  position: fixed;
+  z-index: 41;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(28rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--pane);
+  color: var(--fg);
+  box-shadow: 0 0.5rem 2rem rgb(0 0 0 / 30%);
+}
+
+.modal-title {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+}
+
+.modal p {
+  margin: 0 0 0.5rem;
+}
+
+.modal-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.modal-name {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.modal-name:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.modal-hint {
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+/* A long note path must not push the dialog wider than the screen. */
+.modal-path {
+  overflow-wrap: anywhere;
+}
+
+.modal-warn,
+.modal-error {
+  color: var(--error);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.modal button {
+  font: inherit;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.modal button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.modal button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.modal button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* Editor */
 .editor-body {
   flex: 1;
@@ -658,6 +768,11 @@ code {
   .conflict button {
     min-height: 2.75rem;
     padding: 0.1rem 0.9rem;
+  }
+
+  .modal button,
+  .modal-name {
+    min-height: 2.75rem;
   }
 
   .note-bar {
