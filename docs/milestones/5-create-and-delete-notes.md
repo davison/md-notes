@@ -800,8 +800,8 @@ instead: `DELETE` on
 `docs/guide.sync-conflict-20260916-101010-ABCDEFG.md` returned `204` with the copy
 gone and `guide.md` untouched
 ([#79](https://github.com/davison/md-notes/issues/79#issuecomment-5703350101)). Two of
-that sentence's three verbs were false, in a page the README links twice and the
-introduction three times.
+that sentence's three verbs were false, in a page the README links twice, the
+introduction four times and [the e-ink page](../e-ink.md) three times more.
 
 **What this says about the milestone, rather than about one page.** The task that
 wrote this record enumerated its files — `README.md`, `docs/introduction.md`,
@@ -821,9 +821,27 @@ the page's premise being devices that may have no daemon. The same task takes QA
 cosmetic second finding, that the introduction's narrow-width bullet named the burger
 where the `mdn` home link is the `+`'s actual neighbour, measured at 390x664
 ([#79](https://github.com/davison/md-notes/issues/79#issuecomment-5703355193)), and
-re-runs the grep across `docs/` and `README.md`: outside `docs/sync.md` every
-surviving statement of this shape is either about renaming alone, which remains true,
-or inside a sealed record for M2, M3 or M4, which is not edited.
+re-runs the grep across `docs/` and `README.md`. As this annotation merges the command
+returns **twelve** hits, and they account for themselves in four categories rather
+than the two an earlier draft of this paragraph named:
+
+- **Two** live sentences naming renaming alone, which remains true — [the
+  README](../../README.md) and the opening of [the introduction](../introduction.md).
+- **Two** more in the introduction that use the phrase "another tool" correctly: a
+  file written by one reaching the navigator through the events stream, and a deleted
+  note being recreated under the same name, by **New note** or from outside the app.
+- **Three** inside the sealed records for
+  [M2](2-editor-autosave-and-live-update.md),
+  [M3](3-clipper-authentication-and-tailnet.md) and
+  [M4](4-polish-phone-e-ink-and-the-bundle.md) — true when they were written, and not
+  edited.
+- **Five** inside this record: three in the captures and gaps tables above, describing
+  the banner string and what M5 did and did not deliver, and two in this annotation,
+  which quotes the sentence it is about and then quotes the phrase again here. The
+  count moved from eleven to twelve as this paragraph was written, which is the sort
+  of thing a stated count does.
+
+Only `docs/sync.md` was wrong, and only there is anything changed.
 
 **The requirement outcomes table above is deliberately unchanged.** M5-R5's status is
 QA's to set, and the verdict that settles it is the one written after #94 merges, not
