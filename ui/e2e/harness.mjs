@@ -145,6 +145,22 @@ export async function startFixture(label) {
     `the daemon to listen on ${port}:\n${log.join("")}`,
   );
 
+  // The daemon lists a root through ripgrep. Without it the navigator is
+  // empty and a dozen checks fail on a missing `.tree` row, each of them
+  // 30 seconds of Playwright waiting for an element that was never coming;
+  // asked here, the answer arrives once and says what is actually wrong.
+  const tree = await fetch(`${origin}/api/r/notes/tree`);
+  if (!tree.ok) {
+    throw new Error(
+      `the daemon cannot list the fixture root (HTTP ${tree.status}): ${(await tree.text()).trim()}\n` +
+        "ripgrep (rg) on PATH is a runtime requirement of the daemon, not only of its tests.",
+    );
+  }
+  const listed = await tree.json();
+  if (!listed.children || listed.children.length === 0) {
+    throw new Error(`the fixture root listed empty: ${JSON.stringify(listed)}`);
+  }
+
   return {
     tmp,
     notesDir,
