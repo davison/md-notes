@@ -283,15 +283,19 @@ its browser UI stay on the machines.
 **Clipping from the phone is not built yet.** The plan is an inbox file of
 URLs, shared to from the phone's share sheet, which the daemon turns into
 proper clips when the folder next syncs to a machine running it. That is a
-later milestone; today the browser extension clips from a desktop browser only
-([The browser extension](extension.md)).
+later milestone; today clipping is the browser extension's, in a desktop
+browser ([The browser extension](extension.md)). That browser no longer has to
+be on the daemon's own machine: with the extension's daemon URL set to the
+`tailnet_host` name, a clip taken on another tailnet node lands in the notes
+root's `clips/` and syncs on from there like any other file.
 
 ## The tailnet, and when to use it instead
 
 If the device you are on can reach the daemon's machine, you do not need a
 local copy at all: `tailnet_host` lets the daemon answer to one extra host name
-behind `tailscale serve`, and the whole UI — reading, editing, search, live
-update — works from another node on the tailnet after a token login. The
+behind `tailscale serve`, and the whole UI — reading, editing, creating,
+deleting, search, live update — works from another node on the tailnet after a
+token login, as does the extension's clipping. The
 README's [Over the tailnet](../README.md#over-the-tailnet) section and
 [the introduction](introduction.md#reaching-the-daemon-over-the-tailnet) cover
 the setup and what it narrows.
