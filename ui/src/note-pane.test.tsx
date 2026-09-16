@@ -7,6 +7,7 @@ import { getSession, resetSessions } from "./session";
 /** A daemon with one note, rendered and as source; PUT applies the save. */
 let file: { source: string; revision: string } | null;
 let putStatus: number | null;
+let deleteStatus: number | null;
 const calls: { method: string; url: string }[] = [];
 
 function mockApi() {
@@ -23,6 +24,11 @@ function mockApi() {
       }
       if (url.startsWith("/api/r/n/source/")) {
         if (!file) return json(404, { code: "not_found", error: "note or root no longer exists" });
+        if (method === "DELETE") {
+          if (deleteStatus) return json(deleteStatus, { code: "permission_denied", error: "note is not writable" });
+          file = null;
+          return Promise.resolve({ ok: true, status: 204, statusText: "No Content" } as Response);
+        }
         if (method === "PUT") {
           if (putStatus) return json(putStatus, { code: "io_error", error: "disk full" });
           const body = JSON.parse(init!.body as string) as { source: string; revision: string };
@@ -39,6 +45,7 @@ function mockApi() {
 beforeEach(() => {
   file = { source: "body\n", revision: "r1" };
   putStatus = null;
+  deleteStatus = null;
   calls.length = 0;
   localStorage.clear();
   resetSessions();
@@ -307,5 +314,108 @@ describe("useUnsavedGuard", () => {
     s.edit("blurred\n");
     window.dispatchEvent(new Event("blur"));
     await waitFor(() => expect(file?.source).toBe("blurred\n"));
+  });
+});
+
+/**
+ * Delete, from the note bar. The confirmation is the whole gate: nothing is
+ * sent before it, and cancelling it sends nothing at all.
+ */
+describe("deleting the open note", () => {
+  const askToDelete = () => fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+  const confirm = () => fireEvent.submit(document.querySelector(".modal form")!);
+  const deletes = () => calls.filter((c) => c.method === "DELETE");
+
+  async function openNote(onDeleted?: () => void) {
+    render(<NotePane slug="n" path="docs/a.md" onDeleted={onDeleted} />);
+    await waitFor(() => expect(screen.getByText("body")).toBeTruthy());
+  }
+
+  it("names the file in a confirmation and sends nothing until it is confirmed", async () => {
+    await openNote();
+    askToDelete();
+    expect(document.querySelector(".modal")).toBeTruthy();
+    expect(screen.getByText("docs/a.md")).toBeTruthy();
+    expect(deletes()).toHaveLength(0);
+    expect(file).not.toBeNull();
+  });
+
+  it("removes nothing when the confirmation is cancelled", async () => {
+    await openNote();
+    askToDelete();
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(document.querySelector(".modal")).toBeNull();
+    expect(deletes()).toHaveLength(0);
+    expect(file).not.toBeNull();
+    // And on Escape, the other way out.
+    askToDelete();
+    fireEvent.keyDown(document.querySelector(".modal")!, { key: "Escape" });
+    expect(document.querySelector(".modal")).toBeNull();
+    expect(deletes()).toHaveLength(0);
+    expect(file).not.toBeNull();
+  });
+
+  it("deletes the note on confirmation and tells the shell to leave it", async () => {
+    const left = vi.fn();
+    await openNote(left);
+    askToDelete();
+    confirm();
+    await waitFor(() => expect(left).toHaveBeenCalledTimes(1));
+    expect(deletes()).toHaveLength(1);
+    expect(deletes()[0].url).toBe("/api/r/n/source/docs/a.md");
+    expect(file).toBeNull();
+  });
+
+  it("shows a refusal and removes nothing", async () => {
+    const left = vi.fn();
+    await openNote(left);
+    deleteStatus = 403;
+    askToDelete();
+    confirm();
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("note is not writable"));
+    expect(left).not.toHaveBeenCalled();
+    expect(file).not.toBeNull();
+    expect(document.querySelector(".modal")).toBeTruthy();
+  });
+
+  it("says an unsaved draft goes with the note, and drops it without saving it back", async () => {
+    vi.useFakeTimers();
+    const left = vi.fn();
+    render(<NotePane slug="n" path="docs/a.md" onDeleted={left} />);
+    await vi.waitFor(() => expect(screen.getByText("body")).toBeTruthy());
+    fireEvent.keyDown(document.body, ctrlE);
+    await vi.waitFor(() => expect(editorText()).toContain("body"));
+    type("draft not saved\n");
+    await vi.waitFor(() => expect(status()).toBe("Unsaved changes"));
+    expect(localStorage.getItem("mdn:draft:n\0docs/a.md")).toBeTruthy();
+
+    askToDelete();
+    expect(screen.getByText(/unsaved changes to this note/)).toBeTruthy();
+    confirm();
+    await vi.waitFor(() => expect(left).toHaveBeenCalledTimes(1));
+    expect(file).toBeNull();
+    // The scheduled save is gone with the session, so nothing recreates the
+    // file a second later, and the mirrored draft is gone from storage.
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(calls.filter((c) => c.method === "PUT")).toHaveLength(0);
+    expect(localStorage.getItem("mdn:draft:n\0docs/a.md")).toBeNull();
+    // A note recreated under the same name later starts from the file.
+    file = { source: "new\n", revision: "r9" };
+    expect(getSession("n", "docs/a.md").state.status).toBe("loading");
+  });
+
+  it("offers no delete dialog to a tab that only learns the note is gone", async () => {
+    // The other tab's path: the file vanishes under it and the session's
+    // own deleted-on-disk banner answers, with no dialog anywhere.
+    render(<NotePane slug="n" path="docs/a.md" />);
+    await waitFor(() => expect(screen.getByText("body")).toBeTruthy());
+    fireEvent.keyDown(document.body, ctrlE);
+    await waitFor(() => expect(editorText()).toContain("body"));
+    type("mine\n");
+    file = null;
+    await getSession("n", "docs/a.md").changed();
+    await waitFor(() => expect(screen.getByText(/deleted on disk while you had unsaved edits/)).toBeTruthy());
+    expect(document.querySelector(".modal")).toBeNull();
+    expect(deletes()).toHaveLength(0);
   });
 });

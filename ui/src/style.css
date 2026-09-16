@@ -380,6 +380,15 @@ code {
   border-color: var(--accent);
 }
 
+.note-bar .delete-note {
+  flex: none;
+}
+
+.note-bar .delete-note:hover {
+  border-color: var(--error);
+  color: var(--error);
+}
+
 /*
  * The modal dialog: the name of a new note, and the confirmation before a
  * note is deleted. Drawn in the palette's own tokens, so the light override

@@ -102,6 +102,15 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
    */
   const folder = folderOf(current);
 
+  /**
+   * Where the app goes when the open note is deleted. There is no route for
+   * a folder in this application — /r/:slug/:note* is a note or nothing — so
+   * the parent folder and the root's home are one page, and the navigator
+   * arrives with the deleted note's folder still open, because expansion is
+   * remembered per root and its ancestors were expanded while it was.
+   */
+  const rootHome = `/r/${encodeURIComponent(slug)}/`;
+
   useEvents(
     slug,
     (paths) => {
@@ -172,7 +181,14 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
             and hides the other, so only one is ever in the page. */}
         <LiveUpdateNotice live={live} />
         {current ? (
-          <NotePane key={slug + "\0" + current} slug={slug} path={current} version={noteVersion} line={line} />
+          <NotePane
+            key={slug + "\0" + current}
+            slug={slug}
+            path={current}
+            version={noteVersion}
+            line={line}
+            onDeleted={() => route(rootHome)}
+          />
         ) : (
           <main class="note-body">
             <p class="muted">Select a note.</p>
