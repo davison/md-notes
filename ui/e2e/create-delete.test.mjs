@@ -377,10 +377,9 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     // not a third: with the prompt open the key lands on `.modal-name`, and
     // the editor's vim keymap is a listener on its own element, which a
     // keydown dispatched at the dialog never reaches with or without the
-    // call. Commenting out `e.stopPropagation()` in ui/src/dialog.tsx fails
-    // nothing in this suite, which is why this case does not claim to be
-    // that check. The unit test on #83 is where that rule now lives; see the
-    // decision on #78.
+    // call. That is the decision on #78; this case is the behaviour it kept
+    // rather than the rule it retired. The rule itself is held by the unit
+    // test on #83 and, since #101, by the case below.
     await page.goto(`${origin}/r/notes/index.md`);
     await page.locator(".note-bar").waitFor();
     await page.getByRole("button", { name: "Edit" }).click();
@@ -417,6 +416,88 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     await page.locator(".cm-content").click();
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => document.querySelector(".cm-scroller").classList.contains("cm-vimMode"));
+  });
+
+  it("lets no document-level listener see Escape while the prompt is open", async () => {
+    // The premise the decision on #78 rests on, asserted rather than
+    // remembered (davison/md-notes#89). That decision retired the browser
+    // case for `stopPropagation` because the two layers the call exists to
+    // outrank — the drawer and the settings panel — cannot be under a dialog
+    // any more, and left a standing condition with no owner: rewrite the
+    // case if a document-level Escape handler is ever put back underneath
+    // one. This is that owner, and it needs no stacking a reader could not
+    // reach: the note pane already registers a capture-phase `keydown`
+    // listener on the document for Ctrl+E (ui/src/note-pane.tsx), which is
+    // live under the prompt and sees every key the document is given.
+    //
+    // So the question is asked of the application as it ships: which
+    // document- and window-level keydown listeners are *invoked* when
+    // Escape is pressed? With the prompt open the answer must be the
+    // dialog's window listener and nothing else. Remove
+    // `e.stopPropagation()` from ui/src/dialog.tsx and the note pane's
+    // listener is invoked too, and this fails.
+    const probed = await browser.newContext();
+    try {
+      const p = await probed.newPage();
+      // Wraps every keydown listener the page registers on `window` or
+      // `document`, recording which target's listener actually ran. The
+      // wrapper delegates, so the application behaves exactly as it would
+      // without it; `removeEventListener` unwraps, so a listener that is
+      // taken off really is taken off.
+      await p.addInitScript(() => {
+        window.__escapeSeen = [];
+        for (const [name, target] of [
+          ["window", window],
+          ["document", document],
+        ]) {
+          const add = EventTarget.prototype.addEventListener.bind(target);
+          const remove = EventTarget.prototype.removeEventListener.bind(target);
+          const wrapped = new Map();
+          target.addEventListener = function (type, fn, options) {
+            if (type !== "keydown" || typeof fn !== "function") return add(type, fn, options);
+            const seen = (e) => {
+              if (e.key === "Escape") window.__escapeSeen.push(name);
+              return fn(e);
+            };
+            wrapped.set(fn, seen);
+            return add(type, seen, options);
+          };
+          target.removeEventListener = function (type, fn, options) {
+            const seen = type === "keydown" && wrapped.get(fn);
+            if (!seen) return remove(type, fn, options);
+            wrapped.delete(fn);
+            return remove(type, seen, options);
+          };
+        }
+      });
+
+      await p.goto(`${origin}/r/notes/index.md`);
+      await p.locator(".note-bar").waitFor();
+
+      // The control, first: with no dialog open the key does reach a
+      // document-level listener. Without this the assertion below would
+      // pass just as well against a probe that records nothing.
+      await p.evaluate(() => (window.__escapeSeen.length = 0));
+      await p.keyboard.press("Escape");
+      assert.deepEqual(
+        await p.evaluate(() => window.__escapeSeen),
+        ["document"],
+        "with no dialog open, Escape reaches the note pane's document-level listener",
+      );
+
+      await p.getByRole("button", { name: "New note" }).click();
+      await dialogReady(p);
+      await p.evaluate(() => (window.__escapeSeen.length = 0));
+      await p.keyboard.press("Escape");
+      await waitFor(() => p.locator(".modal").count().then((n) => n === 0), "the prompt to close");
+      assert.deepEqual(
+        await p.evaluate(() => window.__escapeSeen),
+        ["window"],
+        "with the prompt open, only the dialog's own window listener sees Escape",
+      );
+    } finally {
+      await probed.close();
+    }
   });
 
   it("works in the drawer layout on a coarse pointer, with 40 px tap targets", async () => {

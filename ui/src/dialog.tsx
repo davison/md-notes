@@ -49,6 +49,16 @@ export function Dialog({
   // that still worked would be the one way out that cannot be seen to be
   // disabled — it would leave the prompt gone while the request it started
   // carried on to navigate or delete behind it.
+  //
+  // That "stopped there" is checked rather than remembered, and in two
+  // places. `ui/src/dialog.test.tsx` registers a capture-phase document
+  // listener and asserts it never fires; `ui/e2e/create-delete.test.mjs`
+  // asks the same question of the built application in Chromium — "lets no
+  // document-level listener see Escape while the prompt is open" — against
+  // the note pane's own Ctrl+E listener, which is live under the prompt.
+  // Delete the `stopPropagation` below and both fail. The decision on
+  // davison/md-notes#78 records why the browser case that came before could
+  // not hold this, and davison/md-notes#101 why the one that replaced it can.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
