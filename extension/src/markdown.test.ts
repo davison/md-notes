@@ -478,6 +478,37 @@ describe("htmlToMarkdown", () => {
     expect(htmlToMarkdown(html, PAGE)).toBe("|  |  |\n| --- | --- |\n| tall | x |\n|  | y |");
   });
 
+  it("reads the sections in the order a browser does, not the order they were written", () => {
+    // HTML 4 required `tfoot` before `tbody`, and a `thead` can be written
+    // last; `HTMLTableElement.rows` puts them head, body, foot either way.
+    const theadLast =
+      "<table><tbody><tr><td>Q1</td><td>10</td></tr></tbody>" +
+      "<thead><tr><th>Quarter</th><th>Spend</th></tr></thead></table>";
+    expect(htmlToMarkdown(theadLast, PAGE)).toBe(
+      "| Quarter | Spend |\n| --- | --- |\n| Q1 | 10 |",
+    );
+    const footMiddle =
+      "<table><thead><tr><th>Q</th><th>S</th></tr></thead>" +
+      "<tfoot><tr><td>Total</td><td>30</td></tr></tfoot>" +
+      "<tbody><tr><td>Q1</td><td>10</td></tr></tbody></table>";
+    expect(htmlToMarkdown(footMiddle, PAGE)).toBe(
+      "| Q | S |\n| --- | --- |\n| Q1 | 10 |\n| Total | 30 |",
+    );
+  });
+
+  it("writes nothing for a table whose rows have no cells", () => {
+    // A delimiter row of no columns is not a table: goldmark reads the result
+    // as a paragraph of pipes.
+    expect(htmlToMarkdown("<table><tr></tr></table>", PAGE)).toBe("");
+  });
+
+  it("keeps the first row's alignment under a synthesised header", () => {
+    const html =
+      '<table><tr><td align="right">1</td><td align="center">2</td></tr>' +
+      "<tr><td>3</td><td>4</td></tr></table>";
+    expect(htmlToMarkdown(html, PAGE)).toBe("|  |  |\n| --: | :-: |\n| 1 | 2 |\n| 3 | 4 |");
+  });
+
   it("drops script and style content", () => {
     const md = htmlToMarkdown("<div><script>alert(1)</script><style>p{}</style><p>Text</p></div>", PAGE);
     expect(md).toBe("Text");
