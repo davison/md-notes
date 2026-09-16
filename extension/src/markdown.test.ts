@@ -464,6 +464,16 @@ describe("htmlToMarkdown", () => {
     expect(md).not.toContain("<table");
   });
 
+  it("keeps a one-column headerless table a table, which is M6-R2's default", () => {
+    // The single-column case is where the layout test and the requirement's
+    // default meet: a column of values is a table, a page inside one cell is
+    // not.
+    const values = "<table><tr><td>Rows</td></tr><tr><td>Two</td></tr></table>";
+    expect(htmlToMarkdown(values, PAGE)).toBe("|  |\n| --- |\n| Rows |\n| Two |");
+    const wrapper = "<table><tr><td><p>One.</p><p>Two.</p></td></tr></table>";
+    expect(htmlToMarkdown(wrapper, PAGE)).toBe("One.\n\nTwo.");
+  });
+
   it("takes the page's own word for it when a table says role=presentation", () => {
     expect(
       htmlToMarkdown('<table role="presentation"><tr><td>Left</td><td>Right</td></tr></table>', PAGE),

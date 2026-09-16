@@ -233,11 +233,14 @@ are not made into a grid, because a grid would put the whole page in one cell:
 their contents are converted as ordinary markdown blocks instead, in the order
 the page wrote them, so a heading stays a heading, a code block keeps its line
 breaks and its language, and a real data table inside one is still a table. A
-`<table>` counts as data when it says so — a `th` cell — and otherwise when it
-has a row of two or more cells and no cell holding a code block or a heading;
-`role="presentation"` settles it the other way. (One consequence worth knowing:
-with a line-number wrapper, the numbers arrive as a small code block of their
-own above the code.)
+`<table>` counts as data when it says so — a `th` cell — and otherwise when no
+cell holds a code block or a heading; `role="presentation"` (or `role="none"`)
+settles it the other way. A table only one cell wide is judged more strictly,
+since that is the shape a page wraps an article in: it stays a table when its
+cells hold plain values, and becomes blocks when one of them holds a paragraph,
+a list or a table of its own. (One consequence worth knowing: with a
+line-number wrapper, the numbers arrive as a small code block of their own
+above the code.)
 
 Every link and image is made **absolute against the page's own URL**, so a note
 still points at something once it has left the browser. Three deliberate
