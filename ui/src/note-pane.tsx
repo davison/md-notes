@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { fetchNote, noteURL } from "./api";
 import { NoteView } from "./note-view";
-import { flushAll, getSession, hasStoredDraft, hasUnsaved, subscribeSessions, unsavedSessions, type Session, type SessionState } from "./session";
+import {
+  flushAll,
+  getSession,
+  hasStoredDraft,
+  hasUnsaved,
+  subscribeSessions,
+  takeCreated,
+  unsavedSessions,
+  type Session,
+  type SessionState,
+} from "./session";
 import { noteTabTitle, useDocumentTitle } from "./title";
 
 export type Mode = "view" | "edit";
@@ -92,9 +102,12 @@ export function NotePane({ slug, path, version = 0, line = null }: Props) {
   const session = useMemo(() => getSession(slug, path), [slug, path]);
   const state = useSession(session);
   // A note with a retained draft, in memory or left by a previous page,
-  // opens in the editor so the draft is never out of sight.
+  // opens in the editor so the draft is never out of sight; so does a note
+  // just created here, which is empty and was named in order to write in it.
   const [mode, setMode] = useState<Mode>(() =>
-    hasUnsaved(session.state) || (!session.opened && hasStoredDraft(slug, path)) ? "edit" : "view",
+    hasUnsaved(session.state) || (!session.opened && hasStoredDraft(slug, path)) || takeCreated(slug, path)
+      ? "edit"
+      : "view",
   );
 
   // Entering the editor reads or rechecks the note; leaving it saves now.

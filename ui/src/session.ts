@@ -438,6 +438,24 @@ export function getSession(slug: string, path: string): Session {
   return s;
 }
 
+/**
+ * Notes created in this page and not yet opened. A note the reader has
+ * just named is opened in the editor rather than in the rendered view — it
+ * is empty, and writing in it is the only reason it exists — and this is
+ * how the pane that mounts a moment later knows. Consumed once, so a later
+ * visit to the same note opens as any other note does.
+ */
+const created = new Set<string>();
+
+export function markCreated(slug: string, path: string) {
+  created.add(slug + "\0" + path);
+}
+
+/** Whether this note was just created here; true at most once per creation. */
+export function takeCreated(slug: string, path: string): boolean {
+  return created.delete(slug + "\0" + path);
+}
+
 /** Whether a previous page left an unsaved draft of this note in storage. */
 export function hasStoredDraft(slug: string, path: string): boolean {
   return readStored(slug + "\0" + path) !== null;
@@ -456,4 +474,5 @@ export function flushAll(keepalive = false): Promise<void> {
 /** Forgets every session; for tests. */
 export function resetSessions() {
   sessions.clear();
+  created.clear();
 }

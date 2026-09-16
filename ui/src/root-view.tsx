@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { useLocation } from "preact-iso";
-import { fetchTags, fetchTree, listRoots, type Root, type Tag, type TreeNode } from "./api";
+import { fetchTags, fetchTree, listRoots, noteURL, type Root, type Tag, type TreeNode } from "./api";
 import { Drawer, FindToggle, NavToggle, useDrawer } from "./drawer";
 import { affects, affectsTree, type LiveUpdate, useEvents } from "./events";
 import { Navigator } from "./navigator";
+import { NewNoteDialog } from "./new-note";
+import { folderOf } from "./note-name";
 import { NotePane, UnsavedDrafts, useUnsavedGuard } from "./note-pane";
 import { SearchPane } from "./search-pane";
 import { SettingsMenu } from "./settings-panel";
@@ -30,9 +32,10 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
   const [treeVersion, setTreeVersion] = useState(0);
   const [tags, setTags] = useState<Tag[] | null>(null);
   const [live, setLive] = useState<LiveUpdate | null>(null);
+  const [creating, setCreating] = useState(false);
   const drawer = useDrawer();
   const current = note ?? "";
-  const { query } = useLocation();
+  const { query, route } = useLocation();
   const line = query.l && /^\d+$/.test(query.l) ? Number(query.l) : null;
   const activeTag = query.tag ? query.tag.toLowerCase() : null;
   const only = useMemo(() => {
@@ -89,6 +92,16 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
   // the root itself when no note is open.
   useDocumentTitle(rootTabTitle(root, slug, current !== ""));
 
+  /**
+   * The navigator's selected folder, which is where a bare title becomes a
+   * note. The navigator has no folder selection of its own — its rows are
+   * links and its directories only open and close — so the folder of the
+   * open note is the one thing on screen that says where the reader is; with
+   * no note open that is the root. The prompt names the folder it will use,
+   * and a "/" in the name overrides it either way.
+   */
+  const folder = folderOf(current);
+
   useEvents(
     slug,
     (paths) => {
@@ -128,6 +141,11 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
       </header>
       <Drawer state={drawer}>
         <aside class="nav">
+          <div class="nav-actions">
+            <button type="button" class="new-note" onClick={() => setCreating(true)}>
+              New note
+            </button>
+          </div>
           <LiveUpdateNotice live={live} />
           {treeError && <p class="error">{treeError}</p>}
           {!tree && !treeError && <p class="muted">Loading…</p>}
@@ -161,6 +179,21 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
           </main>
         )}
       </div>
+      {/* Outside the drawer, which at narrow widths is a fixed, scrolling
+          box of its own: a dialog that asks about the whole application
+          belongs over it rather than inside it. */}
+      {creating && (
+        <NewNoteDialog
+          slug={slug}
+          folder={folder}
+          onClose={() => setCreating(false)}
+          onCreated={(path) => {
+            setCreating(false);
+            drawer.close();
+            route(noteURL(slug, path));
+          }}
+        />
+      )}
     </div>
   );
 }
