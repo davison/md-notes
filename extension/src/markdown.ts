@@ -247,21 +247,23 @@ function span(cell: HTMLElement, name: string): number {
  * That property is a descendant search in the DOM the tests run under, so a
  * table with a table inside a cell reports the inner table's rows as its own
  * and the clip grows rows that belong to another grid — while a browser's
- * `rows` does not. Walking the children is the same answer in both, which for
- * a converter that is tested under Node and runs in Chromium is the point.
+ * `rows` does not. That is the whole reason for walking; the walk then has to
+ * put the sections back in the order `rows` uses — header, then bodies, then
+ * footer — because HTML 4 required `tfoot` before `tbody` and a page that
+ * writes `thead` last would otherwise arrive headerless with its header row
+ * written out as data.
  */
 function rowsOf(table: HTMLElement): HTMLElement[] {
-  const rows: HTMLElement[] = [];
+  const sections: Record<string, HTMLElement[]> = { THEAD: [], BODY: [], TFOOT: [] };
   for (const child of Array.from(table.children)) {
-    if (child.nodeName === "TR") rows.push(child as HTMLElement);
-    if (child.nodeName !== "THEAD" && child.nodeName !== "TBODY" && child.nodeName !== "TFOOT") {
-      continue;
-    }
+    if (child.nodeName === "TR") sections["BODY"]!.push(child as HTMLElement);
+    const into = sections[child.nodeName] ?? (child.nodeName === "TBODY" ? sections["BODY"] : null);
+    if (into === null || into === undefined) continue;
     for (const row of Array.from(child.children)) {
-      if (row.nodeName === "TR") rows.push(row as HTMLElement);
+      if (row.nodeName === "TR") into.push(row as HTMLElement);
     }
   }
-  return rows;
+  return [...sections["THEAD"]!, ...sections["BODY"]!, ...sections["TFOOT"]!];
 }
 
 /**
@@ -522,12 +524,19 @@ export function clipTurndown(baseUrl: string): TurndownService {
       if (insideGridCell(node)) {
         return [title, nestedTable(grid)].filter((part) => part !== "").join(": ");
       }
-      if (grid.length === 0) return title === "" ? "" : `\n\n${title}\n\n`;
+      // No rows, or rows with no cells in them: there is no table to write, and
+      // a delimiter row of no columns is not one — goldmark reads the result as
+      // a paragraph of pipes.
+      if (grid.length === 0 || grid[0]!.length === 0) {
+        return title === "" ? "" : `\n\n${title}\n\n`;
+      }
       const rows = rowsOf(node);
       const headed = rows[0] !== undefined && isHeaderRow(rows[0]);
+      // A synthesised header keeps the first row's alignments: the column is
+      // the column whether or not the page wrote a heading over it.
       const header = headed
         ? grid[0]!
-        : grid[0]!.map(() => ({ text: "", border: "---" }) as Cell);
+        : grid[0]!.map((cell) => ({ text: "", border: cell.border }) as Cell);
       const body = headed ? grid.slice(1) : grid;
       const table = [
         tableLine(header),
