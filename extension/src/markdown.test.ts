@@ -332,6 +332,91 @@ describe("htmlToMarkdown", () => {
       ).toBe("```\nx\n```\n\nA trailing caption.");
   });
 
+  // A table with no header row is outside GFM, and the plugin keeps what it
+  // cannot convert — which left the page's own `<table>` HTML in the note
+  // (davison/md-notes#45). So are spans and nesting, in their own ways.
+
+  it("gives a headerless table a synthesised empty header and keeps every row", () => {
+    const html =
+      "<table>" +
+      "<tr><td>Rows</td><td>with no header</td></tr>" +
+      "<tr><td>Two</td><td>Second</td></tr>" +
+      "</table>";
+    const md = htmlToMarkdown(html, PAGE);
+    expect(md).toBe("|  |  |\n| --- | --- |\n| Rows | with no header |\n| Two | Second |");
+    expect(md).not.toContain("<table>");
+  });
+
+  it("lays a colspan and a rowspan out on a grid that still lines up", () => {
+    const html =
+      "<table>" +
+      "<thead><tr><th>Quarter</th><th>Plan</th><th>Actual</th></tr></thead>" +
+      "<tbody>" +
+      '<tr><td colspan="2">Q1 (combined)</td><td>10</td></tr>' +
+      '<tr><td rowspan="2">Q2</td><td>5</td><td>6</td></tr>' +
+      "<tr><td>7</td><td>8</td></tr>" +
+      "</tbody></table>";
+    expect(htmlToMarkdown(html, PAGE)).toBe(
+      [
+        "| Quarter | Plan | Actual |",
+        "| --- | --- | --- |",
+        "| Q1 (combined) |  | 10 |",
+        "| Q2 | 5 | 6 |",
+        "|  | 7 | 8 |",
+      ].join("\n"),
+    );
+  });
+
+  it("flattens a nested table into the cell that holds it", () => {
+    const html =
+      "<table>" +
+      "<thead><tr><th>Region</th><th>Quarters</th></tr></thead>" +
+      "<tbody><tr><td>North</td><td>" +
+      "<table><tr><td>Q1</td><td>10</td></tr><tr><td>Q2</td><td>12</td></tr></table>" +
+      "</td></tr></tbody></table>";
+    const md = htmlToMarkdown(html, PAGE);
+    expect(md).toBe(
+      "| Region | Quarters |\n| --- | --- |\n| North | Q1 / 10; Q2 / 12 |",
+    );
+    expect(md).not.toContain("<table>");
+  });
+
+  it("keeps a table's caption, as a paragraph before it", () => {
+    const html =
+      "<table><caption>Costs by layer</caption>" +
+      "<tr><td>One</td><td>Low</td></tr></table>";
+    expect(htmlToMarkdown(html, PAGE)).toBe(
+      "Costs by layer\n\n|  |  |\n| --- | --- |\n| One | Low |",
+    );
+  });
+
+  it("takes the delimiter row's alignment from the header cells", () => {
+    const html =
+      "<table><thead><tr>" +
+      '<th align="left">L</th><th align="center">C</th><th align="right">R</th>' +
+      "</tr></thead><tbody><tr><td>1</td><td>2</td><td>3</td></tr></tbody></table>";
+    expect(htmlToMarkdown(html, PAGE)).toBe(
+      "| L | C | R |\n| :-- | :-: | --: |\n| 1 | 2 | 3 |",
+    );
+  });
+
+  it("escapes a pipe in a cell and flattens a cell written as two blocks", () => {
+    const html =
+      "<table><thead><tr><th>Pattern</th><th>Notes</th></tr></thead>" +
+      "<tbody><tr><td>a|b</td><td><p>One.</p><p>Two.</p></td></tr></tbody></table>";
+    expect(htmlToMarkdown(html, PAGE)).toBe(
+      "| Pattern | Notes |\n| --- | --- |\n| a\\|b | One. Two. |",
+    );
+  });
+
+  it("converts the cells of a headerless table, links and all", () => {
+    const html =
+      '<table><tr><td><a href="/x">x</a></td><td><strong>b</strong></td></tr></table>';
+    expect(htmlToMarkdown(html, PAGE)).toBe(
+      "|  |  |\n| --- | --- |\n| [x](https://example.com/x) | **b** |",
+    );
+  });
+
   it("drops script and style content", () => {
     const md = htmlToMarkdown("<div><script>alert(1)</script><style>p{}</style><p>Text</p></div>", PAGE);
     expect(md).toBe("Text");
