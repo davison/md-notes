@@ -36,6 +36,12 @@ var ErrOutside = errors.New("path is outside the root")
 // ErrNotDir is returned when a registered path is not a directory.
 var ErrNotDir = errors.New("not a directory")
 
+// ErrTooManyLinks is returned by the lexical walk below when a chain of
+// symlinks is longer than it will follow. It is deliberately not silence:
+// a walk that gave up and answered "does not leave the root" would hand
+// the caller the wrong refusal without anyone being able to tell.
+var ErrTooManyLinks = errors.New("too many levels of symbolic links")
+
 // Registry holds the roots. It is safe for concurrent use.
 type Registry struct {
 	mu        sync.Mutex
@@ -307,6 +313,15 @@ func (root Root) Resolve(rel string) (string, error) {
 	}
 	real, err := filepath.EvalSymlinks(filepath.Join(root.Path, cleaned))
 	if err != nil {
+		// EvalSymlinks gives up on a chain longer than its own budget
+		// with an error it makes itself: no errno to match on and no
+		// exported sentinel, so the one message it can carry is matched
+		// here and given a name a caller can test for. Such a path names
+		// no file anything can open, and it reached the error mapping
+		// unrecognised — a 500 — before this.
+		if strings.Contains(err.Error(), "too many links") {
+			return "", ErrTooManyLinks
+		}
 		return "", err
 	}
 	if !within(root.real, real) {
@@ -347,8 +362,14 @@ func (root Root) OpenDir(rel string) (*os.Root, string, error) {
 		// A component that is a symlink with no target has no real path
 		// for Resolve to call anything but missing. Where its chain
 		// leaves the root, the honest answer is the escape it is.
-		if errors.Is(err, os.ErrNotExist) && root.DanglingEscape(rel) {
-			return nil, "", ErrOutside
+		if errors.Is(err, os.ErrNotExist) {
+			escaped, chainErr := root.DanglingEscape(rel)
+			if chainErr != nil {
+				return nil, "", chainErr
+			}
+			if escaped {
+				return nil, "", ErrOutside
+			}
 		}
 		return nil, "", err
 	}
@@ -398,8 +419,14 @@ func (root Root) EnsureDir(dir string) error {
 		// A component that is a symlink with no target is not a directory
 		// to make: where its chain leaves the root, the walk must stop
 		// here rather than climb past it and hand the name to MkdirAll.
-		if errors.Is(err, os.ErrNotExist) && root.DanglingEscape(ancestor) {
-			return ErrOutside
+		if errors.Is(err, os.ErrNotExist) {
+			escaped, chainErr := root.DanglingEscape(ancestor)
+			if chainErr != nil {
+				return chainErr
+			}
+			if escaped {
+				return ErrOutside
+			}
 		}
 		parent := filepath.Dir(ancestor)
 		if parent == ancestor {
@@ -440,27 +467,42 @@ func (root Root) Escapes(realDir, target string) bool {
 	return !within(root.real, filepath.Clean(target))
 }
 
-// maxLinkHops bounds the walk below the way the kernel bounds its own
-// resolution: a chain of links that do not exist can still be circular,
-// and diagnosis has to end.
-const maxLinkHops = 16
+// maxLinkHops is as many links as the resolver behind Resolve will itself
+// follow. filepath.EvalSymlinks walks a chain hop by hop in user space,
+// with a budget of 255, so a *dangling* chain of up to 255 links is
+// reported as missing — which is what sends a caller to the walk below —
+// and a chain one link longer is refused by EvalSymlinks before the walk
+// is ever consulted. The kernel's own budget of 40 (ELOOP at the 41st)
+// never comes into a dangling chain at all, because EvalSymlinks never
+// asks it to resolve more than one hop at a time; measured on this
+// machine, a dangling chain of 255 links answers ENOENT and one of 256
+// answers "too many links". Following the same 255 means every chain that
+// can reach the walk is answered by it, and a circular one still ends.
+const maxLinkHops = 255
 
 // EscapesChain reports whether the symlink named base inside realDir leads
 // out of the root. Escapes answers for the one target a link names;
 // this follows the chain of them, because a first hop that stays inside
 // the root can still name a second that does not. Each hop is read
-// through a handle on the root, so the walk cannot be led outside it, and
-// like Escapes it is lexical: the links it is asked about are the ones
-// with no target for Resolve to evaluate. Diagnosis for an operation
-// being refused either way, never the decision to refuse one.
-func (root Root) EscapesChain(realDir, base string) bool {
+// through a handle opened here on the root, rather than through the
+// caller's handle on the note's own parent directory: a chain's second
+// hop may name anything anywhere in the root, which a handle on one
+// directory cannot read. That handle confines the walk exactly as the
+// caller's does — (*os.Root).Readlink refuses a name that leaves the root
+// — and the walk only ever picks which refusal an already-refused
+// operation is given, so a link swapped in between the two handles costs
+// the caller a different error code and nothing else. Like Escapes it is
+// lexical: the links it is asked about are the ones with no target for
+// Resolve to evaluate. ErrTooManyLinks says the chain is longer than the
+// walk will follow, so that giving up is never mistaken for an answer.
+func (root Root) EscapesChain(realDir, base string) (bool, error) {
 	handle, err := os.OpenRoot(root.real)
 	if err != nil {
-		return false
+		return false, err
 	}
 	defer handle.Close()
-	_, escaped := root.followLinks(handle, filepath.Join(realDir, base))
-	return escaped
+	_, escaped, err := root.followLinks(handle, filepath.Join(realDir, base))
+	return escaped, err
 }
 
 // DanglingEscape asks the same question of a whole path, component by
@@ -468,14 +510,14 @@ func (root Root) EscapesChain(realDir, base string) bool {
 // the last name. It answers false for every path that does not contain
 // such a link — including one that is merely missing — so a caller reaches
 // for it only once Resolve has already refused the path.
-func (root Root) DanglingEscape(rel string) bool {
+func (root Root) DanglingEscape(rel string) (bool, error) {
 	cleaned, err := root.Relative(rel)
 	if err != nil {
-		return false
+		return false, nil
 	}
 	handle, err := os.OpenRoot(root.real)
 	if err != nil {
-		return false
+		return false, err
 	}
 	defer handle.Close()
 	at := root.real
@@ -485,40 +527,45 @@ func (root Root) DanglingEscape(rel string) bool {
 		}
 		next := filepath.Join(at, part)
 		if !within(root.real, next) {
-			return false
+			return false, nil
 		}
-		end, escaped := root.followLinks(handle, next)
-		if escaped {
-			return true
+		end, escaped, err := root.followLinks(handle, next)
+		if escaped || err != nil {
+			return escaped, err
 		}
 		at = end
 	}
-	return false
+	return false, nil
 }
 
 // followLinks walks the chain of symlinks starting at abs, an absolute
 // path inside the root, and returns the path it ends at — abs itself when
 // it is not a link, or not one a handle on the root will read. escaped is
 // true as soon as a hop points out of the root, and the walk stops there.
-func (root Root) followLinks(handle *os.Root, abs string) (end string, escaped bool) {
+// A chain longer than maxLinkHops ends the walk with ErrTooManyLinks: no
+// path that reaches here can be that long, because the resolver that sent
+// the caller here follows the same number and refuses anything longer, but
+// a bound that is reached in silence is a wrong answer waiting to happen,
+// and it is what ends a circular chain.
+func (root Root) followLinks(handle *os.Root, abs string) (end string, escaped bool, err error) {
 	for hop := 0; hop < maxLinkHops; hop++ {
 		name, err := filepath.Rel(root.real, abs)
 		if err != nil {
-			return abs, false
+			return abs, false, nil
 		}
 		target, err := handle.Readlink(name)
 		if err != nil {
-			return abs, false
+			return abs, false, nil
 		}
 		if root.Escapes(filepath.Dir(abs), target) {
-			return abs, true
+			return abs, true, nil
 		}
 		if !filepath.IsAbs(target) {
 			target = filepath.Join(filepath.Dir(abs), target)
 		}
 		abs = filepath.Clean(target)
 	}
-	return abs, false
+	return abs, false, ErrTooManyLinks
 }
 
 // within reports whether path is root or lies beneath it. Both must be

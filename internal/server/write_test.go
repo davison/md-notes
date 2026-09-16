@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +17,24 @@ import (
 // belongs to the filesystem and not to the daemon, which is why the test
 // provokes the kernel rather than asserting a length of its own.
 var tooLongName = strings.Repeat("a", 300) + ".md"
+
+// danglingChain makes n links under dir, each naming the next, the last
+// naming a target outside the root that does not exist. It returns the
+// name of the first link. Only the whole chain says where it ends, so a
+// walk that stops short of n answers the wrong code.
+func danglingChain(t *testing.T, dir, prefix, outside string, n int) string {
+	t.Helper()
+	for i := 1; i < n; i++ {
+		link := filepath.Join(dir, fmt.Sprintf("%s-%d.md", prefix, i))
+		if err := os.Symlink(fmt.Sprintf("%s-%d.md", prefix, i+1), link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, fmt.Sprintf("%s-%d.md", prefix, n))); err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("%s-1.md", prefix)
+}
 
 // created decodes the 201 body of a create.
 type createdBody struct {
@@ -176,6 +195,16 @@ func TestCreateNoteRefusals(t *testing.T) {
 	if err := os.Symlink(filepath.Join(base, "gone.md"), filepath.Join(notes, "hop.md")); err != nil {
 		t.Fatal(err)
 	}
+	// Past the walk's old bound of 16 and past the kernel's own 40: a
+	// dangling chain is resolved hop by hop in user space, so chains this
+	// long still arrive here as missing paths and the walk has to say
+	// where they end. 255 is as far as the resolver itself goes; one link
+	// further and the resolver refuses the path before the walk sees it,
+	// and the name is simply held by something nothing can follow.
+	longOut := filepath.Join(base, "gone.md")
+	chain41 := danglingChain(t, notes, "hop41", longOut, 41)
+	chain255 := danglingChain(t, notes, "hop255", longOut, 255)
+	chain256 := danglingChain(t, notes, "hop256", longOut, 256)
 	before := listing(t, base)
 
 	for _, c := range []struct {
@@ -200,6 +229,9 @@ func TestCreateNoteRefusals(t *testing.T) {
 		{"a dangling link out of the root", "/api/r/notes/source/dangling.md", `{"source":"x"}`, 403, "outside_root"},
 		{"a dangling directory link out of the root", "/api/r/notes/source/out-dir/new.md", `{"source":"x"}`, 403, "outside_root"},
 		{"a dangling two-hop chain out of the root", "/api/r/notes/source/two-hop.md", `{"source":"x"}`, 403, "outside_root"},
+		{"a dangling 41-link chain out of the root", "/api/r/notes/source/" + chain41, `{"source":"x"}`, 403, "outside_root"},
+		{"a dangling 255-link chain out of the root", "/api/r/notes/source/" + chain255, `{"source":"x"}`, 403, "outside_root"},
+		{"a chain longer than the resolver follows", "/api/r/notes/source/" + chain256, `{"source":"x"}`, 409, "exists"},
 		{"a name the filesystem calls too long", "/api/r/notes/source/" + tooLongName, `{"source":"x"}`, 400, "invalid_path"},
 		{"a component that is a file", "/api/r/notes/source/hello.md/child.md", `{"source":"x"}`, 404, "not_found"},
 		{"a folder under a file", "/api/r/notes/source/hello.md/deeper/child.md", `{"source":"x"}`, 404, "not_found"},
@@ -345,6 +377,16 @@ func TestDeleteNoteRefusals(t *testing.T) {
 	if err := os.Symlink(filepath.Join(base, "gone.md"), filepath.Join(notes, "hop.md")); err != nil {
 		t.Fatal(err)
 	}
+	// Past the walk's old bound of 16 and past the kernel's own 40: a
+	// dangling chain is resolved hop by hop in user space, so chains this
+	// long still arrive here as missing paths and the walk has to say
+	// where they end. 255 is as far as the resolver itself goes; one link
+	// further and the resolver refuses the path before the walk sees it,
+	// and the name is simply held by something nothing can follow.
+	longOut := filepath.Join(base, "gone.md")
+	chain41 := danglingChain(t, notes, "hop41", longOut, 41)
+	chain255 := danglingChain(t, notes, "hop255", longOut, 255)
+	chain256 := danglingChain(t, notes, "hop256", longOut, 256)
 	before := listing(t, base)
 
 	for _, c := range []struct {
@@ -367,6 +409,9 @@ func TestDeleteNoteRefusals(t *testing.T) {
 		{"a dangling link inside the root", "/api/r/notes/source/stale.md", 422, "unsupported_source"},
 		{"a dangling directory link out of the root", "/api/r/notes/source/out-dir/note.md", 403, "outside_root"},
 		{"a dangling two-hop chain out of the root", "/api/r/notes/source/two-hop.md", 403, "outside_root"},
+		{"a dangling 41-link chain out of the root", "/api/r/notes/source/" + chain41, 403, "outside_root"},
+		{"a dangling 255-link chain out of the root", "/api/r/notes/source/" + chain255, 403, "outside_root"},
+		{"a chain longer than the resolver follows", "/api/r/notes/source/" + chain256, 422, "unsupported_source"},
 		{"a name the filesystem calls too long", "/api/r/notes/source/" + tooLongName, 400, "invalid_path"},
 		{"a component that is a file", "/api/r/notes/source/hello.md/child.md", 404, "not_found"},
 		{"an absent note", "/api/r/notes/source/absent.md", 404, "not_found"},
