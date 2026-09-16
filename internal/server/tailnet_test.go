@@ -568,7 +568,8 @@ func TestTailnetNarrowsWhatTheCredentialReaches(t *testing.T) {
 	// allow-list, so nothing new is reachable off the machine by default.
 	for _, c := range []struct{ method, path string }{
 		{"POST", "/api/whatever"},
-		{"DELETE", "/api/r/notes/source/hello.md"},
+		{"DELETE", "/api/r/notes/tree"},
+		{"POST", "/api/r/notes/note/hello.md"},
 		{"PUT", "/api/r/notes/tree"},
 		{"POST", "/api/r/notes/search"},
 		{"POST", "/api/roots/"},
@@ -588,6 +589,72 @@ func TestTailnetNarrowsWhatTheCredentialReaches(t *testing.T) {
 	if resp := do(t, ts, "POST", "/api/clip", clipBody("Local", "# x\n"),
 		bearerHeader(tok, "Content-Type", "application/json")); resp.StatusCode != http.StatusCreated {
 		t.Errorf("clip on loopback: status %d, want 201", resp.StatusCode)
+	}
+}
+
+// Creating and deleting a note is admitted under the tailnet name on the
+// same proof as a source save — the header for an API client, the cookie
+// for a browser — while registering a root and clipping stay on the
+// machine. M5-R2 and M5-R3.
+func TestTailnetAdmitsCreateAndDelete(t *testing.T) {
+	ts, base := newTailnetServer(t)
+	tok := daemonToken(t, base)
+	cookie := login(t, ts, base)
+
+	for _, c := range []struct {
+		name, path string
+		hdr        map[string]string
+	}{
+		{"the token", "/api/r/notes/source/remote-token.md",
+			bearerHeader(tok, "Content-Type", "application/json")},
+		{"the session", "/api/r/notes/source/remote-cookie.md",
+			map[string]string{"Cookie": cookie, "Content-Type": "application/json", "Origin": tailnetOrigin}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			resp := tdo(t, ts, "POST", c.path, `{"source":"# remote\n"}`, c.hdr)
+			if resp.StatusCode != http.StatusCreated {
+				t.Fatalf("create: status %d, want 201: %s", resp.StatusCode, readAll(t, resp.Body))
+			}
+			name := strings.TrimPrefix(c.path, "/api/r/notes/source/")
+			if _, err := os.Stat(filepath.Join(base, "notes", name)); err != nil {
+				t.Fatal(err)
+			}
+			hdr := map[string]string{}
+			for k, v := range c.hdr {
+				if k != "Content-Type" {
+					hdr[k] = v
+				}
+			}
+			resp = tdo(t, ts, "DELETE", c.path, "", hdr)
+			if resp.StatusCode != http.StatusNoContent {
+				t.Fatalf("delete: status %d, want 204: %s", resp.StatusCode, readAll(t, resp.Body))
+			}
+			if _, err := os.Stat(filepath.Join(base, "notes", name)); !os.IsNotExist(err) {
+				t.Fatalf("file survived a tailnet delete: %v", err)
+			}
+		})
+	}
+
+	// Proving nothing still proves nothing: the two verbs are behind the
+	// same challenge as everything else under the name.
+	for _, method := range []string{"POST", "DELETE"} {
+		resp := tdo(t, ts, method, "/api/r/notes/source/hello.md", "", nil)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s with no credential: status %d, want 401", method, resp.StatusCode)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(base, "notes", "hello.md")); err != nil {
+		t.Fatalf("an unauthenticated delete removed the note: %v", err)
+	}
+
+	// A browser without the token is still held to the Origin rule.
+	resp := tdo(t, ts, "DELETE", "/api/r/notes/source/hello.md", "",
+		map[string]string{"Cookie": cookie, "Origin": "https://evil.example"})
+	if resp.StatusCode != http.StatusForbidden || guardCode(t, resp) != "cross_origin" {
+		t.Errorf("cross-origin delete: status %d", resp.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(base, "notes", "hello.md")); err != nil {
+		t.Fatalf("a cross-origin delete removed the note: %v", err)
 	}
 }
 
