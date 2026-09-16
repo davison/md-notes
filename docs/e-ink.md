@@ -42,11 +42,23 @@ effect at once.
 
 Tap targets do not need a setting. The application's own controls — tree
 entries, tags and the clear link, search hits and the search box, the drawer's
-tabs, the top bar's buttons, the note bar's, and the frontmatter disclosure —
-are at least 40 pixels tall wherever the browser reports a touch or stylus
-pointer, including the wide layout you get by zooming out. A mouse keeps the
-compact rows. Links *inside* a note are the exception, and have to be: their
-size is the line of prose they sit in, and a 40-pixel line is not prose.
+tabs, the top bar's buttons including **New note**, the note bar's including
+**Delete**, the frontmatter disclosure, both dialogs' buttons and the create
+prompt's name box — are at least 40 pixels tall wherever the browser
+reports a touch or stylus pointer, including the wide layout you get by zooming
+out. A mouse keeps the compact rows. Links *inside* a note are the exception,
+and have to be: their size is the line of prose they sit in, and a 40-pixel line
+is not prose.
+
+Creating and deleting a note are stylus-sized for the same reason. **New note**
+sits in the top bar at every width, so it is reachable without scrolling a long
+tree, and both prompts are the application's own dialogs rather than the
+browser's — which means they take the light override and the no-animation
+setting like everything else on the page, where `window.prompt` and
+`window.confirm` would not
+([#77](https://github.com/davison/md-notes/issues/77#issuecomment-5701434444)).
+[Creating and deleting a
+note](introduction.md#creating-and-deleting-a-note) describes both.
 
 ## Route one: the browser, over the tailnet
 
@@ -118,6 +130,12 @@ light override winning over that preference and taking the code colours with it,
 no transition and no flash under the no-animation setting, every tap target at
 40 pixels or more, and the editor still usable when the layout viewport shrinks
 by the height of an on-screen keyboard.
+
+Since milestone five that is no longer a measurement taken once: the `ui/e2e`
+suite re-measures the light override, the suppressed flash and every named tap
+target — the create control and the dialogs' own controls included — on five
+coarse-pointer profiles on every push, as a CI job of its own. [What holds these
+numbers](introduction.md#what-holds-these-numbers) says what it covers.
 
 What has not been checked is the tablet. Nothing here has run on a Boox, and the
 things that only hardware can answer are: **what viewport NeoBrowser actually

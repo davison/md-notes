@@ -22,9 +22,11 @@ do a few things well and nothing else:
 
 The design as a whole. Milestone one built the daemon and the reading half of
 the web UI, milestone two the editor, milestone three the browser extension
-with the authentication it needed, and milestone four made the result usable
-on the devices it is read from and cheap on the wire; the inbox is still
-ahead.
+with the authentication it needed, milestone four made the result usable on
+the devices it is read from and cheap on the wire, and milestone five made
+the app the only tool the notes need day to day — notes are created and
+deleted in it, and a browser-level suite holds the result in CI; the inbox is
+still ahead.
 
 - **Daemon.** One static Go binary. Serves the web UI, watches one or more
   root folders, renders markdown server-side, shells out to ripgrep for
@@ -33,10 +35,15 @@ ahead.
 - **Web UI.** TypeScript. Navigator, rendered note, search panel, and a
   CodeMirror 6 editor with vim keybindings behind a single toggle. Three panes
   on a wide screen; below 960 pixels the note takes the whole viewport under a
-  compact top bar and the two side panes become the tabs of one drawer. The
-  browser tab names the note you have open. The bundle is embedded in the
-  binary, served compressed and cached, and does not carry the editor to a
-  page that is only reading.
+  compact top bar and the two side panes become the tabs of one drawer. Notes
+  are created from the top bar behind a name prompt and deleted from the note
+  bar behind a confirmation. The browser tab names the note you have open. The
+  bundle is embedded in the binary, served compressed and cached, and does not
+  carry the editor to a page that is only reading. A Playwright suite under
+  `ui/e2e` drives the built daemon in a real browser as a CI job of its own,
+  so the layout, the display settings, the tap targets, the asset cache and
+  the create and delete flows are held by a check rather than by a
+  measurement in a comment.
 - **Browser extension.** Chromium Manifest V3. Clips a readable page or a
   selection as markdown and posts it to the daemon. Also intercepts local
   markdown file URLs so they open in the app. See
@@ -141,8 +148,17 @@ the browser tab carries the same news as a leading `•` for unsaved work or
 `⚠` for a conflict.
 A refused save keeps the draft and offers a retry; a note changed or
 deleted on disk under an unsaved draft raises a banner that keeps the
-draft until you say what to do with it. Notes are edited in place:
-creating, renaming and deleting them is still a job for other tools.
+draft until you say what to do with it.
+
+Notes are created and deleted from the app as well as edited in it. **New
+note**, in the top bar beside the home link, asks for a title or a path
+before anything is written: a bare title becomes `<title>.md` in the folder
+of the note you are reading, a name containing `/` is a path under the root,
+and the new note opens in the editor. **Delete**, at the right-hand end of
+the note bar, removes the open note only after a confirmation naming the
+file; cancelling removes nothing. Both reach the navigator through the same
+change stream as an edit made by any other tool. Renaming a note is still a
+job for other tools.
 [docs/introduction.md](docs/introduction.md#editing) has the detail.
 
 Changes on disk show up in the browser without a refresh: the daemon watches
@@ -268,7 +284,12 @@ the browser tab title, code colours that are readable in the dark scheme, an
 embedded bundle that is compressed, cached and no longer carries the editor
 to a reader, the extension against a tailnet daemon URL, the display settings
 an e-ink tablet needs, and [docs/sync.md](docs/sync.md), the account of how
-the notes reach every device.
+the notes reach every device. Milestone five is done too: a note is created
+and deleted from the app rather than from a shell or a file manager, with
+`POST` and `DELETE` on the note's own source resource behind the same
+confinement as the save; the `internal/watch` timing tests are driven by an
+injected clock instead of the wall clock; and the browser-level checks that
+lived in session scratchpads are a `ui/e2e` suite running in CI.
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
 today, [docs/extension.md](docs/extension.md) the extension,
 [docs/e-ink.md](docs/e-ink.md) the e-ink tablet, and the milestone
@@ -276,7 +297,8 @@ records
 ([one](docs/milestones/1-daemon-and-rendered-viewer.md),
 [two](docs/milestones/2-editor-autosave-and-live-update.md),
 [three](docs/milestones/3-clipper-authentication-and-tailnet.md),
-[four](docs/milestones/4-polish-phone-e-ink-and-the-bundle.md))
+[four](docs/milestones/4-polish-phone-e-ink-and-the-bundle.md),
+[five](docs/milestones/5-create-and-delete-notes.md))
 record the decisions behind them. The inbox, which turns URLs shared from a
 phone into clips, follows in a later milestone. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which

@@ -2,13 +2,14 @@
 
 md-notes is a local service that turns folders of markdown files into a notes
 application in the browser. This page describes what exists and works today, at the
-end of [milestone four](milestones/4-polish-phone-e-ink-and-the-bundle.md): the
+end of [milestone five](milestones/5-create-and-delete-notes.md): the
 daemon and the rendered viewer from
 [milestone one](milestones/1-daemon-and-rendered-viewer.md), the editor from
 [milestone two](milestones/2-editor-autosave-and-live-update.md), the browser half
-from [milestone three](milestones/3-clipper-authentication-and-tailnet.md), and the
-polish milestone four put on all three. Notes are edited in place; creating,
-renaming and deleting them is still done with other tools.
+from [milestone three](milestones/3-clipper-authentication-and-tailnet.md), the
+polish milestone four put on all three, and the create and delete verbs milestone
+five added to them. Notes are created, edited and deleted in the app; renaming one
+is still done with other tools.
 
 Milestone four is the one whose subject is how the rest of it is read rather than
 what it can do. The web UI works on a phone, where the note takes the whole viewport
@@ -24,6 +25,18 @@ extension works against a daemon reached over the tailnet
 ([The browser extension](extension.md)); and
 [Sync and offline editing](sync.md) is the page that says how the notes reach every
 device.
+
+Milestone five made the application the only tool the notes need day to day. A note
+is created from the top bar behind a name prompt and deleted from the note bar
+behind a confirmation ([Creating and deleting a note](#creating-and-deleting-a-note)),
+over two new methods on the note's own source resource
+([The HTTP API](#the-http-api)) that carry the same confinement, the same error
+envelope and the same tailnet rule as the save that was already there. The
+milestone also hardened the gate the rest of this is merged through: the debounce
+tests in `internal/watch` are driven by a clock the test moves rather than by the
+wall clock, and the browser-level checks that used to live in a session's scratchpad
+are a suite in the repository that CI runs
+([What holds these numbers](#what-holds-these-numbers)).
 
 The browser half is a Chromium extension that clips a readable page or a selection
 into the notes root as markdown, and opens a local markdown file in the app instead
@@ -130,6 +143,8 @@ configured `tailnet_host`, to an authenticated caller; `POST /api/roots` and
 | `GET /api/r/{slug}/note/{path...}` | A rendered note as `{path, title, frontmatter, html}`. Non-markdown paths are 404 here |
 | `GET /api/r/{slug}/source/{path...}` | Existing UTF-8 markdown as `{source, revision}`; see [conditional saves](#conditional-saves) |
 | `PUT /api/r/{slug}/source/{path...}` | Conditionally saves JSON `{source, revision}` and returns the saved `{source, revision}` |
+| `POST /api/r/{slug}/source/{path...}` | Creates the note at `{path...}`, never overwriting. Optional JSON body `{"source": "..."}`; no body at all creates an empty note. `201` with a `Location` header and `{root, path, source, revision}`. Missing parent directories are created. See [Creating and deleting notes](#creating-and-deleting-notes) |
+| `DELETE /api/r/{slug}/source/{path...}` | Removes exactly one regular markdown file inside the root. `204 No Content`. See [Creating and deleting notes](#creating-and-deleting-notes) |
 | `GET /api/r/{slug}/raw/{path...}` | File bytes, for images and other assets. Served with `Content-Security-Policy: sandbox` and `X-Content-Type-Options: nosniff` |
 | `GET /api/r/{slug}/search?q=` | `{hits, truncated}`; each hit is a path, line number, matching text with match offsets, and the lines either side |
 | `GET /api/r/{slug}/tags` | `{tags: [{name, count, notes}]}`, sorted by count then name |
@@ -332,6 +347,57 @@ ownership, ACLs, extended attributes and other extended metadata are not preserv
 The temporary file is synced before rename; the parent directory is not synced, so
 the API does not promise rename durability across power loss.
 
+### Creating and deleting notes
+
+`POST` and `DELETE` on the note's own source resource. They are two more methods on
+the URL `GET` reads and `PUT` replaces, rather than a new noun, so there is one path
+grammar, one confinement check and one error envelope for all four
+([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5700721960)). Both
+work in any registered root — the notes root and every folder added with `mdn open`
+— on the same terms as the save, which has always written to all of them
+([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5700724927)).
+
+`POST` takes the note's whole path under the root. It refuses to overwrite: the file
+is opened `O_CREATE|O_EXCL` through a handle on the resolved parent directory, so a
+name already held by a file, a directory or a link is refused rather than replaced.
+Parent directories that do not exist are created, and a directory that could only be
+made outside the root is refused as such. The `revision` in the `201` body is the one
+a first save is checked against, so a client can open the new note in an editor
+without a second request, and `path` is the daemon's cleaned form of the path — which
+is what the client should route to, not the string it sent.
+
+`DELETE` removes one regular markdown file and nothing else. The name is confined
+lexically, the parent is resolved, and the final component is `Lstat`ed — not
+`Stat`ed — through a handle on that parent, so a symlink is refused rather than
+followed and the file that goes is always the file the caller named. Directories,
+symlinks, non-markdown targets and read-only files are all refused, and `RemoveAll`
+appears nowhere in the path.
+
+Both refuse with the save's `{code, error}` body
+([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5701086842)):
+
+| Condition | Status | Code |
+|-----------|--------|------|
+| Empty path (`POST /api/r/{slug}/source/`) | 400 | `invalid_path` |
+| Any path component begins with `.`, including a file called `.md` | 400 | `invalid_path` |
+| A control character anywhere in the path | 400 | `invalid_path` |
+| The extension is not `.md` or `.markdown` | 404 | `not_markdown` |
+| A path component exists but is not a directory (`hello.md/child.md`) | 404 | `not_found` |
+| The note or the root does not exist (delete) | 404 | `not_found` |
+| The path resolves outside the root, lexically or through a symlink — including a dangling symlink whose target is outside | 403 | `outside_root` |
+| The file is read-only (delete) | 403 | `permission_denied` |
+| The target is a directory or a symlink inside the root (delete) | 422 | `unsupported_source` |
+| The name is already taken, by a file, a directory or a link inside the root (create) | 409 | `exists` |
+
+Creating and deleting a note reaches every open page for that root through the
+[events stream](#live-updates) as an ordinary change batch, so a navigator needs no
+special handling for either.
+
+The daemon takes a path and not a title plus a folder: the rule that turns a typed
+title into `<title>.md` in a folder belongs to the client, and the daemon's job is to
+refuse every unsafe name it is handed. [Creating and deleting a
+note](#creating-and-deleting-a-note) is what the web UI composes with it.
+
 ### Clipping a web page
 
 `POST /api/clip` creates a note from a web clipping. It is the only endpoint that
@@ -468,14 +534,28 @@ what is on screen; [The browser tab](#the-browser-tab) below says how. The panes
   application calls its own classes. Relative links to markdown become in-app
   navigation; relative images and other assets are served from the raw endpoint; a
   link whose target escapes the root keeps its text but loses its destination and
-  says why. A bar above the note carries the mode, the save state, and `Ctrl+E`,
-  which flips the pane to the editor and back — see [Editing](#editing).
+  says why. A bar above the note carries the mode, the save state, `Ctrl+E`, which
+  flips the pane to the editor and back, and **Delete** at its right-hand end — see
+  [Editing](#editing). The delete button's place is fixed: it is the far end of the
+  bar from the mode toggle, in the rendered view and in the editor alike, and the
+  `margin-left: auto` that puts it there is a property of the button rather than of
+  the save status beside it, which is absent on a note that has only been read
+  ([#85](https://github.com/davison/md-notes/issues/85#issuecomment-5702098868)).
 - **Search and tags.** A debounced search box whose results group by file, showing
   the matching line with the match emphasised and a line of context either side.
   Selecting a hit opens the note with `?l=<line>` and scrolls to the block at that
   line, flashing it. Below it, the tag panel lists each tag with its count; selecting
   one sets `?tag=` and prunes the navigator to the notes carrying it, with a link to
   clear the filter.
+
+Above the panes is one top bar at every width, carrying — left to right — the `mdn`
+home link, **New note**, the root's slug and its path, and at the right the list of
+other notes holding unsaved work, the search toggle and the **gear** for
+[Display settings](#display-settings). The
+create control is there rather than above the navigator's tree because a long tree
+scrolled it out of sight, and it stays there below the narrow breakpoint as well,
+where the stylesheet drops its label and leaves a square `+` beside the burger and
+the magnifier ([#85](https://github.com/davison/md-notes/issues/85#issuecomment-5702099098)).
 
 The page follows the browser's own light or dark preference — unless the light-theme
 override under [Display settings](#display-settings) is on — and so does the code in
@@ -558,6 +638,13 @@ rendered view and in the editor alike. The two side panes move into one drawer:
   much of its name as fits.
 - The [live update](#live-update) notice, which at wide widths sits at the top of the
   navigator, moves above the note here, where it is read without opening the drawer.
+- **New note** stays in the top bar at these widths, as a square `+` between the
+  burger and the root's name. It does not move into the drawer — the drawer is where
+  a long list scrolled it out of sight in the first place. The drawer is modal, so
+  while it is open the create control is behind its backdrop and outside its focus
+  trap, like the magnifier and the gear: creating a note at these widths is "close
+  the drawer, tap `+`", not "tap `+` from inside the drawer"
+  ([#85](https://github.com/davison/md-notes/issues/85#issuecomment-5702099098)).
 
 Search is a literal, case-insensitive phrase — what you type is what is matched.
 Tags come from a frontmatter `tags` value (a list, or one string split on commas and
@@ -586,7 +673,8 @@ Tap targets are not a setting. Wherever the browser reports a coarse pointer or 
 hover — a phone, a tablet, a stylus — or the window is below the narrow breakpoint,
 every row and control that is tapped is at least 40 pixels tall: tree entries, tags
 and the clear link, search hits and the search box, the drawer's tabs, the top bar's
-buttons, the note bar's, and the frontmatter disclosure. Links *inside* a note are the
+buttons including **New note**, the note bar's including **Delete**, the frontmatter
+disclosure, both dialogs' buttons, and the create prompt's name box. Links *inside* a note are the
 exception, and have to be — their size is the line of prose they sit in. Under a mouse
 at a wide width the rows keep their compact density.
 
@@ -597,19 +685,25 @@ that device end to end, including the two ways to reach your notes from one.
 ### What holds these numbers
 
 The figures in the two sections above are not only documented, they are measured on
-every push. `make e2e` runs a suite under `ui/e2e` in headless Chromium against the
-built daemon on a temporary root, and CI runs it as a job of its own: the pane
-rectangles at four phone profiles and a desktop control, the 960-pixel breakpoint
-walked at 959, 960 and 961, the drawer's geometry and all four of its close paths,
-the tag chip, the 40-pixel targets under a coarse pointer with the mouse-driven
-window's density left alone, the light override applied with the application bundle
-blocked — so nothing but the inline boot script can have applied it — the flash
-suppressed by the setting and by `prefers-reduced-motion`, and a second page load
-that fetches no asset bytes. The same suite drives creating and deleting a note end
-to end, in the wide layout and in the drawer: a name typed into the prompt, a refusal
-corrected in place, the new note reaching a second tab through the events stream, and
-a deletion that a cancelled confirmation does not perform. It needs Chromium, which
-is a separate download; see the README's **Building** section.
+every push. `make e2e` runs a suite of 35 checks under `ui/e2e` in headless Chromium
+against the built daemon on a temporary root, and CI runs it as a job of its own: the
+pane rectangles at four phone profiles and a desktop control, the 960-pixel
+breakpoint walked at 959, 960 and 961, the drawer's geometry and all four of its
+close paths, the tag chip, the 40-pixel targets under a coarse pointer with the
+mouse-driven window's density left alone, the light override applied with the
+application bundle blocked — so nothing but the inline boot script can have applied
+it — the flash suppressed by the setting and by `prefers-reduced-motion`, and a
+second page load that fetches no asset bytes. The same suite drives creating and
+deleting a note end to end, in the wide layout and in the drawer layout: a name typed
+into the prompt, a bare title landing in the open note's folder, a refusal corrected
+in place, the new note reaching a second tab through the events stream, the delete
+button holding one place across an edit, and a deletion that a cancelled confirmation
+does not perform. The viewports are the suite's own literals rather than Playwright's
+device registry, whose numbers move between releases
+([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426)). It
+needs Chromium, which is a separate download; see the README's **Building** section.
+It is not part of `make check`, which is what keeps a 150 MB browser off the ordinary
+developer loop.
 
 ## Editing
 
@@ -635,8 +729,10 @@ Edits go to the original file through the [conditional save](#conditional-saves)
 endpoint, so they are subject to the same root confinement and the same Host and
 Origin guard as everything else, and the source is written back byte for byte —
 frontmatter, hard tabs, trailing spaces, a byte-order mark and a missing final
-newline all survive an edit untouched. The editor edits existing notes only: it
-cannot create, rename or delete one, and the save API has no create-on-missing path.
+newline all survive an edit untouched. The editor itself only ever edits: creating
+and deleting a note are the two controls below, on their own endpoints, and the save
+endpoint still has no create-on-missing path. Renaming a note is not in the
+application at all.
 
 Line endings survive too, with one qualification. CodeMirror splits a document on
 any of the three endings and joins with LF, so the editor rejoins its text with the
@@ -699,6 +795,57 @@ since each one's parser is a chunk of its own: 197,808 bytes for a note with no 
 carries the measurements, who took them, and how far they had already drifted inside one
 milestone.
 
+### Creating and deleting a note
+
+**New note** sits in the top bar beside the `mdn` home link, at every width. It opens
+a prompt that names the folder the note will land in and takes a title or a path;
+nothing is written until it is confirmed.
+
+- A name with no `/` is created in that folder. The folder is **the folder of the
+  open note, and the root when no note is open** — the navigator has no folder
+  selection of its own, only expansion, so the note you are reading is the one
+  unambiguous statement of where you are
+  ([#77](https://github.com/davison/md-notes/issues/77#issuecomment-5701434013)).
+  The prompt names it before anything happens, as `docs/deep` or as "the root of
+  this folder".
+- A name containing `/` is a path under the root and ignores the folder.
+- A final component with no markdown extension gains `.md`.
+- Everything else is the daemon's to refuse, and its message appears in the prompt
+  with the typed name still in the box, so correcting a name already taken is one
+  edit rather than a retyped title.
+
+On success the app routes to the path the daemon returned — its cleaned form, not
+the string that was sent — and the pane opens in the **editor**, a note just created
+being empty and named in order to write in it.
+
+**Delete** sits at the right-hand end of the note bar, in the rendered view and in
+the editor alike, and its place does not move between them. It opens a confirmation
+naming the note's full path; cancelling by the button, by `Escape` or by the backdrop
+sends nothing at all. When this tab holds unsaved changes to that note the
+confirmation says they go with it, and confirming drops the session before the app
+navigates, so no scheduled save can recreate the file behind the deletion
+([#77](https://github.com/davison/md-notes/issues/77#issuecomment-5701434216)). The
+app then goes to `/r/{slug}/`, the root's home, which is also the parent folder:
+this application has no route for a folder. A draft of the same note in *another*
+tab is answered by the existing [deleted-on-disk banner](#conflicts) and no second
+dialog.
+
+Both prompts are the application's own modal dialog rather than `window.prompt` and
+`window.confirm`, which cannot show a refusal without losing what was typed and are
+the browser's chrome rather than this page's, and rather than a native `<dialog>`,
+which jsdom cannot mount in a unit test
+([#77](https://github.com/davison/md-notes/issues/77#issuecomment-5701434444)). They
+move focus in on opening, cycle `Tab` inside themselves, hand focus back to the
+control that opened them, confirm on `Enter` and cancel on `Escape`. While a create
+or a delete is in flight the dialog cannot be dismissed at all — `Escape` and the
+backdrop do nothing, as the disabled buttons already say — because the request has
+been sent and the daemon will act on it either way
+([#77](https://github.com/davison/md-notes/issues/77#issuecomment-5701747937)).
+
+Both changes reach the navigator through the [events stream](#live-update), in this
+tab and in every other one, exactly as a file written by another tool does. Neither
+path refetches the tree.
+
 ### Autosave and the save states
 
 A save is sent one second after typing stops. Anything that means "I am done for
@@ -748,11 +895,14 @@ switching to View shows the file as it is on disk with the banner and the draft
 still there.
 
 A note **deleted** on disk under a draft raises a banner with **Copy draft** and
-**Discard draft** only. The editor cannot recreate the file, because the save API
-has no create-on-missing path; recreating it with another tool turns the conflict
-back into a changed one, where **Keep my draft** writes the draft over it. A clean
-note whose file is deleted is kept the same way rather than dropped, since the text
-on screen may be the only copy left.
+**Discard draft** only. The editor cannot recreate the file, because the save API has
+no create-on-missing path; recreating it — with **New note** under the same name, or
+with another tool — turns the conflict back into a changed one, where **Keep my
+draft** writes the draft over it. A clean note whose file is deleted is kept the same
+way rather than dropped, since the text on screen may be the only copy left. This is
+also the path a note deleted from *another* tab takes, and is why deleting a note
+raises no second dialog there
+([#77](https://github.com/davison/md-notes/issues/77#issuecomment-5701434216)).
 
 ### Drafts that outlive the page
 
@@ -1001,7 +1151,7 @@ What an authenticated caller reaches is the UI's own API and nothing else:
 |-----------|---------------|
 | `GET /api/roots` | `POST /api/roots` |
 | the per-root reads — `tree`, `note`, `source`, `raw`, `search`, `tags`, `events` | `POST /api/clip` |
-| `PUT /api/r/{slug}/source/{path…}` | anything else under `/api/` |
+| `PUT`, `POST` and `DELETE` on `/api/r/{slug}/source/{path…}` | anything else under `/api/` |
 | the UI bundle and its client-side routes | |
 
 Anything on the right answers `403 {"code":"loopback_only"}`. It is an allow-list,
@@ -1023,8 +1173,19 @@ else's, and the extension names that refusal rather than blaming the token — s
 [the extension page](extension.md#a-daemon-reached-over-the-tailnet). Reading notes
 from another device is still the UI's job in the browser there.
 
-So a remote device reads, searches, and edits the notes the daemon already serves.
-It cannot add a root, and `mdn open` remains a command for the daemon's own machine.
+The three write methods on a note's source are admitted on one rule, because they are
+one resource: a caller that can already replace a note's bytes is not meaningfully
+restrained by being refused the right to create a sibling or remove one, and keeping
+them together leaves the allow-list a statement about the `source` resource rather
+than about which method is in the request
+([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5700724927)). That
+applies to every registered root, `mdn open` ones included, for as long as they are
+registered — but `POST /api/roots` stays loopback-only, so nothing reachable over the
+tailnet can widen the set of roots it applies to.
+
+So a remote device reads, searches, creates, edits and deletes the notes the daemon
+already serves. It cannot add a root, and `mdn open` remains a command for the
+daemon's own machine.
 
 ### The premise, restated
 
