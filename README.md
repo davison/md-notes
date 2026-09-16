@@ -65,8 +65,22 @@ gitignored and hidden files out of the tree and out of results.
 make build      # builds the UI and the static ./mdn binary
 make extension  # builds the browser extension to extension/dist and a zip
 make check      # vet, typecheck, tests, build
+make e2e        # browser checks for the UI, in headless Chromium
 make install    # copies ./mdn to ~/.local/bin/mdn (PREFIX=... to change)
 ```
+
+`make e2e` drives the built daemon through a real browser — the phone
+layout, the drawer, the display settings, the tap targets and the asset
+cache — and needs Chromium, which is a separate download:
+
+```
+pnpm --dir ui exec playwright install chromium
+```
+
+Without it the suite skips rather than fails. It is not part of `make
+check`, and it runs as its own CI job. The extension's own end-to-end
+suites (`pnpm --dir extension e2e`) share the same Playwright installation
+and additionally need `make extension`.
 
 The commands below assume `~/.local/bin` is on your PATH; otherwise run
 `./mdn` from the repository.
