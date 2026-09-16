@@ -365,23 +365,23 @@ code {
 }
 
 /*
- * The navigator's create control, above the tree. It is inside the
- * navigator pane, so at narrow widths it is inside the drawer with it and
- * needs nothing of its own there.
+ * The create control, in the top bar beside the home link, so that it is on
+ * screen whatever the navigator is scrolled to and whichever layout is on
+ * (#85). The top bar aligns its children on the baseline; this one is a
+ * flex box of a glyph and a label, so it centres itself.
  */
-.nav-actions {
-  display: flex;
-  margin: 0 0 0.5rem;
-}
-
 .new-note {
-  flex: 1;
-  font: inherit;
-  padding: 0.25rem 0.6rem;
+  display: inline-flex;
+  flex: none;
+  gap: 0.35rem;
+  align-items: center;
+  align-self: center;
+  padding: 0.2rem 0.6rem;
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--bg);
   color: var(--fg);
+  font: inherit;
   cursor: pointer;
 }
 
@@ -606,6 +606,28 @@ code {
 
   .drawer-toggle:hover {
     background: var(--line);
+  }
+
+  /* Beside the burger and the magnifier, and the same size as both: the
+     label goes and the glyph stands alone, so the bar has room for the
+     root's name on a phone. The accessible name is the aria-label, which
+     does not change with the width. */
+  .new-note {
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    justify-content: center;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+  }
+
+  .new-note:hover {
+    background: var(--line);
+  }
+
+  .new-note-label {
+    display: none;
   }
 
   .tag-chip {

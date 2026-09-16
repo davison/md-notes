@@ -5,7 +5,26 @@ import { newNotePath } from "./note-name";
 import { markCreated } from "./session";
 
 /**
- * The name prompt behind the navigator's create control. Nothing is written
+ * The create control. It sits in the top bar beside the home link rather
+ * than above the navigator's tree, where a long list scrolled it out of
+ * sight (#85), and it stays there at narrow widths: the stylesheet drops
+ * the label and leaves the + as a square the size of the burger and the
+ * magnifier it sits between, and the aria-label keeps the accessible name
+ * the same at both widths.
+ */
+export function NewNoteButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" class="new-note" aria-label="New note" onClick={onClick}>
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false">
+        <path d="M10 4.5v11M4.5 10h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </svg>
+      <span class="new-note-label">New note</span>
+    </button>
+  );
+}
+
+/**
+ * The name prompt behind the create control. Nothing is written
  * until it is confirmed, and a refusal — most often a name already taken —
  * is shown here with the typed name still in the box, so correcting it is
  * one edit rather than a retyped title.

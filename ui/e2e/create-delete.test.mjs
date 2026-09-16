@@ -74,6 +74,10 @@ async function waitFor(predicate, what, timeoutMs = 15000) {
   }
 }
 
+/** The tap-target floor the e-ink task set, in CSS pixels. Imported from
+ * ./harness.mjs once #78's reshaping of this directory lands. */
+const TAP_TARGET = 40;
+
 const playwright = loadPlaywright();
 const blocker = missingPrerequisite(playwright);
 if (blocker) console.log(`# skipped: ${blocker}`);
@@ -311,15 +315,20 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     // 40 px target.
     const del = small.locator(".note-bar .delete-note");
     const delBox = await del.boundingBox();
-    assert.ok(delBox.height >= 40, `the delete target is ${delBox.height}px tall`);
+    assert.ok(delBox.height >= TAP_TARGET, `the delete target is ${delBox.height}px tall`);
 
-    // The create control is behind the burger, in the drawer.
-    assert.equal(await small.getByRole("button", { name: "New note" }).isVisible(), false);
-    await small.locator(".nav-toggle").click();
+    // The create control is in the top bar at this width too — on screen
+    // without opening the drawer, which is the point of #85 — and a square
+    // the size of the burger beside it.
     const create = small.getByRole("button", { name: "New note" });
-    await create.waitFor({ state: "visible" });
+    assert.equal(await create.isVisible(), true, "the create control is visible with the drawer closed");
+    assert.equal(await small.locator(".topbar .new-note").count(), 1, "and it is in the top bar");
+    assert.equal(await small.locator(".nav .new-note").count(), 0, "and not in the navigator");
     const createBox = await create.boundingBox();
-    assert.ok(createBox.height >= 40, `the create target is ${createBox.height}px tall`);
+    assert.ok(createBox.height >= TAP_TARGET, `the create target is ${createBox.height}px tall`);
+    assert.ok(createBox.width >= TAP_TARGET, `the create target is ${createBox.width}px wide`);
+    // The label is dropped at this width; the accessible name is not.
+    assert.equal(await small.locator(".new-note-label").isVisible(), false);
 
     await create.click();
     await dialogReady(small);
@@ -330,7 +339,7 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     assert.ok(modalBox.width > 331, `the dialog is ${modalBox.width}px wide`);
     for (const button of await small.locator(".modal button").all()) {
       const b = await button.boundingBox();
-      assert.ok(b.height >= 40, `a dialog button is ${b.height}px tall`);
+      assert.ok(b.height >= TAP_TARGET, `a dialog button is ${b.height}px tall`);
     }
 
     await box.fill("From the phone");
