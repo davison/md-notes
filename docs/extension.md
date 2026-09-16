@@ -203,8 +203,9 @@ bullets.
 or a `figure` with other things beside the code: a caption, a filename line, a
 copy-to-clipboard button. What is content is converted as ordinary markdown
 before or after the fence, in the order the page wrote it; only the chrome is
-dropped — a `button`, a `clipboard-copy` element, anything whose class names a
-copy control, and anything the page has already hidden with `aria-hidden`
+dropped, wherever it sits inside the wrapper — a `button`, a `clipboard-copy`
+element, anything with `role="button"`, anything whose class names a copy
+control, and anything the page has already hidden with `aria-hidden`
 ([#47](https://github.com/davison/md-notes/issues/47)).
 
 **Tables outside GFM.** GFM can only write a rectangular table with a header
@@ -224,6 +225,19 @@ as raw HTML any more
 A cell is a single line either way: a cell the page wrote as two paragraphs
 becomes one line, and a `|` inside a cell is escaped. A `<caption>` is kept, as
 a paragraph above the table.
+
+**Tables that are not tables.** Some pages use a `<table>` to lay a page out
+rather than to carry data — an older manual wrapped in one cell, or the
+line-number wrapper Pygments, Sphinx and MkDocs put around a code block. Those
+are not made into a grid, because a grid would put the whole page in one cell:
+their contents are converted as ordinary markdown blocks instead, in the order
+the page wrote them, so a heading stays a heading, a code block keeps its line
+breaks and its language, and a real data table inside one is still a table. A
+`<table>` counts as data when it says so — a `th` cell — and otherwise when it
+has a row of two or more cells and no cell holding a code block or a heading;
+`role="presentation"` settles it the other way. (One consequence worth knowing:
+with a line-number wrapper, the numbers arrive as a small code block of their
+own above the code.)
 
 Every link and image is made **absolute against the page's own URL**, so a note
 still points at something once it has left the browser. Three deliberate
