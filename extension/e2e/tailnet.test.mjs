@@ -23,7 +23,10 @@
  * Like the two suites beside it, this is not part of `make check`:
  *
  *     make build extension
- *     PLAYWRIGHT_ROOT=/path/to/a/playwright/install pnpm --dir extension e2e
+ *     pnpm --dir extension e2e
+ *
+ * Playwright is declared by `ui/package.json`, which `make ui-deps` installs
+ * and `ui/e2e` shares; `PLAYWRIGHT_ROOT` still names another installation.
  */
 
 import { after, before, describe, it } from "node:test";
@@ -57,7 +60,7 @@ const TAILNET_NAME = "mdn-e2e.tailnet.test";
 const OTHER_NAME = "elsewhere.tailnet.test";
 
 function loadPlaywright() {
-  const roots = [process.env.PLAYWRIGHT_ROOT, extensionDir, repoRoot].filter(Boolean);
+  const roots = [process.env.PLAYWRIGHT_ROOT, extensionDir, path.join(repoRoot, "ui"), repoRoot].filter(Boolean);
   for (const root of roots) {
     try {
       const require = createRequire(path.join(root, "noop.js"));
