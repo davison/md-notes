@@ -26,6 +26,31 @@ func group(g tree.Group, names ...string) []tree.Dir {
 	return out
 }
 
+// The tests come in two kinds, and only the second one waits.
+//
+// A test of the debounce itself — what a burst collapses to, when the quiet
+// window ends one, what maxWait caps — runs on an injected fake clock and
+// feeds its own events, so it states a property of the debounce and finishes
+// in microseconds. Nothing in that kind is timing-dependent.
+//
+// A test of what the kernel reports, or of what the watch set becomes after a
+// relisting, has to wait for something outside the process. Those use the
+// bounds below. Each is one-sided: it bounds how long the test is prepared to
+// wait for something it expects, so a slow machine makes the test slower and
+// never wrong. No test asserts that nothing happened by waiting on the wall
+// clock — that assertion is only made where the fake clock proves no timer
+// could have fired.
+const (
+	// batchWait is how long a test waits for a batch the kernel owes it,
+	// against a 50ms quiet window: twenty times the window, which is the
+	// scheduling delay that would have to land to fail the test wrongly.
+	batchWait = time.Second
+	// settleWait bounds a relisting, which shells out to ripgrep and can
+	// therefore be arbitrarily slow on a loaded machine. Polled, not slept:
+	// the cost is paid only when the machine is slow.
+	settleWait = 3 * time.Second
+)
+
 func newTestWatcher(t *testing.T, dirs []string) (*Watcher, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -37,9 +62,51 @@ func newTestWatcher(t *testing.T, dirs []string) (*Watcher, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { w.Close() })
-	// Let the watches settle before the test writes anything.
-	time.Sleep(20 * time.Millisecond)
+	// No settling wait: New places every watch with inotify_add_watch before
+	// it returns, and fsnotify's event channel is unbuffered, so an event
+	// that arrives before the loop starts waits for it rather than being
+	// lost. The 20ms sleep this replaces bought nothing.
 	return w, root
+}
+
+// quiet and maxWait are what the deterministic tests configure. Their values
+// no longer matter to anything but the arithmetic in the tests themselves:
+// the fake clock reaches them instantly.
+const (
+	quiet   = 50 * time.Millisecond
+	maxWait = 300 * time.Millisecond
+)
+
+// newFakeClockWatcher starts a watcher over an empty root whose debounce runs
+// on a clock the test moves itself. Nothing is written to the root, so every
+// event the watcher sees is one the test sent.
+func newFakeClockWatcher(t *testing.T) (*Watcher, *fakeClock, string) {
+	t.Helper()
+	root := t.TempDir()
+	c := newFakeClock()
+	w, err := New(root, nil, t.Logf, WithDebounce(quiet, maxWait), withClock(c))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { w.Close() })
+	return w, c, root
+}
+
+// send delivers one event to the watcher's loop as the kernel would.
+// fsnotify's event channel is unbuffered, so the send completes only once the
+// loop has taken the event.
+func send(w *Watcher, root, rel string, op fsnotify.Op) {
+	w.fsw.Events <- fsnotify.Event{Name: filepath.Join(root, filepath.FromSlash(rel)), Op: op}
+}
+
+// handled returns once the loop has finished handling every event sent before
+// it. The loop takes events one at a time, so its receipt of this ignored
+// Chmod is proof that the event before it was handled to completion — its
+// path recorded and its timer armed. Call it after sending and before moving
+// the clock; it says nothing about a flush, which competes with the event
+// channel in the same select.
+func handled(w *Watcher, root string) {
+	send(w, root, "settle", fsnotify.Chmod)
 }
 
 func next(t *testing.T, w *Watcher) Batch {
@@ -50,18 +117,36 @@ func next(t *testing.T, w *Watcher) Batch {
 			t.Fatal("events closed")
 		}
 		return b
-	case <-time.After(time.Second):
-		t.Fatal("no batch within a second")
+	case <-time.After(batchWait):
+		t.Fatalf("no batch within %v", batchWait)
 	}
 	return Batch{}
 }
 
-func noBatch(t *testing.T, w *Watcher) {
+// noBatchYet asserts that nothing has been emitted. It does not wait, and it
+// does not need to: it is only used where the fake clock has fired no timer
+// since the last handled call, so no batch can be on its way.
+func noBatchYet(t *testing.T, w *Watcher) {
 	t.Helper()
 	select {
 	case b := <-w.Events():
 		t.Fatalf("unexpected batch %v", b.Paths)
-	case <-time.After(200 * time.Millisecond):
+	default:
+	}
+}
+
+// waitFor polls until cond holds or settleWait runs out, and reports whether
+// it held. For the relistings that run out of band after a flush.
+func waitFor(cond func() bool) bool {
+	deadline := time.Now().Add(settleWait)
+	for {
+		if cond() {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -87,16 +172,88 @@ func TestCreateWriteDeleteRename(t *testing.T) {
 	}
 }
 
+// A burst of changes to one file is one batch, and nothing follows it.
+//
+// The version of this test that wrote the file twenty times and then waited
+// asserted a property of the machine, not of the debounce: any pause longer
+// than the quiet window splits the burst into two batches, both of them
+// correct, and the second one failed the "nothing follows" assertion. That is
+// what failed CI four times, three of them on branches carrying no Go at all
+// (#46). Here the events are delivered directly and the quiet window is moved
+// by the test, so the burst is a burst by construction.
 func TestBurstIsOneBatch(t *testing.T) {
-	w, root := newTestWatcher(t, nil)
+	w, c, root := newFakeClockWatcher(t)
 	for i := 0; i < 20; i++ {
-		os.WriteFile(filepath.Join(root, "n.md"), []byte{byte(i)}, 0o644)
+		send(w, root, "n.md", fsnotify.Write)
 	}
-	b := next(t, w)
-	if !reflect.DeepEqual(b.Paths, []string{"n.md"}) {
+	handled(w, root)
+	noBatchYet(t, w) // no quiet window has elapsed, so nothing is out
+	c.Advance(quiet)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"n.md"}) {
 		t.Fatalf("batch = %v", b.Paths)
 	}
-	noBatch(t, w)
+	// However long the stream is left alone for, there is no second batch.
+	c.Advance(time.Hour)
+	noBatchYet(t, w)
+}
+
+// The batch is held for the whole quiet window and released the moment it
+// ends. A wall-clock test can only bracket this; the fake clock states it.
+func TestBatchWaitsForTheWholeQuietWindow(t *testing.T) {
+	w, c, root := newFakeClockWatcher(t)
+	send(w, root, "n.md", fsnotify.Write)
+	handled(w, root)
+	c.Advance(quiet - time.Millisecond)
+	noBatchYet(t, w)
+	c.Advance(time.Millisecond)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"n.md"}) {
+		t.Fatalf("batch = %v", b.Paths)
+	}
+}
+
+// Every change restarts the quiet window, which is what makes a burst one
+// batch however long the burst runs for.
+func TestEachChangeRestartsTheQuietWindow(t *testing.T) {
+	w, c, root := newFakeClockWatcher(t)
+	send(w, root, "a.md", fsnotify.Create)
+	handled(w, root)
+	c.Advance(quiet - 10*time.Millisecond)
+	noBatchYet(t, w)
+	send(w, root, "b.md", fsnotify.Create)
+	handled(w, root)
+	// The first file's window would have ended here had the second not
+	// restarted it.
+	c.Advance(10 * time.Millisecond)
+	noBatchYet(t, w)
+	c.Advance(quiet - 10*time.Millisecond)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"a.md", "b.md"}) {
+		t.Fatalf("batch = %v, want both files in one batch", b.Paths)
+	}
+}
+
+// A stream that never goes quiet still yields a batch: maxWait caps how long
+// a busy directory may hold one back. Production behaviour with no test until
+// the clock could be injected, because testing it meant sleeping for it.
+func TestBusyStreamFlushesAtMaxWait(t *testing.T) {
+	w, c, root := newFakeClockWatcher(t)
+	var want []string
+	// A change every 40ms against a 50ms window: the quiet window never
+	// elapses, so only the 300ms cap can end the batch.
+	for i := 0; i < 8; i++ {
+		name := fmt.Sprintf("n%d.md", i)
+		want = append(want, name)
+		send(w, root, name, fsnotify.Write)
+		handled(w, root)
+		c.Advance(40 * time.Millisecond)
+		if i < 7 {
+			noBatchYet(t, w) // 280ms of stream, and no 50ms of quiet
+		}
+	}
+	// The eighth change lands at 280ms, so its window is cut to the 20ms the
+	// cap has left.
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, want) {
+		t.Fatalf("batch = %v, want the whole stream capped at maxWait: %v", b.Paths, want)
+	}
 }
 
 func TestNewSubdirectoryIsWatched(t *testing.T) {
@@ -158,7 +315,18 @@ func TestNewDirectoryHonoursIgnores(t *testing.T) {
 	os.MkdirAll(filepath.Join(root, "node_modules", "dep", "lib"), 0o755)
 	os.WriteFile(filepath.Join(root, "node_modules", "dep", "README.md"), nil, 0o644)
 	os.MkdirAll(filepath.Join(root, "src", "notes"), 0o755)
-	time.Sleep(400 * time.Millisecond)
+	// The relisting runs out of band, after a flush; wait for its result
+	// rather than for a fixed number of milliseconds.
+	if !waitFor(func() bool {
+		for _, p := range w.fsw.WatchList() {
+			if strings.HasSuffix(p, filepath.Join("src", "notes")) {
+				return true
+			}
+		}
+		return false
+	}) {
+		t.Fatalf("src/notes never watched; watching %v", w.fsw.WatchList())
+	}
 	for _, p := range w.fsw.WatchList() {
 		if strings.Contains(p, "node_modules") {
 			t.Fatalf("watching an ignored tree: %s", p)
@@ -179,69 +347,111 @@ func TestNewDirectoryHonoursIgnores(t *testing.T) {
 	}
 }
 
+// A consumer that stops reading loses a batch, and is told to refresh
+// everything rather than left believing the batches it did get were all of
+// them. The old version of this test paced forty writes with sleeps and hoped
+// one batch would be dropped; here the seventeenth batch is dropped because
+// the buffer holds sixteen, which is arithmetic rather than timing.
 func TestLostBatchAsksForFullRefresh(t *testing.T) {
 	root := t.TempDir()
-	w, err := New(root, nil, nil, WithDebounce(10*time.Millisecond, 50*time.Millisecond))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer w.Close()
-	time.Sleep(20 * time.Millisecond)
-	// Fill the output buffer without reading, so a batch is dropped.
-	for i := 0; i < 40; i++ {
-		os.WriteFile(filepath.Join(root, fmt.Sprintf("f%d.md", i)), nil, 0o644)
-		time.Sleep(25 * time.Millisecond)
-	}
-	var sawEmpty bool
-	for i := 0; i < 20; i++ {
+	c := newFakeClock()
+	warned := make(chan string, 8)
+	w, err := New(root, nil, func(f string, a ...any) {
 		select {
-		case b := <-w.Events():
-			if len(b.Paths) == 0 {
-				sawEmpty = true
-			}
-		case <-time.After(300 * time.Millisecond):
+		case warned <- fmt.Sprintf(f, a...):
+		default:
 		}
-	}
-	if !sawEmpty {
-		t.Fatal("no full-refresh batch after drops")
-	}
-}
-
-func TestOverflowAsksForFullRefresh(t *testing.T) {
-	root := t.TempDir()
-	w, err := New(root, nil, nil, WithDebounce(10*time.Millisecond, 50*time.Millisecond))
+	}, WithDebounce(quiet, maxWait), withClock(c))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
-	time.Sleep(20 * time.Millisecond)
-	w.fsw.Errors <- fsnotify.ErrEventOverflow
-	select {
-	case b := <-w.Events():
-		if len(b.Paths) != 0 {
-			t.Fatalf("after overflow got %v, want an empty full-refresh batch", b.Paths)
+	t.Cleanup(func() { w.Close() })
+
+	buffered := cap(w.out)
+	// One batch per change and nothing read: the buffer takes the first
+	// cap(out) of them and the next has nowhere to go. Which batch is
+	// dropped is arithmetic here, where the old test paced forty writes with
+	// sleeps and hoped.
+	for i := 0; i <= buffered; i++ {
+		send(w, root, fmt.Sprintf("f%d.md", i), fsnotify.Create)
+		handled(w, root)
+		c.Advance(quiet)
+		if i < buffered {
+			// The batch reaching the buffer is the flush completing, so the
+			// next change is sent after it and never joins this batch.
+			if !waitFor(func() bool { return len(w.out) > i }) {
+				t.Fatalf("%d batches buffered after %d changes", len(w.out), i+1)
+			}
 		}
-	case <-time.After(time.Second):
-		t.Fatal("no batch after an event overflow")
+	}
+	// The warning is the watcher saying it could not deliver, and reading it
+	// is what proves the drop happened before the buffer was drained.
+	select {
+	case msg := <-warned:
+		if !strings.Contains(msg, "consumer not reading") {
+			t.Fatalf("warning = %q, want the undelivered batch", msg)
+		}
+	case <-time.After(batchWait):
+		t.Fatal("no warning that a batch could not be delivered")
+	}
+	for i := 0; i < buffered; i++ {
+		if b := next(t, w); len(b.Paths) != 1 {
+			t.Fatalf("batch %d = %v, want the one change it was made of", i, b.Paths)
+		}
+	}
+	// handled returns once the loop is back at its select, so the rearming
+	// the drop did has happened before the clock is moved again.
+	handled(w, root)
+	c.Advance(quiet)
+	if b := next(t, w); len(b.Paths) != 0 {
+		t.Fatalf("after a dropped batch got %v, want an empty full-refresh batch", b.Paths)
 	}
 }
 
-func TestHiddenIgnored(t *testing.T) {
-	w, root := newTestWatcher(t, nil)
-	os.WriteFile(filepath.Join(root, ".swp"), nil, 0o644)
-	os.MkdirAll(filepath.Join(root, ".git"), 0o755)
-	noBatch(t, w)
-	os.WriteFile(filepath.Join(root, ".git", "HEAD"), nil, 0o644)
-	noBatch(t, w)
+// The kernel dropping events means the consumer cannot trust what it has, so
+// it is asked to refresh everything.
+func TestOverflowAsksForFullRefresh(t *testing.T) {
+	w, c, root := newFakeClockWatcher(t)
+	w.fsw.Errors <- fsnotify.ErrEventOverflow
+	// The error and the events share one select, so an event taken after it
+	// proves the overflow was handled and its timer armed.
+	handled(w, root)
+	noBatchYet(t, w)
+	c.Advance(quiet)
+	if b := next(t, w); len(b.Paths) != 0 {
+		t.Fatalf("after overflow got %v, want an empty full-refresh batch", b.Paths)
+	}
 }
 
+// A change to a hidden file or inside a hidden directory is not reported. The
+// sentinel is what makes the absence provable: a batch for a hidden path
+// would have to arrive before it, so the assertion fails on what was sent
+// rather than on how long the test was willing to wait.
+func TestHiddenIgnored(t *testing.T) {
+	w, c, root := newFakeClockWatcher(t)
+	for _, rel := range []string{".swp", ".git", ".git/HEAD", "sub/.hidden.md"} {
+		send(w, root, rel, fsnotify.Create)
+	}
+	send(w, root, "visible.md", fsnotify.Create)
+	handled(w, root)
+	c.Advance(quiet)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"visible.md"}) {
+		t.Fatalf("batch = %v, want the hidden paths dropped", b.Paths)
+	}
+	noBatchYet(t, w)
+}
+
+// A permission change is not a content change, so it is not reported.
 func TestChmodIgnored(t *testing.T) {
-	w, root := newTestWatcher(t, nil)
-	p := filepath.Join(root, "a.md")
-	os.WriteFile(p, nil, 0o644)
-	next(t, w)
-	os.Chmod(p, 0o600)
-	noBatch(t, w)
+	w, c, root := newFakeClockWatcher(t)
+	send(w, root, "a.md", fsnotify.Chmod)
+	send(w, root, "b.md", fsnotify.Write)
+	handled(w, root)
+	c.Advance(quiet)
+	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"b.md"}) {
+		t.Fatalf("batch = %v, want the chmod dropped", b.Paths)
+	}
+	noBatchYet(t, w)
 }
 
 func TestCloseEndsEvents(t *testing.T) {
@@ -348,7 +558,6 @@ func TestBudgetStillCoversTheRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer w.Close()
-	time.Sleep(20 * time.Millisecond)
 	if cov := w.Coverage(); cov.Watched != 1 || cov.Unwatched != 1 {
 		t.Fatalf("Coverage() = %+v, want the root watched and sub not", cov)
 	}
@@ -376,7 +585,6 @@ func TestFirstNoteInHiddenOnlyDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer w.Close()
-	time.Sleep(20 * time.Millisecond)
 
 	os.WriteFile(filepath.Join(root, "inbox", "first.md"), []byte("# first"), 0o644)
 	if b := next(t, w); !reflect.DeepEqual(b.Paths, []string{"inbox/first.md"}) {
@@ -464,7 +672,6 @@ func TestNotesDirectoryCreatedLaterTakesAWatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer w.Close()
-	time.Sleep(20 * time.Millisecond)
 	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "a", "b"}) {
 		t.Fatalf("watched = %v, want the root, the notes directory and one other", got)
 	}
@@ -473,14 +680,8 @@ func TestNotesDirectoryCreatedLaterTakesAWatch(t *testing.T) {
 	os.MkdirAll(filepath.Join(root, "d"), 0o755)
 	os.WriteFile(filepath.Join(root, "d", "n.md"), []byte("# dn"), 0o644)
 	next(t, w)
-	// The relisting runs at flush; give it a moment to settle.
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if reflect.DeepEqual(watchedRel(t, w, root), []string{".", "a", "d"}) {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	// The relisting runs out of band, after the flush.
+	waitFor(func() bool { return reflect.DeepEqual(watchedRel(t, w, root), []string{".", "a", "d"}) })
 	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "a", "d"}) {
 		t.Fatalf("watched = %v, want d to hold a watch and b to have given one up", got)
 	}
@@ -521,7 +722,6 @@ func TestFirstNoteInANestOfPlaceholderDirectories(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer w.Close()
-	time.Sleep(20 * time.Millisecond)
 
 	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "nest", "nest/deep"}) {
 		t.Fatalf("watched = %v, want the nest at both levels", got)
@@ -595,7 +795,6 @@ func TestDeletionReturnsBudgetToRefusedDirectories(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer w.Close()
-	time.Sleep(20 * time.Millisecond)
 	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "a", "b"}) {
 		t.Fatalf("watched = %v", got)
 	}
@@ -605,13 +804,7 @@ func TestDeletionReturnsBudgetToRefusedDirectories(t *testing.T) {
 
 	os.RemoveAll(filepath.Join(root, "a"))
 	next(t, w)
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if reflect.DeepEqual(watchedRel(t, w, root), []string{".", "b", "c"}) {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	waitFor(func() bool { return reflect.DeepEqual(watchedRel(t, w, root), []string{".", "b", "c"}) })
 	if got := watchedRel(t, w, root); !reflect.DeepEqual(got, []string{".", "b", "c"}) {
 		t.Fatalf("watched = %v, want c to have taken the budget a gave back", got)
 	}
