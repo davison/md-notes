@@ -309,7 +309,7 @@ Source errors return JSON `{code, error}` with these statuses:
 
 | Status | Code | Client action |
 |--------|------|---------------|
-| 400 | `invalid_body` | Correct malformed JSON or missing/invalid fields |
+| 400 | `invalid_body`, `invalid_path` | Correct malformed JSON or missing/invalid fields; `invalid_path` also answers a name the filesystem calls too long |
 | 403 | `outside_root`, `permission_denied` | Retain the draft; check the path or file/directory permissions |
 | 404 | `not_found`, `not_markdown` | Retain the draft; the note/root is missing or the path is not markdown |
 | 409 | `conflict` | Retain the draft and fetch current source before choosing how to reconcile |
@@ -381,19 +381,24 @@ Both refuse with the save's `{code, error}` body
 | Empty path (`POST /api/r/{slug}/source/`) | 400 | `invalid_path` |
 | Any path component begins with `.`, including a file called `.md` | 400 | `invalid_path` |
 | A control character anywhere in the path | 400 | `invalid_path` |
+| A path component the filesystem calls too long — 255 bytes on the filesystems this runs on | 400 | `invalid_path` |
 | The extension is not `.md` or `.markdown` | 404 | `not_markdown` |
 | A path component exists but is not a directory (`hello.md/child.md`) | 404 | `not_found` |
 | The note or the root does not exist (delete) | 404 | `not_found` |
-| The path resolves outside the root, lexically or through a symlink — including a dangling symlink whose target is outside | 403 | `outside_root` |
+| The path resolves outside the root, lexically or through a symlink — including a symlink with no target, or a chain of them, ending outside, and whether it stands where the note does or where one of its folders does | 403 | `outside_root` |
 | The file is read-only (delete) | 403 | `permission_denied` |
 | The target is a directory or a symlink inside the root (delete) | 422 | `unsupported_source` |
 | The name is already taken, by a file, a directory or a link inside the root (create) | 409 | `exists` |
 
-The outside-root row is the contract, and it holds for every live symlink and for a
-dangling *file* symlink. Two spellings do not reach it yet and are answered with a
-different code — a dangling *directory* symlink out of the root, and a dangling two-hop
-chain — which is [#82](https://github.com/davison/md-notes/issues/82). Neither creates nor
-removes anything: what is wrong is the code the caller is shown, not the confinement.
+A name the filesystem will not take is the caller's mistake rather than the
+daemon's fault, and is answered as one: the length a name may be belongs to the
+filesystem — `NAME_MAX`, 255 bytes per component — so the kernel's refusal is
+translated, not anticipated by a limit of the daemon's own
+([#88](https://github.com/davison/md-notes/issues/88)). A symlink with no target
+is followed lexically, hop by hop, because the first name it gives may be inside
+the root and the second outside; nothing is created or removed either way, and
+what the walk decides is only which refusal the caller is shown
+([#82](https://github.com/davison/md-notes/issues/82)).
 
 Creating and deleting a note reaches every open page for that root through the
 [events stream](#live-updates) as an ordinary change batch, so a navigator needs no
