@@ -150,6 +150,11 @@ func TestCreateNoteRefusals(t *testing.T) {
 	if err := os.Symlink(base, filepath.Join(notes, "out")); err != nil {
 		t.Fatal(err)
 	}
+	// A link whose target does not exist has no real path for the
+	// resolver to check, so its target is checked lexically instead.
+	if err := os.Symlink(filepath.Join(base, "gone.md"), filepath.Join(notes, "dangling.md")); err != nil {
+		t.Fatal(err)
+	}
 	before := listing(t, base)
 
 	for _, c := range []struct {
@@ -171,6 +176,9 @@ func TestCreateNoteRefusals(t *testing.T) {
 		{"an escape by symlink", "/api/r/notes/source/escape.md", `{"source":"x"}`, 403, "outside_root"},
 		{"an escape through a linked folder", "/api/r/notes/source/out/new.md", `{"source":"x"}`, 403, "outside_root"},
 		{"an escape through a folder not made yet", "/api/r/notes/source/out/deeper/new.md", `{"source":"x"}`, 403, "outside_root"},
+		{"a dangling link out of the root", "/api/r/notes/source/dangling.md", `{"source":"x"}`, 403, "outside_root"},
+		{"a component that is a file", "/api/r/notes/source/hello.md/child.md", `{"source":"x"}`, 404, "not_found"},
+		{"a folder under a file", "/api/r/notes/source/hello.md/deeper/child.md", `{"source":"x"}`, 404, "not_found"},
 		{"an unknown root", "/api/r/missing/source/new.md", `{"source":"x"}`, 404, "not_found"},
 		{"a body that is not JSON", "/api/r/notes/source/new.md", `{`, 400, "invalid_body"},
 		{"a source that is not a string", "/api/r/notes/source/new.md", `{"source":12}`, 400, "invalid_body"},
@@ -293,6 +301,12 @@ func TestDeleteNoteRefusals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(notes, "readonly.md"), []byte("ro"), 0o444); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Symlink(filepath.Join(base, "gone.md"), filepath.Join(notes, "dangling.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("also-gone.md", filepath.Join(notes, "stale.md")); err != nil {
+		t.Fatal(err)
+	}
 	before := listing(t, base)
 
 	for _, c := range []struct {
@@ -311,6 +325,9 @@ func TestDeleteNoteRefusals(t *testing.T) {
 		{"an escape by symlink", "/api/r/notes/source/escape.md", 403, "outside_root"},
 		{"an escape through a linked folder", "/api/r/notes/source/out/secret.md", 403, "outside_root"},
 		{"a symlink inside the root", "/api/r/notes/source/inside.md", 422, "unsupported_source"},
+		{"a dangling link out of the root", "/api/r/notes/source/dangling.md", 403, "outside_root"},
+		{"a dangling link inside the root", "/api/r/notes/source/stale.md", 422, "unsupported_source"},
+		{"a component that is a file", "/api/r/notes/source/hello.md/child.md", 404, "not_found"},
 		{"an absent note", "/api/r/notes/source/absent.md", 404, "not_found"},
 		{"an unknown root", "/api/r/missing/source/hello.md", 404, "not_found"},
 	} {
@@ -419,5 +436,66 @@ func TestCreateAndDeleteInARootOpenedAtRuntime(t *testing.T) {
 	}
 	if _, err := os.Stat(other); err != nil {
 		t.Fatalf("the root itself went: %v", err)
+	}
+}
+
+// A link to a directory inside the root is followed by all four verbs,
+// including one named by its absolute path, which a handle opened on the
+// root may not traverse at all. The read and save paths have always
+// followed such a link; create and delete now answer the same way rather
+// than with an unmapped I/O error.
+func TestNoteUnderALinkedDirectoryInsideTheRoot(t *testing.T) {
+	ts, base := newTestServer(t)
+	notes := filepath.Join(base, "notes")
+	if err := os.Mkdir(filepath.Join(notes, "real"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(notes, "real", "target.md"), []byte("t"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(notes, "real"), filepath.Join(notes, "abs")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real", filepath.Join(notes, "rel")); err != nil {
+		t.Fatal(err)
+	}
+	for _, link := range []string{"abs", "rel"} {
+		t.Run(link, func(t *testing.T) {
+			// The read path, for the comparison the whole test is about.
+			if resp := do(t, ts, "GET", "/api/r/notes/source/"+link+"/target.md", "", nil); resp.StatusCode != 200 {
+				t.Fatalf("GET = %d", resp.StatusCode)
+			}
+			made := "/api/r/notes/source/" + link + "/made.md"
+			if resp := do(t, ts, "POST", made, `{"source":"x"}`, jsonHeader()); resp.StatusCode != 201 {
+				t.Fatalf("POST = %d: %s", resp.StatusCode, readAll(t, resp.Body))
+			}
+			if _, err := os.Stat(filepath.Join(notes, "real", "made.md")); err != nil {
+				t.Fatalf("the note is not in the linked directory: %v", err)
+			}
+			// And a missing parent under the link.
+			deep := "/api/r/notes/source/" + link + "/deeper/made.md"
+			if resp := do(t, ts, "POST", deep, `{"source":"x"}`, jsonHeader()); resp.StatusCode != 201 {
+				t.Fatalf("POST under a new folder = %d: %s", resp.StatusCode, readAll(t, resp.Body))
+			}
+			if _, err := os.Stat(filepath.Join(notes, "real", "deeper", "made.md")); err != nil {
+				t.Fatalf("the folder was not made in the linked directory: %v", err)
+			}
+			for _, p := range []string{made, deep} {
+				if resp := do(t, ts, "DELETE", p, "", nil); resp.StatusCode != 204 {
+					t.Fatalf("DELETE %s = %d: %s", p, resp.StatusCode, readAll(t, resp.Body))
+				}
+			}
+			if _, err := os.Stat(filepath.Join(notes, "real", "made.md")); !os.IsNotExist(err) {
+				t.Fatalf("the note survived: %v", err)
+			}
+			// The link itself is still a link, and its target directory
+			// is still there.
+			if info, err := os.Lstat(filepath.Join(notes, link)); err != nil || info.Mode()&os.ModeSymlink == 0 {
+				t.Fatalf("the link went: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(notes, "real", "target.md")); err != nil {
+				t.Fatalf("a sibling went: %v", err)
+			}
+		})
 	}
 }

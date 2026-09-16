@@ -334,34 +334,98 @@ func (root Root) Relative(rel string) (string, error) {
 	return cleaned, nil
 }
 
-// EnsureDir makes dir inside the root, through handle, and reports a dir
-// that resolves out of it as ErrOutside rather than as whatever the handle
-// happens to say. The handle is the enforcement; this is the diagnosis,
-// and it starts from the deepest component that exists, so that a
-// directory yet to be made under a link out of the root is still reported
-// as the escape it is.
-func (root Root) EnsureDir(handle *os.Root, dir string) error {
-	for d := dir; ; d = filepath.Dir(d) {
-		_, err := root.Resolve(d)
+// OpenDir opens a handle on the directory rel names inside the root, and
+// returns its real path as well. Symlinks are evaluated first, exactly as
+// the read and save paths evaluate them, and the handle is then opened on
+// the resolved path — so a link to a directory inside the root is
+// followed there too, rather than refused by a handle that may not
+// traverse an absolute link at all. A component that exists but is not a
+// directory is reported as ErrNotDir rather than as a bare ENOTDIR.
+func (root Root) OpenDir(rel string) (*os.Root, string, error) {
+	canonical, err := root.Resolve(rel)
+	if err != nil {
+		return nil, "", err
+	}
+	info, err := os.Stat(canonical)
+	if err != nil {
+		return nil, "", err
+	}
+	if !info.IsDir() {
+		return nil, "", fmt.Errorf("%s: %w", rel, ErrNotDir)
+	}
+	base, err := os.OpenRoot(root.real)
+	if err != nil {
+		return nil, "", err
+	}
+	defer base.Close()
+	relative, err := filepath.Rel(root.real, canonical)
+	if err != nil {
+		return nil, "", err
+	}
+	handle, err := base.OpenRoot(relative)
+	if err != nil {
+		return nil, "", err
+	}
+	return handle, canonical, nil
+}
+
+// EnsureDir makes dir inside the root, and reports a dir that resolves out
+// of it as ErrOutside rather than as whatever a handle happens to say. The
+// missing components are made through a handle on the deepest ancestor
+// that does exist, so that a link to a directory inside the root is
+// followed here as it is everywhere else; that resolved ancestor is the
+// enforcement, and the walk up to it is the diagnosis.
+func (root Root) EnsureDir(dir string) error {
+	ancestor := dir
+	for {
+		_, err := root.Resolve(ancestor)
 		if err == nil {
-			if d == dir {
-				return nil
-			}
 			break
 		}
-		if !errors.Is(err, os.ErrNotExist) {
+		// Only leaving the root is decided here. Every other reason a
+		// component will not resolve — missing, or a file where a
+		// directory was expected — is a question for the ancestor above
+		// it, and OpenDir and MkdirAll below report what they find.
+		if errors.Is(err, ErrOutside) {
 			return err
 		}
-		if parent := filepath.Dir(d); parent == d {
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			ancestor = "."
 			break
 		}
+		ancestor = parent
 	}
-	if err := handle.MkdirAll(dir, 0o755); err != nil {
+	if ancestor == dir {
+		return nil
+	}
+	handle, _, err := root.OpenDir(ancestor)
+	if err != nil {
+		return err
+	}
+	defer handle.Close()
+	rest, err := filepath.Rel(ancestor, dir)
+	if err != nil {
+		return err
+	}
+	if err := handle.MkdirAll(rest, 0o755); err != nil {
 		return err
 	}
 	// A symlink raced in under the new directory is still outside.
-	_, err := root.Resolve(dir)
+	_, err = root.Resolve(dir)
 	return err
+}
+
+// Escapes reports whether a symlink read out of realDir, with the target
+// it names, points out of the root. It answers lexically, because the
+// link a caller asks about may be dangling and so have no real path to
+// evaluate at all. It is diagnosis for an operation being refused either
+// way, never the decision to refuse one.
+func (root Root) Escapes(realDir, target string) bool {
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(realDir, target)
+	}
+	return !within(root.real, filepath.Clean(target))
 }
 
 // within reports whether path is root or lies beneath it. Both must be

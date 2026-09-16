@@ -494,28 +494,137 @@ func TestEnsureDirMakesParentsAndRefusesAnEscape(t *testing.T) {
 		t.Fatal(err)
 	}
 	only := r.List()[0]
-	handle, err := only.Open()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer handle.Close()
 
-	if err := only.EnsureDir(handle, filepath.Join("a", "b", "c")); err != nil {
+	if err := only.EnsureDir(filepath.Join("a", "b", "c")); err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
 	if info, err := os.Stat(filepath.Join(root, "a", "b", "c")); err != nil || !info.IsDir() {
 		t.Fatalf("directory not made: %v", err)
 	}
 	// Again, on a directory that now exists.
-	if err := only.EnsureDir(handle, filepath.Join("a", "b", "c")); err != nil {
+	if err := only.EnsureDir(filepath.Join("a", "b", "c")); err != nil {
 		t.Fatalf("EnsureDir on an existing directory: %v", err)
 	}
+	// Through a link to a directory inside the root, named by its
+	// absolute path — which a handle on the root may not traverse at all,
+	// so the missing components are made through the resolved ancestor.
+	if err := os.Symlink(filepath.Join(root, "a"), filepath.Join(root, "linkdir")); err != nil {
+		t.Fatal(err)
+	}
+	if err := only.EnsureDir(filepath.Join("linkdir", "made")); err != nil {
+		t.Fatalf("EnsureDir through an absolute link inside the root: %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "a", "made")); err != nil || !info.IsDir() {
+		t.Fatalf("directory not made through the link: %v", err)
+	}
+	// A component that exists but is not a directory.
+	if err := os.WriteFile(filepath.Join(root, "file.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := only.EnsureDir(filepath.Join("file.md", "under")); !errors.Is(err, ErrNotDir) {
+		t.Errorf("EnsureDir under a file err = %v, want ErrNotDir", err)
+	}
 	for _, dir := range []string{"out", filepath.Join("out", "deeper"), filepath.Join("..", "elsewhere")} {
-		if err := only.EnsureDir(handle, dir); !errors.Is(err, ErrOutside) {
+		if err := only.EnsureDir(dir); !errors.Is(err, ErrOutside) {
 			t.Errorf("EnsureDir(%q) err = %v, want ErrOutside", dir, err)
 		}
 	}
 	if entries, err := os.ReadDir(filepath.Join(base, "elsewhere")); err != nil || len(entries) != 0 {
 		t.Fatalf("made a directory outside the root: %v %v", entries, err)
+	}
+}
+
+// OpenDir follows a link to a directory inside the root the way the read
+// and save paths follow one, including a link named by its absolute path,
+// which a handle on the root may not traverse itself.
+func TestOpenDirFollowsLinksInsideTheRoot(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	if err := os.MkdirAll(filepath.Join(root, "real"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "real", "note.md"), []byte("n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "file.md"), []byte("f"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "abs")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real", filepath.Join(root, "rel")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(base, filepath.Join(root, "out")); err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(root, filepath.Join(t.TempDir(), "s.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	only := r.List()[0]
+
+	for _, dir := range []string{"real", "abs", "rel", "."} {
+		handle, real, err := only.OpenDir(dir)
+		if err != nil {
+			t.Errorf("OpenDir(%q): %v", dir, err)
+			continue
+		}
+		want := filepath.Join(root, "real")
+		if dir == "." {
+			want = root
+		}
+		if real != want {
+			t.Errorf("OpenDir(%q) real = %q, want %q", dir, real, want)
+		}
+		if _, err := handle.Lstat("note.md"); dir != "." && err != nil {
+			t.Errorf("OpenDir(%q) cannot see the note: %v", dir, err)
+		}
+		handle.Close()
+	}
+
+	if _, _, err := only.OpenDir("file.md"); !errors.Is(err, ErrNotDir) {
+		t.Errorf("OpenDir on a file err = %v, want ErrNotDir", err)
+	}
+	if _, _, err := only.OpenDir("out"); !errors.Is(err, ErrOutside) {
+		t.Errorf("OpenDir on a link out err = %v, want ErrOutside", err)
+	}
+	if _, _, err := only.OpenDir("missing"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("OpenDir on a missing directory err = %v, want ErrNotExist", err)
+	}
+}
+
+// Escapes answers for a link Resolve cannot follow, which is the only
+// reason it exists: a dangling one has no real path.
+func TestEscapesIsLexical(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(root, filepath.Join(t.TempDir(), "s.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	only := r.List()[0]
+	sub := filepath.Join(root, "sub")
+
+	for _, c := range []struct {
+		realDir, target string
+		want            bool
+	}{
+		{root, "gone.md", false},
+		{root, "sub/gone.md", false},
+		{sub, "../gone.md", false},
+		{sub, "gone.md", true == false},
+		{root, "../gone.md", true},
+		{sub, "../../gone.md", true},
+		{root, filepath.Join(base, "gone.md"), true},
+		{root, filepath.Join(root, "gone.md"), false},
+		{root, "/etc/passwd", true},
+	} {
+		if got := only.Escapes(c.realDir, c.target); got != c.want {
+			t.Errorf("Escapes(%q, %q) = %v, want %v", c.realDir, c.target, got, c.want)
+		}
 	}
 }

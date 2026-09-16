@@ -83,7 +83,7 @@ func Write(root roots.Root, dir string, c Clip, now time.Time) (string, error) {
 	}
 	defer handle.Close()
 	if dir != "." {
-		if err := root.EnsureDir(handle, dir); err != nil {
+		if err := root.EnsureDir(dir); err != nil {
 			return "", err
 		}
 	}

@@ -52,27 +52,28 @@ func (s *Store) Create(slug, rel, text string) (Created, error) {
 	if err != nil {
 		return Created{}, err
 	}
-	handle, err := root.Open()
-	if err != nil {
-		return Created{}, err
-	}
-	defer handle.Close()
-	if dir := filepath.Dir(name); dir != "." {
-		if err := root.EnsureDir(handle, dir); err != nil {
+	dir, base := filepath.Dir(name), filepath.Base(name)
+	if dir != "." {
+		if err := root.EnsureDir(dir); err != nil {
 			return Created{}, err
 		}
 	}
+	parent, realDir, err := root.OpenDir(dir)
+	if err != nil {
+		return Created{}, err
+	}
+	defer parent.Close()
 	// Lstat first so that a name taken by a link — the one case where
 	// O_EXCL's answer would be true but uninformative — is reported as
 	// the taken name it is, and an escaping link is reported as an
 	// escape. O_EXCL below is what actually decides it.
-	if _, err := handle.Lstat(name); err == nil {
-		if _, err := root.Resolve(name); errors.Is(err, roots.ErrOutside) {
+	if info, err := parent.Lstat(base); err == nil {
+		if outsideLink(root, parent, realDir, name, base, info) {
 			return Created{}, roots.ErrOutside
 		}
 		return Created{}, ErrExists
 	}
-	f, err := handle.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	f, err := parent.OpenFile(base, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if errors.Is(err, fs.ErrExist) {
 		return Created{}, ErrExists
 	}
@@ -80,17 +81,17 @@ func (s *Store) Create(slug, rel, text string) (Created, error) {
 		return Created{}, err
 	}
 	if err := writeAll(f, []byte(text)); err != nil {
-		handle.Remove(name)
+		parent.Remove(base)
 		return Created{}, err
 	}
 	// Read the note back through the path a save will take, so the
 	// revision returned here is the one that save will compare against.
-	dir, base, canonical, err := s.reg.OpenParent(slug, name)
+	saveDir, saveName, canonical, err := s.reg.OpenParent(slug, name)
 	if err != nil {
 		return Created{}, err
 	}
-	defer dir.Close()
-	data, snap, err := read(dir, base)
+	defer saveDir.Close()
+	data, snap, err := read(saveDir, saveName)
 	if err != nil {
 		return Created{}, err
 	}
@@ -117,21 +118,17 @@ func (s *Store) Delete(slug, rel string) error {
 	if err != nil {
 		return err
 	}
-	// Resolving the parent first is diagnosis, not enforcement — the
-	// handle below is the enforcement — but it is what lets a folder that
-	// is a link out of the root be answered as the escape it is rather
-	// than as an unexplained I/O error.
-	if dir := filepath.Dir(name); dir != "." {
-		if _, err := root.Resolve(dir); err != nil {
-			return err
-		}
-	}
-	handle, err := root.Open()
+	// The parent is resolved and opened first, so that every check below
+	// and the removal itself are made through a handle on the directory
+	// the note really lives in. A parent that leaves the root is refused
+	// here, by name, and never opened.
+	dir, base := filepath.Dir(name), filepath.Base(name)
+	parent, realDir, err := root.OpenDir(dir)
 	if err != nil {
 		return err
 	}
-	defer handle.Close()
-	info, err := handle.Lstat(name)
+	defer parent.Close()
+	info, err := parent.Lstat(base)
 	if err != nil {
 		return err
 	}
@@ -141,7 +138,7 @@ func (s *Store) Delete(slug, rel string) error {
 		// report one; a link inside the root is refused as well, because
 		// the name the caller confirmed and the file that would go are
 		// not the same file.
-		if _, err := root.Resolve(name); errors.Is(err, roots.ErrOutside) {
+		if outsideLink(root, parent, realDir, name, base, info) {
 			return roots.ErrOutside
 		}
 		return ErrNotRegular
@@ -156,7 +153,28 @@ func (s *Store) Delete(slug, rel string) error {
 	// something else between the check above and this call, exactly as it
 	// could between the save path's verify and its rename; nothing here
 	// widens what such a writer can already do to the root by hand.
-	return handle.Remove(name)
+	return parent.Remove(base)
+}
+
+// outsideLink reports whether name, which exists inside parent, is a
+// symlink that leaves the root. Resolve answers for a link with a target,
+// and is authoritative because it follows a chain of them; a dangling
+// link has no real path for Resolve to call anything but missing, so its
+// target is read and checked lexically instead. Either way the operation
+// is being refused — this only decides which refusal it gets.
+func outsideLink(root roots.Root, parent *os.Root, realDir, name, base string, info os.FileInfo) bool {
+	if info.Mode()&fs.ModeSymlink == 0 {
+		return false
+	}
+	_, err := root.Resolve(name)
+	if errors.Is(err, roots.ErrOutside) {
+		return true
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	target, err := parent.Readlink(base)
+	return err == nil && root.Escapes(realDir, target)
 }
 
 // checkedName confines rel to the root lexically and refuses the names a

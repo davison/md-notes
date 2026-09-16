@@ -203,6 +203,8 @@ func (s *Server) sourceError(w http.ResponseWriter, err error) {
 		writeSourceError(w, http.StatusBadRequest, "invalid_path", "a note name may not be empty, hidden, or contain a control character")
 	case errors.Is(err, os.ErrNotExist):
 		writeSourceError(w, http.StatusNotFound, "not_found", "note or root no longer exists")
+	case errors.Is(err, roots.ErrNotDir):
+		writeSourceError(w, http.StatusNotFound, "not_found", "a component of the path is not a directory")
 	case errors.Is(err, roots.ErrOutside):
 		writeSourceError(w, http.StatusForbidden, "outside_root", "path is outside the root")
 	case errors.Is(err, os.ErrPermission):
