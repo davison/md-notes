@@ -113,7 +113,9 @@ describe("describeClipFailure", () => {
     expect(failure.message).toContain("cross-origin request refused");
   });
 
-  it("names the tailnet allow-list, not the token, when clipping is refused", () => {
+  it("blames the daemon's age, not the token, when a clip meets loopback_only", () => {
+    // Since M6-R1 the allow-list admits `POST /api/clip` under a tailnet
+    // name, so this refusal means the daemon is older than this extension.
     const remote = { daemonUrl: "https://laptop.ts.net", token: "s3cret" };
     const failure = describeClipFailure(
       new DaemonError(
@@ -125,8 +127,9 @@ describe("describeClipFailure", () => {
       remote,
     );
     expect(failure.kind).toBe("loopback_only");
-    expect(failure.message).toContain("Clipping is refused over laptop.ts.net");
+    expect(failure.message).toContain("laptop.ts.net");
     expect(failure.message).toContain("`POST /api/clip`");
+    expect(failure.message).toContain("predates");
     expect(failure.message).not.toContain("mdn token");
     expect(failure.offerOptions).toBe(true);
   });

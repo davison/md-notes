@@ -5,7 +5,7 @@
 
 import { DaemonError, type ClipRequest, type FailureKind } from "./daemon";
 import type { ClipKind, Extraction } from "./extraction";
-import { badHostMessage, clipRefusedRemotely } from "./reach";
+import { badHostMessage, clipRefusedByOlderDaemon } from "./reach";
 import type { Settings } from "./settings";
 
 /**
@@ -72,8 +72,10 @@ export interface ClipFailure {
  * never sees a token to judge, and which the extension also knows before
  * asking when its own settings are empty.
  *
- * M4-R6 adds a fourth: a daemon reached over the tailnet, where the token is
- * fine and the *endpoint* is what is refused.
+ * M4-R6 added a fourth: a daemon reached over the tailnet, where the token is
+ * fine and the *endpoint* is what is refused. M6-R1 admits the endpoint
+ * there, so that refusal now means an out-of-date daemon rather than a rule,
+ * and the message says so.
  */
 export function describeClipFailure(error: unknown, settings: Settings): ClipFailure {
   if (!(error instanceof DaemonError)) {
@@ -115,10 +117,11 @@ export function describeClipFailure(error: unknown, settings: Settings): ClipFai
     case "loopback_only":
       // The tailnet allow-list, not the token: the token was accepted and the
       // endpoint still is not served under that name. Pointing the user at
-      // `mdn token` here would waste their afternoon.
+      // `mdn token` here would waste their afternoon — and since M6-R1 the
+      // daemon admits the clip, so what this reports is a daemon left behind.
       return {
         kind: error.kind,
-        message: clipRefusedRemotely(settings.daemonUrl),
+        message: clipRefusedByOlderDaemon(settings.daemonUrl, error.detail),
         offerOptions: true,
       };
     case "bad_host":

@@ -1,6 +1,7 @@
 /**
  * End-to-end check of the extension against a daemon reached under a tailnet
- * name, which is M4-R6 and the capture it adopts, #51.
+ * name, which is M4-R6 and the capture it adopts, #51 — and, since M6-R1,
+ * the clip that suite once watched be refused.
  *
  * The name is simulated rather than real: the daemon is started with
  * `--tailnet-host <name>:<port>` and Chromium with
@@ -119,8 +120,8 @@ const ARTICLE = `<!doctype html>
     <h1>A page worth clipping</h1>
     <p>This paragraph exists so the extractor has enough prose in front of it to
       believe the page is an article at all, which is a precondition of the
-      thing actually under test here: what the popup says when the daemon
-      refuses the save.</p>
+      thing actually under test here: the clip the daemon saves under a
+      tailnet name.</p>
     <p>A second paragraph, so the decision is not made on a knife edge, and the
       clip that reaches the daemon is a real one rather than an empty body the
       daemon might refuse for a different reason entirely.</p>
@@ -305,15 +306,21 @@ describe("against a daemon under a tailnet name", { skip: blocker ?? false }, ()
     // The daemon line says what this daemon will not do before anything is
     // pressed, rather than leaving the Clip button to find out.
     assert.match(await popup.textContent("#daemon"), /over the tailnet/);
-    assert.match(
-      await popup.textContent("#daemon"),
-      /registering a folder and clipping are refused/,
-    );
+    const daemonLine = await popup.textContent("#daemon");
+    assert.match(daemonLine, /registering a folder is refused/);
+    // M6-R1: clipping is no longer named among the refusals, because it is
+    // no longer one.
+    assert.match(daemonLine, /clipping both work here/);
+    assert.doesNotMatch(daemonLine, /clipping (?:is|are) refused/);
     await popup.close();
     await page.close();
   });
 
-  it("names the allow-list, not the token, when a clip is refused", async () => {
+  it("saves a clip over the tailnet, into the clips directory", async () => {
+    // M6-R1, and the case this suite used to make in the other direction:
+    // the same rig, the same token, the daemon now admitting `POST
+    // /api/clip` under the tailnet name.
+    assert.deepEqual(fs.readdirSync(notesDir).sort(), ["deep"], "nothing clipped yet");
     const target = await context.newPage();
     await target.goto(articleUrl);
     const tabId = await waitFor(() => pageTabId(worker(), articleUrl), "the page to clip");
@@ -323,16 +330,50 @@ describe("against a daemon under a tailnet name", { skip: blocker ?? false }, ()
     await popup.click("#clip-page");
     await popup.waitForSelector("#clip-title:not([disabled])");
     await popup.click("#clip-save");
-    await popup.waitForSelector("#clip-status.error");
+    await popup.waitForSelector("#clip-status.ok");
     const message = await popup.textContent("#clip-status");
-    assert.match(message, /Clipping is refused over mdn-e2e\.tailnet\.test:\d+/);
-    assert.match(message, /POST \/api\/clip/);
-    assert.doesNotMatch(message, /mdn token/);
-    assert.doesNotMatch(message, /rejected the token/);
-    // Nothing was written: the allow-list refused before the handler ran.
-    assert.deepEqual(fs.readdirSync(notesDir).sort(), ["deep"]);
+    assert.match(message, /^Saved to clips\/\d{4}-\d{2}-\d{2}-a-page-worth-clipping\.md$/);
+    assert.doesNotMatch(message, /refused/);
+    // The link under the message opens the new note on the tailnet name,
+    // where the clip now lives.
+    assert.equal(
+      await popup.getAttribute("#clip-open", "href"),
+      `${tailnetOrigin}/r/notes/${message.replace("Saved to ", "")}`,
+    );
+
+    // And it is a file in the clips directory of the daemon's notes root,
+    // exactly as a clip taken on loopback would be.
+    assert.deepEqual(fs.readdirSync(notesDir).sort(), ["clips", "deep"]);
+    const clips = fs.readdirSync(path.join(notesDir, "clips"));
+    assert.equal(clips.length, 1, `one clip, got ${clips.join(", ")}`);
+    const note = fs.readFileSync(path.join(notesDir, "clips", clips[0]), "utf8");
+    assert.match(note, /^---\ntitle: A page worth clipping\n/);
+    assert.ok(note.includes(`source: ${articleUrl}`), `the clip cites the page:\n${note}`);
+    assert.match(note, /tags: \[clip\]/);
+    // Readability lifts the page's own <h1> into the title, so the body is
+    // the prose under it — the real conversion, not an empty file.
+    assert.match(note, /---\n\nThis paragraph exists so the extractor/);
+    assert.match(note, /A second paragraph, so the decision is not made on a knife edge/);
     await popup.close();
     await target.close();
+  });
+
+  it("still refuses to register a folder, and says so without blaming the token", async () => {
+    // The half of the allow-list M6-R1 deliberately leaves alone: `POST
+    // /api/roots` is the step from a network credential to any directory on
+    // the machine, so it stays on the machine.
+    const refusal = await worker().evaluate(async (origin) => {
+      const stored = await chrome.storage.local.get(["token"]);
+      const res = await fetch(`${origin}/api/roots`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${stored.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ path: "/etc" }),
+      });
+      return { status: res.status, body: await res.json() };
+    }, tailnetOrigin);
+    assert.equal(refusal.status, 403);
+    assert.equal(refusal.body.code, "loopback_only");
+    assert.match(refusal.body.error, /served on loopback only/);
   });
 
   it("tests the connection by authenticating first, and says what is refused", async () => {
@@ -345,8 +386,9 @@ describe("against a daemon under a tailnet name", { skip: blocker ?? false }, ()
     const message = await page.textContent("#status");
     assert.equal(await page.getAttribute("#status", "class"), "status ok");
     assert.match(message, /daemon answered: 1 root, and the token was accepted/);
-    assert.match(message, /opening a file already inside a registered root works here/);
-    assert.match(message, /registering a folder and clipping are refused/);
+    assert.match(message, /opening a file already inside a registered root and clipping both work here/);
+    assert.match(message, /registering a folder is refused/);
+    assert.doesNotMatch(message, /clipping (?:is|are) refused/);
     assert.doesNotMatch(message, /rejected the token/);
     await page.close();
   });
