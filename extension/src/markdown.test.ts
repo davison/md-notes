@@ -478,6 +478,21 @@ describe("htmlToMarkdown", () => {
     expect(htmlToMarkdown(html, PAGE)).toBe("|  |  |\n| --- | --- |\n| tall | x |\n|  | y |");
   });
 
+  it("drops chrome that is not a child of the container", () => {
+    const header =
+      '<div class="highlight highlight-source-go">' +
+      '<div class="code-header"><span class="filename">main.go</span>' +
+      '<button class="copy-button">Copy</button></div>' +
+      "<pre>package main</pre>" +
+      "</div>";
+    expect(htmlToMarkdown(header, PAGE)).toBe("main.go\n\n```go\npackage main\n```");
+    const toolbar =
+      '<div class="highlight" data-lang="sh"><pre>ls</pre>' +
+      '<div class="toolbar"><clipboard-copy>Copy</clipboard-copy></div>' +
+      '<p>Note <svg aria-hidden="true">i</svg> here</p></div>';
+    expect(htmlToMarkdown(toolbar, PAGE)).toBe("```sh\nls\n```\n\nNote here");
+  });
+
   it("reads the sections in the order a browser does, not the order they were written", () => {
     // HTML 4 required `tfoot` before `tbody`, and a `thead` can be written
     // last; `HTMLTableElement.rows` puts them head, body, foot either way.
