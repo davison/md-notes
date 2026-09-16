@@ -131,9 +131,8 @@ The home page at `/` lists the notes root under "Notes" and every recent root un
 
 All endpoints are on the loopback listener, and all of them are behind the guard
 described under [Confinement](#confinement). Most of them are also reachable under a
-configured `tailnet_host`, to an authenticated caller; `POST /api/roots` and
-`POST /api/clip` are not, and the
-[tailnet section](#reaching-the-daemon-over-the-tailnet) says why.
+configured `tailnet_host`, to an authenticated caller; `POST /api/roots` is not, and
+the [tailnet section](#reaching-the-daemon-over-the-tailnet) says why.
 
 | Endpoint | What it does |
 |----------|--------------|
@@ -149,7 +148,7 @@ configured `tailnet_host`, to an authenticated caller; `POST /api/roots` and
 | `GET /api/r/{slug}/search?q=` | `{hits, truncated}`; each hit is a path, line number, matching text with match offsets, and the lines either side |
 | `GET /api/r/{slug}/tags` | `{tags: [{name, count, notes}]}`, sorted by count then name |
 | `GET /api/r/{slug}/events` | A Server-Sent Events stream of change batches |
-| `POST /api/clip` | Creates a note from `{url, title, markdown, kind}`; needs the token. See [Clipping a web page](#clipping-a-web-page) |
+| `POST /api/clip` | Creates a note from `{url, title, markdown, kind}`; needs the token, on loopback and under `tailnet_host` alike. See [Clipping a web page](#clipping-a-web-page) |
 
 Everything else serves the embedded UI bundle, falling back to `index.html` so
 client-side routes such as `/r/notes/some/note.md` load. Assets are served
@@ -407,10 +406,13 @@ note](#creating-and-deleting-a-note) is what the web UI composes with it.
 ### Clipping a web page
 
 `POST /api/clip` creates a note from a web clipping. It is the only endpoint that
-creates a file rather than reading or replacing one, and the only one that requires
-the [token](#authentication). The client it exists for is the browser extension,
-which [has its own page](extension.md) covering installation, clipping and opening
-local markdown files.
+requires the [token](#authentication), and the only one that chooses the new note's
+path itself rather than taking it from the caller. The client it exists for is the
+browser extension, which [has its own page](extension.md) covering installation,
+clipping and opening local markdown files. It is reachable under `tailnet_host` as
+well as on loopback — with the token, which the session cookie does not substitute
+for here; see
+[What is reachable under that name](#what-is-reachable-under-that-name-and-what-is-not).
 
 ```
 POST /api/clip
@@ -1157,28 +1159,44 @@ What an authenticated caller reaches is the UI's own API and nothing else:
 | Reachable | Not reachable |
 |-----------|---------------|
 | `GET /api/roots` | `POST /api/roots` |
-| the per-root reads — `tree`, `note`, `source`, `raw`, `search`, `tags`, `events` | `POST /api/clip` |
-| `PUT`, `POST` and `DELETE` on `/api/r/{slug}/source/{path…}` | anything else under `/api/` |
+| the per-root reads — `tree`, `note`, `source`, `raw`, `search`, `tags`, `events` | anything else under `/api/` |
+| `PUT`, `POST` and `DELETE` on `/api/r/{slug}/source/{path…}` | |
+| `POST /api/clip`, to a caller presenting the token | |
 | the UI bundle and its client-side routes | |
 
 Anything on the right answers `403 {"code":"loopback_only"}`. It is an allow-list,
-not those two exclusions, so an endpoint added later is loopback-only until somebody
+not that one exclusion, so an endpoint added later is loopback-only until somebody
 decides otherwise.
 
 `POST /api/roots` is the one that matters: with it, a caller holding the credential
 could register any directory on the machine and then read every file under it
 through the raw endpoint. On loopback that is inside the premise below — anything
 that can reach the port runs as you and can read those files anyway. Over the
-tailnet it is not, so it stays on the machine. `POST /api/clip` is refused because
-nothing off the machine clips: the extension's daemon URL is `http://localhost:7337`
-by default, and it runs where the notes are. Pointing that URL at the tailnet name
-buys exactly one of the extension's three actions: with the token pasted it opens a
-local markdown file that is already inside a registered root, because the roots
-listing it depends on carries the token whenever the daemon URL is not loopback.
-Its clips and folder registrations meet the same `loopback_only` as everybody
-else's, and the extension names that refusal rather than blaming the token — see
-[the extension page](extension.md#a-daemon-reached-over-the-tailnet). Reading notes
-from another device is still the UI's job in the browser there.
+tailnet it is not, so it stays on the machine. It is also the *only* thing left on
+the right, which is the difference between this list and the one milestone three
+wrote.
+
+`POST /api/clip` was on the right until milestone six. It was refused for a weaker
+reason than root registration — not that a clip is dangerous, but that no write at
+all crossed the name then, so nothing off the machine clipped
+([#39](https://github.com/davison/md-notes/issues/39#issuecomment-5632388601)).
+[M5-R2](milestones/5-create-and-delete-notes.md) removed that ground when it
+admitted `POST /api/r/{slug}/source/{path…}`: a credential that can create a file at
+any path inside any registered root is already wider than one that can add a file to
+`clips_dir` at a name the *daemon* chooses. So the clip is admitted and the
+extension pointed at the tailnet name clips into the notes
+([#95](https://github.com/davison/md-notes/issues/95)). It still requires the bearer
+token — a browser logged in at the tailnet name holds a session cookie, which has
+never been enough for this endpoint — so in practice the caller is the extension,
+holding the token it was given.
+
+What that leaves the extension under a tailnet name is two of its three actions:
+with the token pasted it clips, and it opens a local markdown file already inside a
+registered root, because the roots listing it depends on carries the token whenever
+the daemon URL is not loopback. Registering a folder meets the same `loopback_only`
+as everybody else's, and the extension names that refusal rather than blaming the
+token — see [the extension page](extension.md#a-daemon-reached-over-the-tailnet).
+Reading notes from another device is still the UI's job in the browser there.
 
 The three write methods on a note's source are admitted on one rule, because they are
 one resource: a caller that can already replace a note's bytes is not meaningfully
@@ -1190,9 +1208,9 @@ applies to every registered root, `mdn open` ones included, for as long as they 
 registered — but `POST /api/roots` stays loopback-only, so nothing reachable over the
 tailnet can widen the set of roots it applies to.
 
-So a remote device reads, searches, creates, edits and deletes the notes the daemon
-already serves. It cannot add a root, and `mdn open` remains a command for the
-daemon's own machine.
+So a remote device reads, searches, creates, edits, deletes and clips into the notes
+the daemon already serves. It cannot add a root, and `mdn open` remains a command for
+the daemon's own machine.
 
 ### The premise, restated
 
@@ -1201,7 +1219,8 @@ port already runs as the user who owns the notes. Under `tailnet_host` that is n
 longer who is on the other end. The people and devices your **tailnet ACL admits to
 this node** can reach the login page, and one of them holding the token can read,
 search and edit every root the daemon serves — the notes root and every folder added
-with `mdn open`, including any that was only ever meant to be looked at locally.
+with `mdn open`, including any that was only ever meant to be looked at locally — and
+add a clip to the notes root's clips directory.
 
 So: keep the ACL as narrow as the notes deserve, ideally to your own devices; use
 `serve` rather than `funnel`; and treat `mdn token --rotate` as the way to revoke a

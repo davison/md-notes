@@ -1219,3 +1219,39 @@ in the three rows above that a capture would have carried.
   by a person using them, and the two checks that would judge them — the operator's own, on
   the phone and on the Boox — are explicitly not closure gates. The record cannot say what
   they will find.
+
+## Post-merge annotation — 2026-09-16
+
+*This section is appended after the record merged. Nothing above it is edited: a
+merged record is sealed, and a reader who followed a citation here should find what
+was written at the time.*
+
+**"Clipping over the tailnet stays refused" above is superseded.** `POST /api/clip`
+is on the tailnet allow-list from milestone six, and the extension pointed at a
+`tailnet_host` URL saves a clip into the notes root's clips directory exactly as it
+does on loopback. The section above records the decision correctly for the milestone
+it belongs to and is left standing; this note says what changed and why, so a reader
+who arrives at it by citation is not left with an answer that stopped being true.
+
+What moved was not the reasoning but its ground. #39's allow-list decision
+([5632388601](https://github.com/davison/md-notes/issues/39#issuecomment-5632388601))
+refused clipping because the credential crossing the tailnet could edit an existing
+note and never write a *new* file, and #60's decision
+([5656174981](https://github.com/davison/md-notes/issues/60#issuecomment-5656174981))
+declined to take the widening inside a requirement that said the opposite, naming it
+a task of its own with its reasoning beside #39's. Milestone five then admitted
+`POST /api/r/{slug}/source/{path…}` under **M5-R2**, so the tailnet credential can
+already create a file at any path inside any registered root. A clip writes one file
+into `clips_dir` at a name the daemon chooses from the date and the title, which is
+strictly narrower than that — and both #39's rejection and #60's said as much about
+the endpoint on its own.
+
+The task #60 asked for is [#97](https://github.com/davison/md-notes/issues/97), in
+milestone six, adopting the capture
+[#95](https://github.com/davison/md-notes/issues/95) that the operator raised when
+M5 closed. It is one line of allow-list, with the decision recorded on the task. What
+stays refused is `POST /api/roots`: registering a root is the step from "read my
+notes" to "read any file on this machine", which is the part of #39's reasoning
+nothing has changed. The "Not yet" box in
+[the extension page](../extension.md#a-daemon-reached-over-the-tailnet) is gone with
+the refusal it described.
