@@ -143,25 +143,40 @@ export async function startFixture(label) {
   daemon.stderr.on("data", (d) => log.push(String(d)));
   daemon.on("exit", (code) => log.push(`daemon exited with ${code}\n`));
 
-  await waitFor(
-    () => fetch(`${origin}/api/roots`).then((r) => r.ok).catch(() => false),
-    `the daemon to listen on ${port}:\n${log.join("")}`,
-  );
-
-  // The daemon lists a root through ripgrep. Without it the navigator is
-  // empty and a dozen checks fail on a missing `.tree` row, each of them
-  // 30 seconds of Playwright waiting for an element that was never coming;
-  // asked here, the answer arrives once and says what is actually wrong.
-  const tree = await fetch(`${origin}/api/r/notes/tree`);
-  if (!tree.ok) {
-    throw new Error(
-      `the daemon cannot list the fixture root (HTTP ${tree.status}): ${(await tree.text()).trim()}\n` +
-        "ripgrep (rg) on PATH is a runtime requirement of the daemon, not only of its tests.",
+  // Everything between the spawn and the handle below has to hand the daemon
+  // back if it throws. A child with its stdio pipes attached keeps the
+  // node:test worker's event loop alive, so a bare `throw` here does not fail
+  // the file — it hangs it, with the message computed and never flushed, and
+  // leaves an `mdn serve` and a temporary tree behind. That is worse than the
+  // failure the ripgrep check below was added to explain, and it is what the
+  // review of PR #84 found. SIGKILL rather than SIGTERM: the run is over,
+  // there is nothing to flush, and a graceful stop is one more thing that can
+  // wedge and hang the worker all over again.
+  try {
+    await waitFor(
+      () => fetch(`${origin}/api/roots`).then((r) => r.ok).catch(() => false),
+      `the daemon to listen on ${port}:\n${log.join("")}`,
     );
-  }
-  const listed = await tree.json();
-  if (!listed.children || listed.children.length === 0) {
-    throw new Error(`the fixture root listed empty: ${JSON.stringify(listed)}`);
+
+    // The daemon lists a root through ripgrep. Without it the navigator is
+    // empty and a dozen checks fail on a missing `.tree` row, each of them
+    // 30 seconds of Playwright waiting for an element that was never coming;
+    // asked here, the answer arrives once and says what is actually wrong.
+    const tree = await fetch(`${origin}/api/r/notes/tree`);
+    if (!tree.ok) {
+      throw new Error(
+        `the daemon cannot list the fixture root (HTTP ${tree.status}): ${(await tree.text()).trim()}\n` +
+          "ripgrep (rg) on PATH is a runtime requirement of the daemon, not only of its tests.",
+      );
+    }
+    const listed = await tree.json();
+    if (!listed.children || listed.children.length === 0) {
+      throw new Error(`the fixture root listed empty: ${JSON.stringify(listed)}`);
+    }
+  } catch (e) {
+    daemon.kill("SIGKILL");
+    fs.rmSync(tmp, { recursive: true, force: true });
+    throw e;
   }
 
   return {
