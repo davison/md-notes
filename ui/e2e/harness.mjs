@@ -5,12 +5,14 @@
  *
  * Playwright is resolved the way `extension/e2e` resolves it — an explicit
  * `PLAYWRIGHT_ROOT`, then the packages that might declare it — so the two
- * suites share one installation and one browser download. It is declared as
- * a devDependency of `extension/package.json`, which is where the first e2e
- * suite lives; `make e2e` installs it.
+ * suites share one installation and one browser download. It is declared by
+ * `ui/package.json`, which `make ui-deps` installs; the browser itself is a
+ * separate download (`pnpm --dir ui exec playwright install chromium`), and
+ * without it every test here skips rather than fails.
  *
  *     make e2e
- *     PLAYWRIGHT_ROOT=/path/to/a/playwright/install node --test ui/e2e/
+ *     pnpm --dir ui e2e
+ *     PLAYWRIGHT_ROOT=/elsewhere pnpm --dir ui e2e
  *
  * Nothing here touches the operator's daemon, configuration or state: the
  * root, the `--state` file, the `--token-file` and the `--config` are all
