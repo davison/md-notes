@@ -68,7 +68,7 @@ func (s *Store) Create(slug, rel, text string) (Created, error) {
 	// the taken name it is, and an escaping link is reported as an
 	// escape. O_EXCL below is what actually decides it.
 	if info, err := parent.Lstat(base); err == nil {
-		if outsideLink(root, parent, realDir, name, base, info) {
+		if outsideLink(root, realDir, name, base, info) {
 			return Created{}, roots.ErrOutside
 		}
 		return Created{}, ErrExists
@@ -138,7 +138,7 @@ func (s *Store) Delete(slug, rel string) error {
 		// report one; a link inside the root is refused as well, because
 		// the name the caller confirmed and the file that would go are
 		// not the same file.
-		if outsideLink(root, parent, realDir, name, base, info) {
+		if outsideLink(root, realDir, name, base, info) {
 			return roots.ErrOutside
 		}
 		return ErrNotRegular
@@ -156,13 +156,15 @@ func (s *Store) Delete(slug, rel string) error {
 	return parent.Remove(base)
 }
 
-// outsideLink reports whether name, which exists inside parent, is a
+// outsideLink reports whether name, which exists inside realDir, is a
 // symlink that leaves the root. Resolve answers for a link with a target,
 // and is authoritative because it follows a chain of them; a dangling
 // link has no real path for Resolve to call anything but missing, so its
-// target is read and checked lexically instead. Either way the operation
-// is being refused — this only decides which refusal it gets.
-func outsideLink(root roots.Root, parent *os.Root, realDir, name, base string, info os.FileInfo) bool {
+// chain is followed lexically instead — one hop is not enough, because a
+// first target inside the root can name a second that is not. Either way
+// the operation is being refused — this only decides which refusal it
+// gets.
+func outsideLink(root roots.Root, realDir, name, base string, info os.FileInfo) bool {
 	if info.Mode()&fs.ModeSymlink == 0 {
 		return false
 	}
@@ -173,8 +175,7 @@ func outsideLink(root roots.Root, parent *os.Root, realDir, name, base string, i
 	if !errors.Is(err, os.ErrNotExist) {
 		return false
 	}
-	target, err := parent.Readlink(base)
-	return err == nil && root.Escapes(realDir, target)
+	return root.EscapesChain(realDir, base)
 }
 
 // checkedName confines rel to the root lexically and refuses the names a

@@ -344,6 +344,12 @@ func (root Root) Relative(rel string) (string, error) {
 func (root Root) OpenDir(rel string) (*os.Root, string, error) {
 	canonical, err := root.Resolve(rel)
 	if err != nil {
+		// A component that is a symlink with no target has no real path
+		// for Resolve to call anything but missing. Where its chain
+		// leaves the root, the honest answer is the escape it is.
+		if errors.Is(err, os.ErrNotExist) && root.DanglingEscape(rel) {
+			return nil, "", ErrOutside
+		}
 		return nil, "", err
 	}
 	info, err := os.Stat(canonical)
@@ -389,6 +395,12 @@ func (root Root) EnsureDir(dir string) error {
 		if errors.Is(err, ErrOutside) {
 			return err
 		}
+		// A component that is a symlink with no target is not a directory
+		// to make: where its chain leaves the root, the walk must stop
+		// here rather than climb past it and hand the name to MkdirAll.
+		if errors.Is(err, os.ErrNotExist) && root.DanglingEscape(ancestor) {
+			return ErrOutside
+		}
 		parent := filepath.Dir(ancestor)
 		if parent == ancestor {
 			ancestor = "."
@@ -426,6 +438,87 @@ func (root Root) Escapes(realDir, target string) bool {
 		target = filepath.Join(realDir, target)
 	}
 	return !within(root.real, filepath.Clean(target))
+}
+
+// maxLinkHops bounds the walk below the way the kernel bounds its own
+// resolution: a chain of links that do not exist can still be circular,
+// and diagnosis has to end.
+const maxLinkHops = 16
+
+// EscapesChain reports whether the symlink named base inside realDir leads
+// out of the root. Escapes answers for the one target a link names;
+// this follows the chain of them, because a first hop that stays inside
+// the root can still name a second that does not. Each hop is read
+// through a handle on the root, so the walk cannot be led outside it, and
+// like Escapes it is lexical: the links it is asked about are the ones
+// with no target for Resolve to evaluate. Diagnosis for an operation
+// being refused either way, never the decision to refuse one.
+func (root Root) EscapesChain(realDir, base string) bool {
+	handle, err := os.OpenRoot(root.real)
+	if err != nil {
+		return false
+	}
+	defer handle.Close()
+	_, escaped := root.followLinks(handle, filepath.Join(realDir, base))
+	return escaped
+}
+
+// DanglingEscape asks the same question of a whole path, component by
+// component: the link with no target may be a directory along the way, not
+// the last name. It answers false for every path that does not contain
+// such a link — including one that is merely missing — so a caller reaches
+// for it only once Resolve has already refused the path.
+func (root Root) DanglingEscape(rel string) bool {
+	cleaned, err := root.Relative(rel)
+	if err != nil {
+		return false
+	}
+	handle, err := os.OpenRoot(root.real)
+	if err != nil {
+		return false
+	}
+	defer handle.Close()
+	at := root.real
+	for _, part := range strings.Split(cleaned, string(filepath.Separator)) {
+		if part == "." || part == "" {
+			continue
+		}
+		next := filepath.Join(at, part)
+		if !within(root.real, next) {
+			return false
+		}
+		end, escaped := root.followLinks(handle, next)
+		if escaped {
+			return true
+		}
+		at = end
+	}
+	return false
+}
+
+// followLinks walks the chain of symlinks starting at abs, an absolute
+// path inside the root, and returns the path it ends at — abs itself when
+// it is not a link, or not one a handle on the root will read. escaped is
+// true as soon as a hop points out of the root, and the walk stops there.
+func (root Root) followLinks(handle *os.Root, abs string) (end string, escaped bool) {
+	for hop := 0; hop < maxLinkHops; hop++ {
+		name, err := filepath.Rel(root.real, abs)
+		if err != nil {
+			return abs, false
+		}
+		target, err := handle.Readlink(name)
+		if err != nil {
+			return abs, false
+		}
+		if root.Escapes(filepath.Dir(abs), target) {
+			return abs, true
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(abs), target)
+		}
+		abs = filepath.Clean(target)
+	}
+	return abs, false
 }
 
 // within reports whether path is root or lies beneath it. Both must be
