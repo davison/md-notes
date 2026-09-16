@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"os"
@@ -250,6 +251,34 @@ func TestSaveSourceNameTooLong(t *testing.T) {
 	}
 	if !strings.Contains(body["error"], "255") {
 		t.Errorf("message does not name the limit: %q", body["error"])
+	}
+}
+
+// A chain of links longer than the resolver will follow names no file
+// anything can open. It is not a fault of the daemon's, and the save path
+// answered it 500 io_error until the chain had a name of its own. The 256
+// here is one past filepath.EvalSymlinks's own budget: if a Go release
+// moves that number or that message, this is where it shows.
+func TestSaveSourceUnfollowableChain(t *testing.T) {
+	ts, base := newTestServer(t)
+	notes := filepath.Join(base, "notes")
+	for i := 1; i < 256; i++ {
+		link := filepath.Join(notes, fmt.Sprintf("long-%d.md", i))
+		if err := os.Symlink(fmt.Sprintf("long-%d.md", i+1), link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(base, "gone.md"), filepath.Join(notes, "long-256.md")); err != nil {
+		t.Fatal(err)
+	}
+	resp := do(t, ts, "PUT", "/api/r/notes/source/long-1.md",
+		sourceBody(t, "draft", "1-whatever"), map[string]string{"Content-Type": "application/json"})
+	var body map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("body is not the {code, error} envelope: %v", err)
+	}
+	if resp.StatusCode != 422 || body["code"] != "unsupported_source" {
+		t.Fatalf("got %d %v; want 422 unsupported_source", resp.StatusCode, body)
 	}
 }
 

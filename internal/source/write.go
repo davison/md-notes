@@ -68,7 +68,11 @@ func (s *Store) Create(slug, rel, text string) (Created, error) {
 	// the taken name it is, and an escaping link is reported as an
 	// escape. O_EXCL below is what actually decides it.
 	if info, err := parent.Lstat(base); err == nil {
-		if outsideLink(root, realDir, name, base, info) {
+		escaped, linkErr := outsideLink(root, realDir, name, base, info)
+		if linkErr != nil {
+			return Created{}, linkErr
+		}
+		if escaped {
 			return Created{}, roots.ErrOutside
 		}
 		return Created{}, ErrExists
@@ -138,7 +142,11 @@ func (s *Store) Delete(slug, rel string) error {
 		// report one; a link inside the root is refused as well, because
 		// the name the caller confirmed and the file that would go are
 		// not the same file.
-		if outsideLink(root, realDir, name, base, info) {
+		escaped, linkErr := outsideLink(root, realDir, name, base, info)
+		if linkErr != nil {
+			return linkErr
+		}
+		if escaped {
 			return roots.ErrOutside
 		}
 		return ErrNotRegular
@@ -163,17 +171,24 @@ func (s *Store) Delete(slug, rel string) error {
 // chain is followed lexically instead — one hop is not enough, because a
 // first target inside the root can name a second that is not. Either way
 // the operation is being refused — this only decides which refusal it
-// gets.
-func outsideLink(root roots.Root, realDir, name, base string, info os.FileInfo) bool {
+// gets. EscapesChain reads the chain through a handle of its own on the
+// root rather than through parent, the handle held here: a second hop may
+// name anything anywhere in the root, which a handle on this one directory
+// cannot read. Confinement is the same either way, and both call sites are
+// returning an error whichever way this answers.
+func outsideLink(root roots.Root, realDir, name, base string, info os.FileInfo) (bool, error) {
 	if info.Mode()&fs.ModeSymlink == 0 {
-		return false
+		return false, nil
 	}
 	_, err := root.Resolve(name)
 	if errors.Is(err, roots.ErrOutside) {
-		return true
+		return true, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return false
+		// Missing is the one answer a lexical walk can improve on. Any
+		// other — a chain the resolver will not follow, most of all —
+		// is the resolver's to report, and it has reported it.
+		return false, nil
 	}
 	return root.EscapesChain(realDir, base)
 }

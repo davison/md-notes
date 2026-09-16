@@ -595,8 +595,9 @@ func TestOpenDirFollowsLinksInsideTheRoot(t *testing.T) {
 }
 
 // A link with no target may be one hop of a chain, and a chain that starts
-// inside the root can still end outside it. EscapesChain follows it; a
-// circular chain ends the walk rather than running forever.
+// inside the root can still end outside it. EscapesChain follows it as far
+// as the resolver itself would; a chain longer than that, and a circular
+// one, end the walk with ErrTooManyLinks rather than with a silent "no".
 func TestEscapesChainFollowsDanglingHops(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "root")
@@ -620,6 +621,10 @@ func TestEscapesChainFollowsDanglingHops(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// As long a chain as the resolver behind Resolve will follow, and one
+	// hop longer than the walk will.
+	chain(t, root, "long", filepath.Join(base, "gone.md"), maxLinkHops)
+	chain(t, root, "longer", filepath.Join(base, "gone.md"), maxLinkHops+1)
 	r, err := New(root, filepath.Join(t.TempDir(), "s.json"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -629,21 +634,41 @@ func TestEscapesChainFollowsDanglingHops(t *testing.T) {
 	for _, c := range []struct {
 		dir, base string
 		want      bool
+		wantErr   error
 	}{
-		{root, "out.md", true},
-		{root, "two.md", true},
-		{root, "deep.md", true},
-		{root, "inside.md", false},
-		{root, "loop-a.md", false},
-		{root, "self.md", false},
-		{root, "abs-inside.md", false},
-		{root, "sub", false},       // a real directory, not a link at all
-		{root, "absent.md", false}, // nothing of that name
-		{filepath.Join(root, "sub"), "deeper.md", true},
+		{root, "out.md", true, nil},
+		{root, "two.md", true, nil},
+		{root, "deep.md", true, nil},
+		{root, "inside.md", false, nil},
+		{root, "self.md", false, ErrTooManyLinks},
+		{root, "loop-a.md", false, ErrTooManyLinks},
+		{root, "abs-inside.md", false, nil},
+		{root, "sub", false, nil},       // a real directory, not a link at all
+		{root, "absent.md", false, nil}, // nothing of that name
+		{filepath.Join(root, "sub"), "deeper.md", true, nil},
+		{root, "long-1.md", true, nil},
+		{root, "longer-1.md", false, ErrTooManyLinks},
 	} {
-		if got := only.EscapesChain(c.dir, c.base); got != c.want {
-			t.Errorf("EscapesChain(%q, %q) = %v, want %v", c.dir, c.base, got, c.want)
+		got, err := only.EscapesChain(c.dir, c.base)
+		if got != c.want || !errors.Is(err, c.wantErr) {
+			t.Errorf("EscapesChain(%q, %q) = %v, %v; want %v, %v", c.dir, c.base, got, err, c.want, c.wantErr)
 		}
+	}
+}
+
+// chain makes n links under dir, each naming the next, the last naming a
+// target outside the root. It is what a walk that stops short of n gets
+// wrong.
+func chain(t *testing.T, dir, prefix, outside string, n int) {
+	t.Helper()
+	for i := 1; i < n; i++ {
+		link := filepath.Join(dir, fmt.Sprintf("%s-%d.md", prefix, i))
+		if err := os.Symlink(fmt.Sprintf("%s-%d.md", prefix, i+1), link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, fmt.Sprintf("%s-%d.md", prefix, n))); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -671,6 +696,8 @@ func TestDanglingEscapeWalksTheComponents(t *testing.T) {
 	if err := os.Symlink(filepath.Join(base, "gone.md"), filepath.Join(root, "sub", "out.md")); err != nil {
 		t.Fatal(err)
 	}
+	chain(t, root, "long", filepath.Join(base, "gone.md"), maxLinkHops)
+	chain(t, root, "longer", filepath.Join(base, "gone.md"), maxLinkHops+1)
 	r, err := New(root, filepath.Join(t.TempDir(), "s.json"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -678,22 +705,27 @@ func TestDanglingEscapeWalksTheComponents(t *testing.T) {
 	only := r.List()[0]
 
 	for _, c := range []struct {
-		rel  string
-		want bool
+		rel     string
+		want    bool
+		wantErr error
 	}{
-		{"out-dir/new.md", true},
-		{"out-dir/deeper/new.md", true},
-		{"out-dir", true},
-		{"two.md", true},
-		{"live/out.md", true},
-		{"inside-dir/new.md", false},
-		{"live/absent.md", false},
-		{"sub/absent.md", false},
-		{"absent.md", false},
-		{"sub", false},
+		{"out-dir/new.md", true, nil},
+		{"out-dir/deeper/new.md", true, nil},
+		{"out-dir", true, nil},
+		{"two.md", true, nil},
+		{"live/out.md", true, nil},
+		{"inside-dir/new.md", false, nil},
+		{"live/absent.md", false, nil},
+		{"sub/absent.md", false, nil},
+		{"absent.md", false, nil},
+		{"sub", false, nil},
+		{"long-1.md", true, nil},
+		{"longer-1.md", false, ErrTooManyLinks},
+		{"longer-1.md/child.md", false, ErrTooManyLinks},
 	} {
-		if got := only.DanglingEscape(c.rel); got != c.want {
-			t.Errorf("DanglingEscape(%q) = %v, want %v", c.rel, got, c.want)
+		got, err := only.DanglingEscape(c.rel)
+		if got != c.want || !errors.Is(err, c.wantErr) {
+			t.Errorf("DanglingEscape(%q) = %v, %v; want %v, %v", c.rel, got, err, c.want, c.wantErr)
 		}
 	}
 }
