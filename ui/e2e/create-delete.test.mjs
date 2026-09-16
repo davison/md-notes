@@ -192,7 +192,10 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
       { name: "drawer", viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true },
     ];
     for (const layout of layouts) {
-      const ctx = await browser.newContext(layout);
+      // `name` is this suite's label for the layout, not one of Playwright's
+      // context options; spread in whole it was silently ignored (#91).
+      const { name, ...options } = layout;
+      const ctx = await browser.newContext(options);
       try {
         const view = await ctx.newPage();
         await view.goto(`${origin}/r/notes/index.md`);
@@ -207,13 +210,13 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
         await view.locator(".note-body").waitFor();
         const afterwards = await del.boundingBox();
 
-        assert.deepEqual(editing, unedited, `${layout.name}: the button moved on entering the editor`);
-        assert.deepEqual(afterwards, unedited, `${layout.name}: the button moved on leaving the editor`);
+        assert.deepEqual(editing, unedited, `${name}: the button moved on entering the editor`);
+        assert.deepEqual(afterwards, unedited, `${name}: the button moved on leaving the editor`);
         // And it is where it is meant to be: hard right, inside the bar.
         const bar = await view.locator(".note-bar").boundingBox();
         assert.ok(
           unedited.x + unedited.width > bar.x + bar.width - 40,
-          `${layout.name}: the button is not at the right-hand end (${unedited.x + unedited.width} of ${bar.x + bar.width})`,
+          `${name}: the button is not at the right-hand end (${unedited.x + unedited.width} of ${bar.x + bar.width})`,
         );
       } finally {
         await ctx.close();
