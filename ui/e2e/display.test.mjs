@@ -174,11 +174,15 @@ describe("the display settings and the tap targets", { skip: blocker ?? false },
           () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
         );
       }
-      return page.evaluate(() => ({
+      // Awaited, not returned: `return promise` inside a try lets the
+      // `finally` close the context while the evaluate is still in flight,
+      // which is a race this lost on a two-core runner and won on eight.
+      const seen = await page.evaluate(() => ({
         flashed: window.__flashed,
         motion: document.documentElement.getAttribute("data-motion"),
         scrolled: document.querySelector("main.note-body")?.scrollTop ?? 0,
       }));
+      return seen;
     } finally {
       await close();
     }
@@ -294,7 +298,11 @@ describe("the display settings and the tap targets", { skip: blocker ?? false },
     // 2.75rem against the application's 15 px root font. Stated once, here,
     // so the floor above is a floor and this is the number behind it.
     const found = await tapTargets(PIXEL_7, { drawer: true });
-    for (const group of [".tree .file", ".tag", ".drawer-tab"]) {
+    // Only the controls whose content is one short line: a label that wraps
+    // is taller than the minimum and legitimately so, and which labels wrap
+    // depends on the fonts the machine has. `.drawer-tab` — "Search & tags"
+    // — is the one that does, and the floor above is what holds it.
+    for (const group of [".tree .file", ".tag"]) {
       assert.ok(
         found[group].every((h) => h === 41.25),
         `${group} measured ${JSON.stringify(found[group])}`,
