@@ -288,8 +288,9 @@ func sanitizeRedirect(raw string) string {
 // remoteAllowed reports whether the endpoint may be reached under the
 // tailnet name at all. It is an allow-list, not a list of exclusions: the
 // credential over the network reaches the UI's own API — reads, source
-// saves, the events stream, search and tags — and an endpoint nobody has
-// considered in this light is loopback-only until somebody does.
+// saves, creating and deleting a note, the events stream, search and tags
+// — and an endpoint nobody has considered in this light is loopback-only
+// until somebody does.
 func remoteAllowed(r *http.Request) bool {
 	read := r.Method == http.MethodGet || r.Method == http.MethodHead
 	p := path.Clean("/" + r.URL.Path)
@@ -309,7 +310,11 @@ func remoteAllowed(r *http.Request) bool {
 		if !ok {
 			return false
 		}
-		if r.Method == http.MethodPut {
+		// Writing a note is writing a note, whether it replaces, creates
+		// or removes one: the credential over the network reaches the
+		// same files the source save already reaches, and no more. Every
+		// other write under a root stays on the machine.
+		if r.Method == http.MethodPut || r.Method == http.MethodPost || r.Method == http.MethodDelete {
 			return sub == "source" || strings.HasPrefix(sub, "source/")
 		}
 		return read
