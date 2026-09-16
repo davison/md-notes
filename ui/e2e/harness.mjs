@@ -78,9 +78,11 @@ export async function waitFor(predicate, what, timeoutMs = 20000) {
 }
 
 /**
- * The fixture tree. Small on purpose: two directories, a tag on two notes so
- * the filter has something to prune to, and one long note whose paragraphs
- * carry the `data-line` markers the `?l=` checks aim at.
+ * The fixture tree. Small on purpose: three directories, a tag on two notes
+ * so the filter has something to prune to, one long note whose paragraphs
+ * carry the `data-line` markers the `?l=` checks aim at, and `docs/guide.md`
+ * — a note in a folder, which is what the create prompt's "bare title lands
+ * in the open note's folder" rule needs to be shown on.
  */
 export const NESTED_PARAGRAPHS = 120;
 /** The source line of the paragraph the scroll-to-line checks ask for. */
@@ -96,6 +98,7 @@ function writeFixture(notesDir) {
   write("alpha.md", "---\ntags: [alpha, beta]\n---\n\n# Alpha\n\nA note tagged alpha and beta.\n");
   write("beta.md", "---\ntags: [alpha]\n---\n\n# Beta\n\nAnother note tagged alpha.\n");
   write("projects/one.md", "# One\n\nThe first project note.\n");
+  write("docs/guide.md", "# Guide\n\nA note in a folder.\n");
   write("archive/old.md", "# Old\n\nAn archived note.\n");
   const lines = ["# Nested", ""];
   for (let i = 1; i <= NESTED_PARAGRAPHS; i++) lines.push(`Paragraph ${i} of the nested note.`, "");

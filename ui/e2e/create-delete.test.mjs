@@ -1,78 +1,25 @@
 /**
  * End-to-end checks of creating and deleting a note, against the built
- * daemon in headless Chromium (davison/md-notes#77).
+ * daemon in headless Chromium (davison/md-notes#77), on the rig the rest of
+ * ui/e2e shares (davison/md-notes#78).
  *
- * Like the extension's e2e suites, this is not part of `make check`: it
- * needs a Chromium binary and a built `mdn`, neither of which CI installs
- * yet. davison/md-notes#78 is the task that brings a ui/e2e suite into CI
- * with a runner and a cached browser; this file is written to its shape —
- * node:test, playwright resolved from PLAYWRIGHT_ROOT, every prerequisite
- * turned into a skip rather than a failure — so that task inherits it
- * rather than rewriting it.
+ *     make e2e
+ *     pnpm --dir ui e2e
  *
- *     make build
- *     PLAYWRIGHT_ROOT=/path/to/a/playwright/install pnpm --dir ui e2e
+ * `make build` first if you run the suite by hand: the daemon serves the
+ * `ui/dist` embedded in the binary, so `pnpm --dir ui build` alone leaves
+ * these checks reading yesterday's assets.
  *
- * The daemon under test gets a temporary root, its own state file and its
- * own token file, and an ephemeral port the operating system hands out, so
+ * The daemon under test gets a temporary root, its own config, state and
+ * token files, and an ephemeral port the operating system hands out, so
  * nothing here touches a daemon you are running or the state under
- * ~/.local/state/mdn.
+ * ~/.local/state/mdn. See ./harness.mjs.
  */
 
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
-import { spawn } from "node:child_process";
-import { createServer } from "node:net";
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const uiDir = path.resolve(here, "..");
-const repoRoot = path.resolve(uiDir, "..");
-const mdnBin = process.env.MDN_BIN ?? path.join(repoRoot, "mdn");
-
-function loadPlaywright() {
-  const roots = [process.env.PLAYWRIGHT_ROOT, uiDir, repoRoot].filter(Boolean);
-  for (const root of roots) {
-    try {
-      return createRequire(path.join(root, "noop.js"))("playwright");
-    } catch {
-      // try the next place
-    }
-  }
-  return null;
-}
-
-function missingPrerequisite(playwright) {
-  if (playwright === null) return "playwright is not installed (set PLAYWRIGHT_ROOT)";
-  if (!fs.existsSync(mdnBin)) return `no mdn binary at ${mdnBin} (set MDN_BIN)`;
-  if (!fs.existsSync(path.join(uiDir, "dist", "index.html"))) return "ui/dist is not built";
-  return null;
-}
-
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const { port } = server.address();
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-async function waitFor(predicate, what, timeoutMs = 15000) {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const value = await predicate();
-    if (value) return value;
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((r) => setTimeout(r, 50));
-  }
-}
+import { TAP_TARGET, loadPlaywright, missingPrerequisite, startFixture, waitFor } from "./harness.mjs";
 
 /** The tap-target floor the e-ink task set, in CSS pixels. Imported from
  * ./harness.mjs once #78's reshaping of this directory lands. */
@@ -83,9 +30,9 @@ const blocker = missingPrerequisite(playwright);
 if (blocker) console.log(`# skipped: ${blocker}`);
 
 describe("creating and deleting a note in the browser", { skip: blocker ?? false }, () => {
-  let tmp, notesDir, port, origin, daemon, browser, context, page;
+  let fixture, origin, browser, context, page;
 
-  const notePath = (p) => path.join(notesDir, p);
+  const notePath = (p) => fixture.file(p);
   const exists = (p) => fs.existsSync(notePath(p));
 
   /** The dialog on screen, and the two ways out of it. */
@@ -105,37 +52,16 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
   const nameBox = () => page.locator(".modal-name");
 
   before(async () => {
-    tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mdn-ui-e2e-")));
-    notesDir = path.join(tmp, "notes");
-    fs.mkdirSync(path.join(notesDir, "docs"), { recursive: true });
-    fs.writeFileSync(notePath("index.md"), "# Notes\n\nThe home note.\n");
-    fs.writeFileSync(notePath("docs/guide.md"), "# Guide\n\nA note in a folder.\n");
-
-    port = await freePort();
-    origin = `http://localhost:${port}`;
-    daemon = spawn(
-      mdnBin,
-      [
-        "serve",
-        "--root", notesDir,
-        "--port", String(port),
-        "--state", path.join(tmp, "state.json"),
-        "--token-file", path.join(tmp, "token"),
-      ],
-      { stdio: ["ignore", "pipe", "pipe"] },
-    );
-    daemon.stderr.on("data", (b) => process.env.MDN_LOG && process.stderr.write(b));
-    await waitFor(() => fetch(`${origin}/api/roots`).then(() => true).catch(() => false), "the daemon to listen");
-
-    browser = await playwright.chromium.launch();
+    fixture = await startFixture("create-delete");
+    origin = fixture.origin;
+    browser = await playwright.chromium.launch({ headless: true });
     context = await browser.newContext();
     page = await context.newPage();
   });
 
   after(async () => {
     await browser?.close();
-    daemon?.kill("SIGTERM");
-    if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+    await fixture?.stop();
   });
 
   it("creates a note from the navigator, named in a prompt, and opens it in the editor", async () => {
