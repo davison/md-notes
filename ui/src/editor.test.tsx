@@ -122,6 +122,33 @@ describe("Editor", () => {
     expect(viewOf(second.container).state.selection.main.anchor).toBe(4);
   });
 
+  it("keeps the caret and the scroll when a recreate writes the draft back", () => {
+    // The deleted-on-disk banner's way back writes the draft to disk byte
+    // for byte and the session takes the file in place, bumping the
+    // generation so the pane refetches the note's title (#100). The
+    // document has not changed, so the reader's place in it must not
+    // either — on a long note that is where they were reading.
+    const draft = "one\ntwo\nthree\nfour\n";
+    const s = session(draft);
+    s.state = {
+      ...s.state,
+      status: "conflict",
+      conflict: { kind: "deleted", current: null },
+    };
+    const { container, rerender } = render(<Editor session={s} />);
+    const view = viewOf(container);
+    view.dispatch({ selection: { anchor: 12 } });
+    const before = s.state.generation;
+
+    expect(s.recreated({ source: draft, revision: "r2" })).toBe(true);
+    expect(s.state.generation).toBe(before + 1);
+    rerender(<Editor session={s} />);
+
+    const after = viewOf(container);
+    expect(after.state.doc.toString()).toBe(draft);
+    expect(after.state.selection.main.anchor).toBe(12);
+  });
+
   it("rebuilds from the draft when the generation changes", () => {
     const s = session("one\n");
     const first = render(<Editor session={s} />);

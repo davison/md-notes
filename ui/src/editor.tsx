@@ -119,10 +119,29 @@ function flushFor(view: EditorView) {
 }
 
 /**
+ * Whether a parked editor state already holds this draft. CodeMirror
+ * splits a document on any line ending and joins the text it hands back
+ * with LF, while the draft keeps the note's own ending, so the two are
+ * compared on that footing.
+ */
+function holdsDraft(state: EditorState, draft: string): boolean {
+  return state.doc.toString() === draft.replace(/\r\n?/g, "\n");
+}
+
+/**
  * A CodeMirror 6 markdown editor with vim keybindings over a session's
  * draft. The editor state is parked on the session between mounts so a
  * mode switch keeps the cursor and undo history, and it is rebuilt when
  * the session replaces the draft from disk.
+ *
+ * "Replaces" is the text, not the counter. The generation says the draft
+ * came from outside the editor, and the pane hangs other work on the same
+ * edge — refetching the note's title, for one — so it can move over a
+ * document that has not changed at all: a note recreated from its own
+ * draft is written back byte for byte (#100). Rebuilding then would throw
+ * away the selection and the scroll for nothing, which on a long note is
+ * the reader's place in it, so a parked state holding this very text is
+ * kept and only the counter moves.
  */
 export function Editor({ session }: { session: Session }) {
   const host = useRef<HTMLDivElement>(null);
@@ -131,12 +150,9 @@ export function Editor({ session }: { session: Session }) {
   useEffect(() => {
     defineEx();
     const parent = host.current!;
-    let state: EditorState;
-    if (session.editorState instanceof EditorState && session.editorGeneration === generation) {
-      state = session.editorState;
-    } else {
-      state = createState(session.state.draft, session);
-    }
+    const parked = session.editorState instanceof EditorState ? session.editorState : null;
+    const keep = parked !== null && (session.editorGeneration === generation || holdsDraft(parked, session.state.draft));
+    const state = keep ? parked : createState(session.state.draft, session);
     const view = new EditorView({ state, parent });
     owners.set(view, session);
     view.focus();

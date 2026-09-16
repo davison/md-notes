@@ -915,10 +915,10 @@ the meantime comes back as the ordinary "already exists" refusal, with the name 
 for correcting. **Copy draft** remains for a draft that is going somewhere else
 entirely. The file recreated any other way — another tool, or **New note** under the
 same name with different text — turns the conflict back into a changed one instead,
-where **Keep my draft** writes the draft over it. A clean note whose file is deleted is kept the same
-way rather than dropped, since the text on screen may be the only copy left. This is
-also the path a note deleted from *another* tab takes, and is why deleting a note
-raises no second dialog there
+where **Keep my draft** writes the draft over it. A clean note whose file is deleted
+is kept the same way rather than dropped, since the text on screen may be the only
+copy left. This is also the path a note deleted from *another* tab takes, and is why
+deleting a note raises no second dialog there
 ([#77](https://github.com/davison/md-notes/issues/77#issuecomment-5701434216)).
 
 ### Drafts that outlive the page
