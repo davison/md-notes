@@ -224,6 +224,76 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     }
   });
 
+  it("never scrolls the note bar sideways under an unbreakable failure message", async () => {
+    // #91: `min-width: 0` on the save status shrank its box and not its
+    // text, so a message with nothing in it to break on pushed the bar out
+    // to 479 px inside a 320 px pane and scrolled it sideways. The message
+    // belongs to the daemon, so it is the daemon's answer that is replaced
+    // here: one PUT refused with 400 characters of a single word.
+    const long = "x".repeat(400);
+    // A context per width rather than one page resized: the draft that
+    // never lands is mirrored to localStorage, and a second visit under
+    // the same storage would open in the editor on the recovered draft
+    // rather than in the rendered view this starts from.
+    for (const width of [320, 1280]) {
+      const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+      try {
+        const view = await ctx.newPage();
+        await view.route("**/api/r/notes/source/**", (route) =>
+          route.request().method() === "PUT"
+            ? route.fulfill({
+                status: 500,
+                contentType: "application/json",
+                body: JSON.stringify({ code: "io_error", error: long }),
+              })
+            : route.continue(),
+        );
+
+        await view.goto(`${origin}/r/notes/index.md`);
+        await view.locator(".note-bar").waitFor();
+        await view.getByRole("button", { name: "Edit" }).click();
+        await view.locator(".cm-editor").waitFor();
+        await view.locator(".save-status").waitFor();
+        const del = view.locator(".note-bar .delete-note");
+        const quiet = await del.boundingBox();
+
+        await view.locator(".cm-content").click();
+        await view.keyboard.press("i");
+        await view.waitForFunction(() => !document.querySelector(".cm-scroller").classList.contains("cm-vimMode"));
+        await view.keyboard.type("one word the daemon will not take");
+        await view.locator(".save-status.error").waitFor();
+
+        const bar = await view.evaluate(() => {
+          const el = document.querySelector(".note-bar");
+          return { scroll: el.scrollWidth, client: el.clientWidth, box: el.getBoundingClientRect().width };
+        });
+        assert.equal(
+          bar.scroll,
+          bar.client,
+          `${width} px: the note bar scrolls sideways (${bar.scroll} inside ${bar.client})`,
+        );
+        assert.ok(bar.box <= width, `${width} px: the bar itself is ${bar.box}px wide`);
+        // The message is cut rather than the bar widened, the whole of it
+        // is still there to be read, and Retry is not what got cut off.
+        assert.equal(
+          await view.locator(".save-message").getAttribute("title"),
+          `Save failed: ${long}. Draft kept.`,
+          `${width} px: the full message is not in the title`,
+        );
+        const barBox = await view.locator(".note-bar").boundingBox();
+        const retry = await view.getByRole("button", { name: "Retry" }).boundingBox();
+        assert.ok(
+          retry.x >= barBox.x - 0.5 && retry.x + retry.width <= barBox.x + barBox.width + 0.5,
+          `${width} px: Retry is outside the bar (${retry.x}..${retry.x + retry.width} of ${barBox.width})`,
+        );
+        // And the delete button is where it was before the message arrived.
+        assert.deepEqual(await del.boundingBox(), quiet, `${width} px: the delete button moved under the message`);
+      } finally {
+        await ctx.close();
+      }
+    }
+  });
+
   it("closes the prompt on Escape and leaves the editor under it untouched", async () => {
     // What this holds: a reader who opens the prompt over a half-typed note,
     // changes their mind and presses Escape gets the prompt closed and the

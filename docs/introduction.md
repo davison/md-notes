@@ -898,8 +898,11 @@ The note bar shows where the draft stands:
 A failed save keeps the draft and shows the reason the daemon gave — a read-only
 file reports `note or directory is not readable/writable`; the rest are the codes
 in [Conditional saves](#conditional-saves). **Retry** sends it again, and so does
-the next edit; nothing is discarded in between. A save landing while the pane is in
-view mode refreshes the rendered note.
+the next edit; nothing is discarded in between. A reason too long for the bar is cut
+off with an ellipsis rather than widening it — the note bar never scrolls sideways,
+at any width, and **Retry** keeps its place beside the message — and hovering the
+message shows the whole of it. A save landing while the pane is in view mode
+refreshes the rendered note.
 
 ### Conflicts
 

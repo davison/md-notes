@@ -7,6 +7,8 @@ import { getSession, resetSessions } from "./session";
 /** A daemon with one note, rendered and as source; PUT applies the save. */
 let file: { source: string; revision: string } | null;
 let putStatus: number | null;
+/** What a refused save says, for the cases that care how long it is. */
+let failure: string;
 let deleteStatus: number | null;
 const calls: { method: string; url: string }[] = [];
 
@@ -30,7 +32,7 @@ function mockApi() {
           return Promise.resolve({ ok: true, status: 204, statusText: "No Content" } as Response);
         }
         if (method === "PUT") {
-          if (putStatus) return json(putStatus, { code: "io_error", error: "disk full" });
+          if (putStatus) return json(putStatus, { code: "io_error", error: failure });
           const body = JSON.parse(init!.body as string) as { source: string; revision: string };
           if (body.revision !== file.revision) return json(409, { code: "conflict", error: "note changed" });
           file = { source: body.source, revision: file.revision + "+" };
@@ -45,6 +47,7 @@ function mockApi() {
 beforeEach(() => {
   file = { source: "body\n", revision: "r1" };
   putStatus = null;
+  failure = "disk full";
   deleteStatus = null;
   calls.length = 0;
   localStorage.clear();
@@ -158,6 +161,36 @@ describe("NotePane", () => {
     await waitFor(() => expect(status()).toBe("Saved"));
     expect(file?.source).toBe("kept\n");
   });
+
+  it("keeps a long failure message in one clipped box with its full text in the title", async () => {
+    // The shape the stylesheet needs to stop the bar scrolling sideways
+    // under a message with nothing in it to break on (#91): the text is a
+    // box of its own, which CSS clips, the whole of it is in the title, and
+    // Retry is a sibling of that box rather than part of the text, so the
+    // one control in the status is never what gets cut off. The width
+    // itself is a browser check; jsdom lays nothing out.
+    const long = "x".repeat(400);
+    render(<NotePane slug="n" path="a.md" />);
+    await waitFor(() => expect(screen.getByText("body")).toBeTruthy());
+    fireEvent.keyDown(document.body, ctrlE);
+    await waitFor(() => expect(editorText()).toContain("body"));
+    putStatus = 500;
+    failure = long;
+    type("kept\n");
+    await getSession("n", "a.md").flush();
+
+    const message = await waitFor(() => {
+      const el = document.querySelector(".save-status .save-message");
+      expect(el).toBeTruthy();
+      expect(el!.textContent).toContain(long);
+      return el!;
+    });
+    expect(message.getAttribute("title")).toBe(`Save failed: ${long}. Draft kept.`);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    expect(retry.parentElement?.className).toContain("save-status");
+    expect(message.contains(retry)).toBe(false);
+  });
+
 
   it("navigating away saves pending edits", async () => {
     const r = render(<NotePane slug="n" path="a.md" />);
