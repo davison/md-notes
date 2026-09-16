@@ -18,13 +18,48 @@ function mockNote(note: unknown, status = 200) {
   );
 }
 
+/**
+ * jsdom implements no `Element.prototype.scrollIntoView`, so the cases that
+ * watch for one put their own there. It comes off again in `afterEach`: a
+ * method left on the prototype outlives the case that wanted it, and the
+ * next one would be watching a stranger's spy.
+ */
+const nativeScrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+function stubScrollIntoView(fn: (this: Element) => void) {
+  Object.defineProperty(Element.prototype, "scrollIntoView", { value: fn, configurable: true, writable: true });
+}
+
 beforeEach(() => {
-  cleanup();
   window.location.hash = "";
   localStorage.clear();
   reset();
 });
-afterEach(() => vi.unstubAllGlobals());
+
+/**
+ * Every case unmounts what it rendered, and this is where.
+ *
+ * `@testing-library/preact` installs its own `afterEach(cleanup)` only when
+ * the test globals are injected, and this project runs vitest without them,
+ * so the unmount is ours to make. Making it in `beforeEach` instead is not
+ * enough, and that is the flake this file was carrying (davison/md-notes#87):
+ * it leaves the last case's tree mounted for the rest of the file's life.
+ * The fetch a `NoteView` starts from its mount effect resolves after the
+ * `act()` that rendered it has returned, so the commit it causes schedules
+ * its effect flush on preact's own requestAnimationFrame-or-100 ms path
+ * rather than into act's collector, and no later `act()` owns it — measured:
+ * one flush still queued when the last case ends. Normally it lands a frame
+ * later and does nothing of note; under the load of the whole suite it lands
+ * after vitest has torn the jsdom environment down, and the effect
+ * dereferences `window` (`ReferenceError: window is not defined`, note-view.tsx
+ * line 96). Unmounting here is what makes it harmless: preact skips the
+ * queued effects of a component that is no longer mounted.
+ */
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  if (nativeScrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", nativeScrollIntoView);
+  else delete (Element.prototype as Partial<Element>).scrollIntoView;
+});
 
 describe("fragmentTarget", () => {
   it("looks only inside the note", () => {
@@ -110,9 +145,9 @@ describe("NoteView", () => {
       html: '<p data-line="1">a</p><div class="line-anchor" data-line="5"></div><pre>code</pre><p data-line="9">c</p>',
     });
     const scrolls: string[] = [];
-    Element.prototype.scrollIntoView = function () {
-      scrolls.push((this as Element).className);
-    };
+    stubScrollIntoView(function (this: Element) {
+      scrolls.push(this.className);
+    });
     const { rerender } = render(<NoteView slug="n" path="x.md" version={0} line={6} />);
     await waitFor(() => expect(scrolls.length).toBe(1));
     expect(scrolls[0]).toContain("line-anchor");
@@ -134,9 +169,9 @@ describe("NoteView", () => {
     reset();
     mockNote({ path: "x.md", title: "T", html: '<p data-line="1">a</p><pre data-line="5">code</pre>' });
     const scrolls: string[] = [];
-    Element.prototype.scrollIntoView = function () {
-      scrolls.push((this as Element).className);
-    };
+    stubScrollIntoView(function (this: Element) {
+      scrolls.push(this.className);
+    });
     render(<NoteView slug="n" path="x.md" version={0} line={5} />);
     await waitFor(() => expect(scrolls.length).toBe(1));
     expect(document.querySelector("pre")!.classList.contains("flash")).toBe(false);
@@ -156,7 +191,7 @@ describe("NoteView", () => {
       })),
     );
     mockNote({ path: "x.md", title: "T", html: '<pre data-line="5">code</pre>' });
-    Element.prototype.scrollIntoView = function () {};
+    stubScrollIntoView(() => {});
     render(<NoteView slug="n" path="x.md" version={0} line={5} />);
     await waitFor(() => expect(screen.getByText("T")).toBeTruthy());
     await new Promise((r) => setTimeout(r, 20));
