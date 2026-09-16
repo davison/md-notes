@@ -6,8 +6,10 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/davison/md-notes/internal/roots"
@@ -67,6 +69,96 @@ func (s *Server) saveSourceHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, note)
 }
 
+// createSourceHandler creates a note that does not exist yet. The path in
+// the URL is the note's path under the root, so one grammar names a note
+// whether it is being read, replaced, created or deleted; the body is
+// optional and a request without one creates an empty note.
+func (s *Server) createSourceHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	path := r.PathValue("path")
+	if strings.TrimSpace(path) == "" {
+		writeSourceError(w, http.StatusBadRequest, "invalid_path", "a note path is required")
+		return
+	}
+	if !tree.IsMarkdown(path) {
+		writeSourceError(w, http.StatusNotFound, "not_markdown", "not a markdown file")
+		return
+	}
+	// JSON may expand one source byte to six bytes (for example, \u0000).
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 6*source.MaxBytes+1024))
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		writeSourceError(w, http.StatusRequestEntityTooLarge, "too_large", "request body is too large")
+		return
+	}
+	if err != nil {
+		writeSourceError(w, http.StatusBadRequest, "invalid_body", "could not read the request body")
+		return
+	}
+	text := ""
+	if len(data) > 0 || r.Header.Get("Content-Type") != "" {
+		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil || mediaType != "application/json" {
+			writeSourceError(w, http.StatusUnsupportedMediaType, "invalid_body", "Content-Type must be application/json")
+			return
+		}
+		var body struct {
+			Source *string `json:"source"`
+		}
+		if !utf8.Valid(data) || !validJSONUnicode(data) || json.Unmarshal(data, &body) != nil {
+			writeSourceError(w, http.StatusBadRequest, "invalid_body", "body must be an object with an optional source string")
+			return
+		}
+		if body.Source != nil {
+			text = *body.Source
+		}
+	}
+	slug := r.PathValue("slug")
+	created, err := s.source.Create(slug, path, text)
+	if err != nil {
+		s.sourceError(w, err)
+		return
+	}
+	// created.Path is the cleaned name, which is not always the one that
+	// was sent: it is what the client reads, saves and routes to now.
+	w.Header().Set("Location", "/api/r/"+url.PathEscape(slug)+"/source/"+pathEscape(created.Path))
+	writeJSON(w, http.StatusCreated, map[string]string{
+		"root": slug, "path": created.Path, "source": created.Source, "revision": created.Revision,
+	})
+}
+
+// deleteSourceHandler removes one markdown note. Everything it can refuse
+// is refused before the store is reached; the store removes exactly the
+// one name it is given.
+func (s *Server) deleteSourceHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	path := r.PathValue("path")
+	if strings.TrimSpace(path) == "" {
+		writeSourceError(w, http.StatusBadRequest, "invalid_path", "a note path is required")
+		return
+	}
+	if !tree.IsMarkdown(path) {
+		writeSourceError(w, http.StatusNotFound, "not_markdown", "not a markdown file")
+		return
+	}
+	if err := s.source.Delete(r.PathValue("slug"), path); err != nil {
+		s.sourceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// pathEscape escapes a slash-separated path for a URL, segment by
+// segment, so that the Location header names the note and not a different
+// one with an encoded slash in its name.
+func pathEscape(p string) string {
+	segments := strings.Split(p, "/")
+	for i, seg := range segments {
+		segments[i] = url.PathEscape(seg)
+	}
+	return strings.Join(segments, "/")
+}
+
 // encoding/json replaces unpaired UTF-16 surrogate escapes with U+FFFD.
 // Reject them so a malformed save cannot silently change the submitted source.
 // JSON syntax validation remains the decoder's job.
@@ -105,6 +197,10 @@ func (s *Server) sourceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, source.ErrConflict):
 		writeSourceError(w, http.StatusConflict, "conflict", err.Error())
+	case errors.Is(err, source.ErrExists):
+		writeSourceError(w, http.StatusConflict, "exists", err.Error())
+	case errors.Is(err, source.ErrName):
+		writeSourceError(w, http.StatusBadRequest, "invalid_path", "a note name may not be empty, hidden, or contain a control character")
 	case errors.Is(err, os.ErrNotExist):
 		writeSourceError(w, http.StatusNotFound, "not_found", "note or root no longer exists")
 	case errors.Is(err, roots.ErrOutside):
