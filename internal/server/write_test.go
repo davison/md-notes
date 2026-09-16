@@ -11,6 +11,12 @@ import (
 	"testing"
 )
 
+// tooLongName is past NAME_MAX on every filesystem the daemon runs on, so
+// the kernel refuses it before anything is created or removed. The limit
+// belongs to the filesystem and not to the daemon, which is why the test
+// provokes the kernel rather than asserting a length of its own.
+var tooLongName = strings.Repeat("a", 300) + ".md"
+
 // created decodes the 201 body of a create.
 type createdBody struct {
 	Root     string `json:"root"`
@@ -194,6 +200,7 @@ func TestCreateNoteRefusals(t *testing.T) {
 		{"a dangling link out of the root", "/api/r/notes/source/dangling.md", `{"source":"x"}`, 403, "outside_root"},
 		{"a dangling directory link out of the root", "/api/r/notes/source/out-dir/new.md", `{"source":"x"}`, 403, "outside_root"},
 		{"a dangling two-hop chain out of the root", "/api/r/notes/source/two-hop.md", `{"source":"x"}`, 403, "outside_root"},
+		{"a name the filesystem calls too long", "/api/r/notes/source/" + tooLongName, `{"source":"x"}`, 400, "invalid_path"},
 		{"a component that is a file", "/api/r/notes/source/hello.md/child.md", `{"source":"x"}`, 404, "not_found"},
 		{"a folder under a file", "/api/r/notes/source/hello.md/deeper/child.md", `{"source":"x"}`, 404, "not_found"},
 		{"an unknown root", "/api/r/missing/source/new.md", `{"source":"x"}`, 404, "not_found"},
@@ -360,6 +367,7 @@ func TestDeleteNoteRefusals(t *testing.T) {
 		{"a dangling link inside the root", "/api/r/notes/source/stale.md", 422, "unsupported_source"},
 		{"a dangling directory link out of the root", "/api/r/notes/source/out-dir/note.md", 403, "outside_root"},
 		{"a dangling two-hop chain out of the root", "/api/r/notes/source/two-hop.md", 403, "outside_root"},
+		{"a name the filesystem calls too long", "/api/r/notes/source/" + tooLongName, 400, "invalid_path"},
 		{"a component that is a file", "/api/r/notes/source/hello.md/child.md", 404, "not_found"},
 		{"an absent note", "/api/r/notes/source/absent.md", 404, "not_found"},
 		{"an unknown root", "/api/r/missing/source/hello.md", 404, "not_found"},

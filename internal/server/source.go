@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 
 	"github.com/davison/md-notes/internal/roots"
@@ -201,6 +202,13 @@ func (s *Server) sourceError(w http.ResponseWriter, err error) {
 		writeSourceError(w, http.StatusConflict, "exists", err.Error())
 	case errors.Is(err, source.ErrName):
 		writeSourceError(w, http.StatusBadRequest, "invalid_path", "a note name may not be empty, hidden, or contain a control character")
+	// The length a name may be is the filesystem's to say — NAME_MAX,
+	// 255 bytes per component on every filesystem this daemon is run on —
+	// so the kernel's refusal is translated rather than anticipated by a
+	// check of our own. It is the caller's name that is wrong, not the
+	// daemon that is broken: a 400, and no log line.
+	case errors.Is(err, syscall.ENAMETOOLONG):
+		writeSourceError(w, http.StatusBadRequest, "invalid_path", "a note name is too long: each part of the path may be at most 255 bytes")
 	case errors.Is(err, os.ErrNotExist):
 		writeSourceError(w, http.StatusNotFound, "not_found", "note or root no longer exists")
 	case errors.Is(err, roots.ErrNotDir):
