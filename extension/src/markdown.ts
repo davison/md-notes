@@ -357,7 +357,13 @@ function tableGrid(service: TurndownService, table: HTMLElement): Cell[][] {
       while (line[column] !== undefined) column += 1;
       const placed: Cell = { text: cellText(service, cell), border: borderFor(cell) };
       const columns = span(cell, "colspan");
-      for (let down = 0; down < span(cell, "rowspan"); down += 1) {
+      // A `rowspan` is clamped to the rows the table actually has, the way
+      // HTML's table model and a browser both clamp it: an overrunning span is
+      // a common export mistake, and honouring it literally would grow rows in
+      // the note that no `<tr>` in the page produced. A `colspan` needs no such
+      // clamp — a browser really does widen the table there.
+      const down_to = Math.min(span(cell, "rowspan"), rows.length - index);
+      for (let down = 0; down < down_to; down += 1) {
         const covered = (grid[index + down] ??= []);
         for (let across = 0; across < columns; across += 1) {
           covered[column + across] =
