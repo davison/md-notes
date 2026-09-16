@@ -470,6 +470,14 @@ describe("htmlToMarkdown", () => {
     ).toBe("Left\n\nRight");
   });
 
+  it("clamps a rowspan that overruns the table to the rows there are", () => {
+    // A browser clamps it; honouring the attribute literally grows rows in the
+    // note that no `<tr>` in the page produced.
+    const html =
+      '<table><tr><td rowspan="5">tall</td><td>x</td></tr><tr><td>y</td></tr></table>';
+    expect(htmlToMarkdown(html, PAGE)).toBe("|  |  |\n| --- | --- |\n| tall | x |\n|  | y |");
+  });
+
   it("drops script and style content", () => {
     const md = htmlToMarkdown("<div><script>alert(1)</script><style>p{}</style><p>Text</p></div>", PAGE);
     expect(md).toBe("Text");
