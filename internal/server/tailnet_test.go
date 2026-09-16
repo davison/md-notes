@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -533,8 +534,11 @@ func TestTailnetRotationEndsTheSession(t *testing.T) {
 
 // The narrowing this task owns: over the network the credential reaches
 // the UI's own API and nothing else. Registering a root is the step from
-// "read my notes" to "read any file on the machine", and nothing on the
-// tailnet clips.
+// "read my notes" to "read any file on the machine", and it is the one
+// endpoint named on the wrong side of the allow-list — everything else
+// refused here is refused by the default, because nobody has considered
+// it under this heading. (Clipping was named here too until M6-R1;
+// `TestTailnetAdmitsAClip` now holds that side.)
 func TestTailnetNarrowsWhatTheCredentialReaches(t *testing.T) {
 	ts, base := newTailnetServer(t)
 	tok := daemonToken(t, base)
@@ -613,18 +617,12 @@ func TestTailnetAdmitsAClip(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("clip: status %d, want 201: %s", resp.StatusCode, readAll(t, resp.Body))
 	}
-	var created struct{ Root, Path string }
-	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
-		t.Fatal(err)
-	}
-	// The clips directory under the notes root, at a name the daemon
-	// chooses from the date and the title — the caller names no path at
-	// all, which is what makes this narrower than the source create M5-R2
-	// already admits.
-	if want := "clips/" + time.Now().Format("2006-01-02") + "-remote-by-token.md"; created.Root != "notes" || created.Path != want {
-		t.Fatalf("created = %+v, want the notes root and %s", created, want)
-	}
-	body, err := os.ReadFile(filepath.Join(base, "notes", filepath.FromSlash(created.Path)))
+	// It landed in the clips directory under the notes root, at a name the
+	// daemon chose from the date and the title — the caller named no path
+	// at all, which is what makes this narrower than the source create
+	// M5-R2 already admits.
+	created := clipPath(t, resp)
+	body, err := os.ReadFile(filepath.Join(base, "notes", filepath.FromSlash(created)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -663,9 +661,9 @@ func TestTailnetAdmitsAClip(t *testing.T) {
 	if local.StatusCode != http.StatusCreated {
 		t.Fatalf("clip on loopback: status %d: %s", local.StatusCode, readAll(t, local.Body))
 	}
-	day := time.Now().Format("2006-01-02")
-	overTailnet := readClip(t, filepath.Join(clipsDir, day+"-same-both-ways.md"))
-	onLoopback := readClip(t, filepath.Join(clipsDir, day+"-same-both-ways-2.md"))
+	// Where each one landed is the daemon's answer, not this test's guess.
+	overTailnet := readClip(t, base, clipPath(t, remote))
+	onLoopback := readClip(t, base, clipPath(t, local))
 	if overTailnet != onLoopback {
 		t.Errorf("the clip differs by the path it arrived on:\n--- tailnet\n%s\n--- loopback\n%s", overTailnet, onLoopback)
 	}
@@ -708,11 +706,33 @@ func TestTailnetAdmitsAClip(t *testing.T) {
 	}
 }
 
-// readClip reads a clip with its `clipped` stamp removed, so two clips
-// taken a moment apart are comparable.
-func readClip(t *testing.T, path string) string {
+// clipName is the shape of the path a clip of "Same Both Ways" or
+// "Remote By Token" comes back under: the clips directory, the daemon's
+// own date, a slug of the title, and the suffix a colliding name gets.
+var clipName = regexp.MustCompile(`^clips/\d{4}-\d{2}-\d{2}-[a-z-]+(?:-\d+)?\.md$`)
+
+// clipPath is where the daemon says it put a clip, checked against that
+// shape so a wrong answer fails here rather than as a missing file. The
+// date is matched by shape rather than computed from the test's own
+// clock, which would disagree with the daemon's across midnight for no
+// reason any of these tests is about.
+func clipPath(t *testing.T, resp *http.Response) string {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	var created struct{ Root, Path string }
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Root != "notes" || !clipName.MatchString(created.Path) {
+		t.Fatalf("created = %+v, want the notes root and %s", created, clipName)
+	}
+	return created.Path
+}
+
+// readClip reads a clip under the notes root with its `clipped` stamp
+// removed, so two clips taken a moment apart are comparable.
+func readClip(t *testing.T, base, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(base, "notes", filepath.FromSlash(path)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -736,8 +756,9 @@ func clipCount(t *testing.T, dir string) int {
 
 // Creating and deleting a note is admitted under the tailnet name on the
 // same proof as a source save — the header for an API client, the cookie
-// for a browser — while registering a root and clipping stay on the
-// machine. M5-R2 and M5-R3.
+// for a browser — while registering a root stays on the machine. M5-R2
+// and M5-R3. (Clipping stayed on the machine too when this was written;
+// M6-R1 admitted it, on the bearer token alone.)
 func TestTailnetAdmitsCreateAndDelete(t *testing.T) {
 	ts, base := newTailnetServer(t)
 	tok := daemonToken(t, base)

@@ -146,9 +146,7 @@ With the token pasted, two of the extension's three actions work and one does no
 So a local markdown file that lives under a root you registered on the daemon's own
 machine opens over the tailnet; one that does not is left alone with the
 explanation above. Register the folder there — `mdn open DIR` — and it opens after
-that.
-> If it is wanted later it is a task of its own, decided next to
-> [#39](https://github.com/davison/md-notes/issues/39)'s.
+that; the clip needs no such step, because the daemon chooses where a clip goes.
 
 If the daemon answers `unexpected Host header`, the address and the daemon's
 `tailnet_host` disagree — almost always the port, which `tailnet_host` has to carry
