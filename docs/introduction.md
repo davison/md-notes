@@ -645,7 +645,7 @@ rendered view and in the editor alike. The two side panes move into one drawer:
 - The [live update](#live-update) notice, which at wide widths sits at the top of the
   navigator, moves above the note here, where it is read without opening the drawer.
 - **New note** stays in the top bar at these widths, as a square `+` between the
-  burger and the root's name. It does not move into the drawer — the drawer is where
+  `mdn` home link and the root's name, with the burger one place further left. It does not move into the drawer — the drawer is where
   a long list scrolled it out of sight in the first place. The drawer is modal, so
   while it is open the create control is behind its backdrop and outside its focus
   trap, like the magnifier and the gear: creating a note at these widths is "close

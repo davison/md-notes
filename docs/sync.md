@@ -196,11 +196,17 @@ the note pane, so the file name in the navigator is what tells them apart.
    difference.
 2. Edit the survivor into the shape you want, in md-notes or any editor. If the
    conflict copy is the one you want to keep, copy its text into the real note
-   rather than renaming the file: md-notes edits notes in place and cannot
-   create, rename or delete one
-   ([Editing](introduction.md#editing)).
-3. Delete the conflict file with a file manager, a shell, or Markor on the
-   phone. The navigator drops it as soon as it goes.
+   rather than renaming the file: md-notes cannot rename a note, and a rename is
+   what the shape of the name would otherwise need
+   ([Editing](introduction.md#editing)). If you want to keep both texts,
+   **New note** takes a name of your choosing and you paste the loser into it —
+   which is the one step here that makes a new file
+   ([Creating and deleting a note](introduction.md#creating-and-deleting-a-note)).
+3. Delete the conflict file. A `sync-conflict-` copy is an ordinary markdown file
+   inside a registered root, so **Delete** in the note bar removes it like any
+   other note, behind the confirmation that names the file. A file manager, a
+   shell, or Markor on the phone do the same thing where the app is not what you
+   have open. The navigator drops it as soon as it goes, whichever way it went.
 
 *Deleting it on one device deletes it everywhere once the devices sync*, which
 is what you want.
