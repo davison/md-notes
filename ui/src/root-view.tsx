@@ -32,7 +32,12 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
   const [treeVersion, setTreeVersion] = useState(0);
   const [tags, setTags] = useState<Tag[] | null>(null);
   const [live, setLive] = useState<LiveUpdate | null>(null);
-  const [creating, setCreating] = useState(false);
+  /**
+   * The create prompt, when it is open, and what it opens with: an empty
+   * name for the top bar's control, and the lost note's path and orphaned
+   * draft when the deleted-on-disk banner is recovering a note.
+   */
+  const [creating, setCreating] = useState<{ name: string; body?: string } | null>(null);
   const drawer = useDrawer();
   const current = note ?? "";
   const { query, route } = useLocation();
@@ -140,7 +145,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
       <header class="topbar">
         <NavToggle state={drawer} />
         <a href="/" class="brand">mdn</a>
-        <NewNoteButton onClick={() => setCreating(true)} />
+        <NewNoteButton onClick={() => setCreating({ name: "" })} />
         <span class="root-name">{root.slug}</span>
         <span class="path">{root.path}</span>
         <span class="topbar-spacer" />
@@ -184,6 +189,7 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
             version={noteVersion}
             line={line}
             onDeleted={() => route(rootHome)}
+            onRecreate={(lost, draft) => setCreating({ name: lost, body: draft })}
           />
         ) : (
           <main class="note-body">
@@ -198,9 +204,11 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
         <NewNoteDialog
           slug={slug}
           folder={folder}
-          onClose={() => setCreating(false)}
+          name={creating.name}
+          body={creating.body}
+          onClose={() => setCreating(null)}
           onCreated={(path) => {
-            setCreating(false);
+            setCreating(null);
             drawer.close();
             route(noteURL(slug, path));
           }}

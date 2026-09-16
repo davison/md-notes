@@ -180,14 +180,22 @@ export interface CreatedNote {
 }
 
 /**
- * Creates a note that does not exist yet, empty. No body and no
- * Content-Type: the daemon takes that as "an empty note", and a
- * Content-Type with nothing behind it is refused. Rejects with a
- * SourceError carrying the daemon's code — "exists" for a name already
- * taken, "invalid_path", "not_markdown", "outside_root".
+ * Creates a note that does not exist yet. With no source the request goes
+ * with no body and no Content-Type: the daemon takes that as "an empty
+ * note", and a Content-Type with nothing behind it is refused. A source is
+ * sent as JSON, which is how a draft orphaned by a deleted file is written
+ * back under the same name.
+ *
+ * Rejects with a SourceError carrying the daemon's code — "exists" for a
+ * name already taken, "invalid_path", "not_markdown", "outside_root".
  */
-export async function createNote(slug: string, path: string): Promise<CreatedNote> {
-  const res = await fetch(sourceURL(slug, path), { method: "POST" });
+export async function createNote(slug: string, path: string, source?: string): Promise<CreatedNote> {
+  const init: RequestInit = { method: "POST" };
+  if (source !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify({ source });
+  }
+  const res = await fetch(sourceURL(slug, path), init);
   if (!res.ok) throw await sourceErrorFrom(res);
   return (await res.json()) as CreatedNote;
 }

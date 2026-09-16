@@ -423,6 +423,33 @@ export class Session {
     });
   }
 
+  /**
+   * The file this session lost has been written again, from this session's
+   * own draft: the conflict the deleted-on-disk banner was raised over is
+   * over, and the session stands on the new revision with the same text.
+   *
+   * Only a *deleted* conflict is adopted, and only when the draft is
+   * exactly what was written. An ordinary new note created at a path some
+   * tab still holds a draft for writes something else, and that draft is
+   * the thing the banner exists to protect: that case is left to the
+   * recheck the change stream triggers, which turns the banner into the
+   * changed-on-disk one with its three ways out.
+   */
+  recreated(file: Source): boolean {
+    const s = this.state;
+    if (s.status !== "conflict" || s.conflict?.kind !== "deleted") return false;
+    if (s.draft !== file.source) return false;
+    this.set({
+      base: file,
+      draft: file.source,
+      status: "clean",
+      conflict: null,
+      error: null,
+      generation: s.generation + 1,
+    });
+    return true;
+  }
+
   /** Drops the draft of a note that no longer exists. */
   discard() {
     const s = this.state;
@@ -472,6 +499,17 @@ export function dropSession(slug: string, path: string) {
   const key = slug + "\0" + path;
   sessions.get(key)?.forget();
   sessions.delete(key);
+}
+
+/**
+ * A note has been created at this path with the text a session here was
+ * holding as an orphaned draft. Returns whether that session took it: it
+ * did when the banner it was showing is now answered, and the caller has
+ * nothing left to do — the note is open, in the editor, on the draft. It
+ * did not when there is no such session, which is every ordinary creation.
+ */
+export function noteRecreated(slug: string, path: string, file: Source): boolean {
+  return sessions.get(slug + "\0" + path)?.recreated(file) ?? false;
 }
 
 /**

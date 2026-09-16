@@ -29,6 +29,8 @@ const calls: string[] = [];
 const methods: { method: string; url: string }[] = [];
 /** The daemon's markdown, which create and delete change under the tree. */
 let files: string[] = [];
+/** What each of those files holds, for the notes whose text matters. */
+let sources: Map<string, string>;
 
 /** The tree endpoint's answer, built from `files` so it moves with them. */
 function treeOf(paths: string[]) {
@@ -69,12 +71,16 @@ function mockApi() {
             statusText: "Conflict",
             json: () => Promise.resolve({ code: "exists", error: "a note by that name already exists" }),
           } as Response);
+        // The daemon writes what it was sent, and a request with no body
+        // makes an empty note; the answer carries the text either way.
+        const sent = init?.body ? (JSON.parse(init.body as string) as { source?: string }).source ?? "" : "";
         files.push(path);
+        sources.set(path, sent);
         return Promise.resolve({
           ok: true,
           status: 201,
           statusText: "Created",
-          json: () => Promise.resolve({ root: "n", path, source: "", revision: "r1" }),
+          json: () => Promise.resolve({ root: "n", path, source: sent, revision: "r1" }),
         } as Response);
       }
       if (url.includes("/source/") && method === "DELETE") {
@@ -87,7 +93,18 @@ function mockApi() {
       else if (url === "/api/r/n/tags") body = { tags: [{ name: "x", count: 1, notes: ["b.md"] }] };
       else if (url.startsWith("/api/r/n/search"))
         body = { hits: [{ path: "b.md", line: 3, text: "a needle here", matches: [[2, 8]] }], truncated: false };
-      else if (url.includes("/source/")) body = { source: "body\n", revision: "r1" };
+      else if (url.includes("/source/")) {
+        // A note that is not in the tree is not on disk either, which is
+        // what a session rereading a deleted note has to meet.
+        if (!files.includes(path))
+          return Promise.resolve({
+            ok: false,
+            status: 404,
+            statusText: "Not Found",
+            json: () => Promise.resolve({ code: "not_found", error: "note or root no longer exists" }),
+          } as Response);
+        body = { source: sources.get(path) ?? "body\n", revision: "r1" };
+      }
       else body = { path: "docs/a.md", title: "A", html: "<p>body</p>" };
       return Promise.resolve({ ok: true, status: 200, statusText: "OK", json: () => Promise.resolve(body) } as Response);
     }),
@@ -98,6 +115,7 @@ beforeEach(() => {
   calls.length = 0;
   methods.length = 0;
   files = ["docs/a.md", "b.md"];
+  sources = new Map();
   localStorage.clear();
   resetSessions();
   vi.stubGlobal("EventSource", FakeEventSource);
@@ -435,6 +453,9 @@ describe("RootView top bar", () => {
     mount("/r/n/docs/a.md?tag=x");
     await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
     // A draft on another note, so the unsaved notice is in the bar too.
+    // It has to be a note the daemon has: a session whose first read is a
+    // 404 holds no draft to report.
+    files.push("docs/deep/deeper/deepest/buried.md");
     const buried = getSession("n", "docs/deep/deeper/deepest/buried.md");
     await buried.open();
     buried.edit("a draft that never reached the file");
@@ -545,6 +566,89 @@ describe("creating a note", () => {
 
     FakeEventSource.last!.emit(["docs/Shopping.md"]);
     await waitFor(() => expect(screen.getByText("Shopping.md")).toBeTruthy());
+  });
+});
+
+/**
+ * The way back from a note deleted on disk under a draft (#92). The banner
+ * used to say "recreate the file with another tool"; the application's own
+ * create prompt can do it, and this is the whole handshake — banner,
+ * pre-filled prompt, the draft written back, the conflict over.
+ */
+describe("recreating a note deleted under a draft", () => {
+  const nameBox = () => screen.getByLabelText("Title or path") as HTMLInputElement;
+  const banner = () => document.querySelector(".conflict");
+
+  /** A draft of the open note, and then the file gone from under it. */
+  async function orphan(draft: string) {
+    const session = getSession("n", "docs/a.md");
+    await session.open();
+    session.edit(draft);
+    files = files.filter((f) => f !== "docs/a.md");
+    await session.changed();
+    return session;
+  }
+
+  it("names New note in the banner and opens the prompt on the lost path and the draft", async () => {
+    mountAt("/r/n/docs/a.md", "docs/a.md");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+    const session = await orphan("rescued draft\n");
+    await waitFor(() => expect(banner()).toBeTruthy());
+    expect(banner()!.textContent).toContain("New note");
+    expect(banner()!.textContent).not.toContain("another tool");
+
+    fireEvent.click(screen.getByRole("button", { name: "Recreate the note" }));
+    expect(nameBox().value).toBe("docs/a.md");
+    expect(document.querySelector(".modal")!.textContent).toContain("The draft you have open is written");
+
+    // Cancelling writes nothing and leaves the banner and the draft alone.
+    fireEvent.click(screen.getByText("Cancel"));
+    await waitFor(() => expect(document.querySelector(".modal")).toBeNull());
+    expect(methods.filter((c) => c.method === "POST")).toHaveLength(0);
+    expect(banner()).toBeTruthy();
+    expect(session.state.draft).toBe("rescued draft\n");
+    expect(files).not.toContain("docs/a.md");
+  });
+
+  it("writes the draft back under the same name and ends the conflict in place", async () => {
+    mountAt("/r/n/docs/a.md", "docs/a.md");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+    const session = await orphan("rescued draft\n");
+    await waitFor(() => expect(banner()).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Recreate the note" }));
+    submit();
+
+    await waitFor(() => expect(banner()).toBeNull());
+    const post = methods.filter((c) => c.method === "POST");
+    expect(post).toHaveLength(1);
+    expect(post[0].url).toBe("/api/r/n/source/docs/a.md");
+    expect(sources.get("docs/a.md")).toBe("rescued draft\n");
+    // The session stands on the file again, with the same text, and the
+    // shell is still on the note rather than routing to a new one.
+    expect(session.state.status).toBe("clean");
+    expect(session.state.draft).toBe("rescued draft\n");
+    expect(location.pathname).toBe("/r/n/docs/a.md");
+  });
+
+  it("shows the daemon's refusal when the path has been taken again", async () => {
+    mountAt("/r/n/docs/a.md", "docs/a.md");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+    const session = await orphan("rescued draft\n");
+    await waitFor(() => expect(banner()).toBeTruthy());
+    // Something else wrote the name while the banner was up.
+    files.push("docs/a.md");
+
+    fireEvent.click(screen.getByRole("button", { name: "Recreate the note" }));
+    submit();
+
+    // The banner is a role=alert too, so this is the prompt's own.
+    await waitFor(() =>
+      expect(document.querySelector(".modal [role=alert]")!.textContent).toContain("already exists"),
+    );
+    expect(nameBox().value).toBe("docs/a.md");
+    expect(session.state.status).toBe("conflict");
+    expect(session.state.draft).toBe("rescued draft\n");
   });
 });
 

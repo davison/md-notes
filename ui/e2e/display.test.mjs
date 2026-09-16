@@ -53,9 +53,10 @@ const TAP_GROUPS = [
   ".new-note",
   ".modal button",
   ".modal-name",
-  // `.conflict button` is on the same list and is not reachable from a
-  // browser without a save racing a change on disk; the Go suite covers the
-  // conflict itself, and vitest covers the markup.
+  // `.conflict button` is on the same list and no state this suite drives
+  // has one on screen; the deleted-on-disk banner is measured where it is
+  // raised instead, in ui/e2e/create-delete.test.mjs, and vitest covers the
+  // markup of both banners.
 ];
 
 /** The laid-out heights of each group, skipping the ones this state has none of. */

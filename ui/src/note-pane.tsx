@@ -95,6 +95,12 @@ interface Props {
   line?: number | null;
   /** Called once the note has been deleted, so the shell can leave it. */
   onDeleted?: () => void;
+  /**
+   * Called from the deleted-on-disk banner, with the lost note's path and
+   * the draft that outlived it, so the shell can open the create prompt
+   * over both. Without it the banner offers no recreate control.
+   */
+  onRecreate?: (path: string, draft: string) => void;
 }
 
 /**
@@ -102,7 +108,7 @@ interface Props {
  * bar showing the mode and the save state, and a banner when the file on
  * disk and the draft disagree.
  */
-export function NotePane({ slug, path, version = 0, line = null, onDeleted }: Props) {
+export function NotePane({ slug, path, version = 0, line = null, onDeleted, onRecreate }: Props) {
   // Keyed by note in RootView, so each note mounts its own pane.
   const session = useMemo(() => getSession(slug, path), [slug, path]);
   const state = useSession(session);
@@ -204,7 +210,13 @@ export function NotePane({ slug, path, version = 0, line = null, onDeleted }: Pr
         <SaveStatus session={session} state={state} mode={mode} />
         <DeleteNote slug={slug} path={path} unsaved={hasUnsaved(state)} onDeleted={onDeleted} />
       </div>
-      {state.status === "conflict" && state.conflict && <ConflictBanner session={session} state={state} />}
+      {state.status === "conflict" && state.conflict && (
+        <ConflictBanner
+          session={session}
+          state={state}
+          onRecreate={onRecreate && (() => onRecreate(path, state.draft))}
+        />
+      )}
       {mode === "edit" ? (
         <main class="editor-body">
           {state.status === "loading" && <p class="muted pad">Loading…</p>}
@@ -390,7 +402,26 @@ function SaveStatus({ session, state, mode }: { session: Session; state: Session
   }
 }
 
-function ConflictBanner({ session, state }: { session: Session; state: SessionState }) {
+/**
+ * The banner over an editor whose file moved under the draft. The deleted
+ * case used to end at "recreate the file with another tool", which was true
+ * of the editor alone and stale the moment the app grew a create control
+ * (#92): **Recreate the note** opens the New note prompt with this path
+ * already in it and the draft as the new note's body, so the way back is
+ * one step and stays inside the application. **Copy draft** is still here
+ * beside it — it is the escape hatch for a draft that is going somewhere
+ * else entirely, or for a name that has since been taken by something the
+ * reader would rather not overwrite.
+ */
+function ConflictBanner({
+  session,
+  state,
+  onRecreate,
+}: {
+  session: Session;
+  state: SessionState;
+  onRecreate?: () => void;
+}) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard?.writeText(state.draft).then(
@@ -403,13 +434,19 @@ function ConflictBanner({ session, state }: { session: Session; state: SessionSt
     <div class="conflict" role="alert">
       <p>
         {deleted
-          ? "This note was deleted on disk while you had unsaved edits. Your draft is kept here, but the file " +
-            "cannot be recreated from the editor: copy the draft, or recreate the file with another tool and " +
-            "the conflict will become resolvable."
+          ? "This note was deleted on disk while you had unsaved edits. Your draft is kept here. The editor " +
+            "cannot save it back over a file that is gone, but New note can write it again: Recreate the note " +
+            "opens that prompt with this note's path and your draft already in it. You can also copy the draft " +
+            "out and discard it."
           : "This note changed on disk while you had unsaved edits. Your draft is kept: save it over the current " +
             "file, or drop it and load the file. Switching to View shows the file as it is now."}
       </p>
       <p class="conflict-actions">
+        {deleted && onRecreate && (
+          <button type="button" class="recreate-note" onClick={onRecreate}>
+            Recreate the note
+          </button>
+        )}
         {!deleted && (
           <button type="button" onClick={() => void session.keepDraft()}>
             Keep my draft
