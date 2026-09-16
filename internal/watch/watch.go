@@ -38,6 +38,7 @@ type Watcher struct {
 	debounce time.Duration
 	maxWait  time.Duration
 	budget   int
+	clock    clock
 	done     chan struct{}
 	once     sync.Once
 	lost     bool
@@ -73,8 +74,46 @@ type Coverage struct {
 	Limited bool `json:"limited"`
 }
 
+// clock is the time the debounce runs on. Production uses the wall clock;
+// the package's own tests inject one whose time only moves when the test
+// moves it, so a test of the debounce states what the debounce does instead
+// of racing a sleep against it.
+type clock interface {
+	Now() time.Time
+	NewTimer(d time.Duration) timer
+}
+
+// timer is the part of *time.Timer the debounce uses. Stop and Reset carry
+// time.Timer's guarantee from Go 1.23 on: after either, no value from before
+// the call is ever received.
+type timer interface {
+	C() <-chan time.Time
+	Stop() bool
+	Reset(d time.Duration) bool
+}
+
+// wallClock is the production clock: time.Now and time.NewTimer and nothing
+// else. One timer is created per watcher and reset thereafter, so the
+// indirection costs a call per event and a single allocation per watcher.
+type wallClock struct{}
+
+func (wallClock) Now() time.Time                 { return time.Now() }
+func (wallClock) NewTimer(d time.Duration) timer { return wallTimer{time.NewTimer(d)} }
+
+type wallTimer struct{ t *time.Timer }
+
+func (w wallTimer) C() <-chan time.Time        { return w.t.C }
+func (w wallTimer) Stop() bool                 { return w.t.Stop() }
+func (w wallTimer) Reset(d time.Duration) bool { return w.t.Reset(d) }
+
 // Option adjusts a Watcher.
 type Option func(*Watcher)
+
+// withClock replaces the clock the debounce runs on. Unexported on purpose:
+// it is a seam for this package's tests, not a knob for the daemon.
+func withClock(c clock) Option {
+	return func(w *Watcher) { w.clock = c }
+}
 
 // WithDebounce sets the quiet period before a batch is sent and the
 // longest a busy stream may delay one.
@@ -111,6 +150,7 @@ func New(root string, dirs []tree.Dir, warnf func(string, ...any), opts ...Optio
 		warnf:    warnf,
 		debounce: 150 * time.Millisecond,
 		maxWait:  time.Second,
+		clock:    wallClock{},
 		done:     make(chan struct{}),
 	}
 	for _, o := range opts {
@@ -325,18 +365,18 @@ func (w *Watcher) loop() {
 	defer close(w.done)
 	defer close(w.out)
 	pending := map[string]struct{}{}
-	var timer *time.Timer
+	var quiet timer
 	var timerC <-chan time.Time
 	var first time.Time
 
 	arm := func(d time.Duration) {
-		if timer == nil {
-			timer = time.NewTimer(d)
+		if quiet == nil {
+			quiet = w.clock.NewTimer(d)
 		} else {
-			timer.Stop()
-			timer.Reset(d)
+			quiet.Stop()
+			quiet.Reset(d)
 		}
-		timerC = timer.C
+		timerC = quiet.C()
 	}
 
 	flush := func() {
@@ -384,11 +424,11 @@ func (w *Watcher) loop() {
 			}
 			rel = filepath.ToSlash(rel)
 			if len(pending) == 0 {
-				first = time.Now()
+				first = w.clock.Now()
 			}
 			pending[rel] = struct{}{}
 			wait := w.debounce
-			if remaining := w.maxWait - time.Since(first); remaining < wait {
+			if remaining := w.maxWait - w.clock.Now().Sub(first); remaining < wait {
 				wait = max(remaining, 0)
 			}
 			arm(wait)
