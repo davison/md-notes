@@ -125,6 +125,16 @@ function aroundTheCode(
     if (isChrome(child)) continue;
     sides[side]!.appendChild(child.cloneNode(true));
   }
+  // Chrome is not always a child of the container: a code header bar holds the
+  // filename and the copy button together, and a caption can carry an
+  // `aria-hidden` icon. The clone is pruned before it is converted, which is
+  // the only place it can be done — the rule sees the container, not the
+  // button.
+  for (const side of sides) {
+    for (const element of Array.from(side.querySelectorAll("*"))) {
+      if (isChrome(element)) element.parentNode?.removeChild(element);
+    }
+  }
   return [service.turndown(sides[0]!).trim(), service.turndown(sides[1]!).trim()];
 }
 
