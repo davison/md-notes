@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SourceError, fetchRaw, fetchSource, listRoots, saveSource } from "./api";
+import { SourceError, createNote, deleteNote, fetchRaw, fetchSource, listRoots, saveSource } from "./api";
 
 function mockFetch(status: number, body: unknown) {
   const res = {
@@ -98,5 +98,46 @@ describe("source", () => {
     );
     const err = await fetchSource("n", "a.md").catch((e: unknown) => e);
     expect(err).toMatchObject({ status: 502, code: "io_error", message: "502 Bad Gateway" });
+  });
+});
+
+describe("createNote", () => {
+  it("POSTs the path with no body and no Content-Type, and returns the daemon's note", async () => {
+    const res = {
+      ok: true,
+      status: 201,
+      statusText: "Created",
+      json: () => Promise.resolve({ root: "n", path: "docs/a.md", source: "", revision: "r1" }),
+    } as Response;
+    const fetchMock = vi.fn(() => Promise.resolve(res));
+    vi.stubGlobal("fetch", fetchMock);
+    const note = await createNote("my notes", "docs/a b.md");
+    expect(fetchMock).toHaveBeenCalledWith("/api/r/my%20notes/source/docs/a%20b.md", { method: "POST" });
+    expect(note.path).toBe("docs/a.md");
+    expect(note.revision).toBe("r1");
+  });
+
+  it("rejects with the daemon's code so the prompt can say what was wrong", async () => {
+    mockFetch(409, { code: "exists", error: "a note by that name already exists" });
+    await expect(createNote("n", "a.md")).rejects.toMatchObject({
+      name: "SourceError",
+      status: 409,
+      code: "exists",
+      message: "a note by that name already exists",
+    });
+  });
+});
+
+describe("deleteNote", () => {
+  it("DELETEs the note's own URL", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 204, statusText: "No Content" } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+    await deleteNote("n", "docs/a.md");
+    expect(fetchMock).toHaveBeenCalledWith("/api/r/n/source/docs/a.md", { method: "DELETE" });
+  });
+
+  it("rejects with the daemon's code", async () => {
+    mockFetch(422, { code: "unsupported_source", error: "not a regular file" });
+    await expect(deleteNote("n", "a.md")).rejects.toBeInstanceOf(SourceError);
   });
 });
