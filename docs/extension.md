@@ -189,17 +189,41 @@ The conversion is Turndown with its GFM plugin:
 
 - ATX headings (`#`, `##`), `-` bullets, nested and ordered lists;
 - inline links, and fenced code with its language where the page named one in
-  a `language-…`, `lang-…` or `data-lang` attribute;
+  a `language-…`, `lang-…` or `data-lang` attribute, on the code itself or on
+  the wrapper a highlighter put around it;
 - GFM tables, strikethrough and task lists;
 - `**bold**`, `_italic_`, `` `code` `` and block quotes.
 
-Two edges of that list are worth knowing. Task-list checkboxes survive a
-**selection** clip as `- [x]`, but not a page clip: Readability's sanitiser
-removes the `input` elements before the conversion sees them, so the items come
-through as ordinary bullets. And a table with **no header row** is left as the
-page's own `<table>` HTML, because GFM has no way to write one — the app renders
-it, but the file is not markdown at that point
-([#45](https://github.com/davison/md-notes/issues/45)).
+Task-list checkboxes are the one edge of that list. They survive a **selection**
+clip as `- [x]`, but not a page clip: Readability's sanitiser removes the `input`
+elements before the conversion sees them, so the items come through as ordinary
+bullets.
+
+**Around a code block.** A highlighted block usually arrives wrapped in a `div`
+or a `figure` with other things beside the code: a caption, a filename line, a
+copy-to-clipboard button. What is content is converted as ordinary markdown
+before or after the fence, in the order the page wrote it; only the chrome is
+dropped — a `button`, a `clipboard-copy` element, anything whose class names a
+copy control, and anything the page has already hidden with `aria-hidden`
+([#47](https://github.com/davison/md-notes/issues/47)).
+
+**Tables outside GFM.** GFM can only write a rectangular table with a header
+row, and a page's tables are not always that. None of the three shapes is left
+as raw HTML any more
+([#45](https://github.com/davison/md-notes/issues/45)):
+
+- a table with **no header row** gets an empty header row and keeps every row of
+  the page as data — GFM requires a header, and promoting the first row would
+  claim it is one;
+- `colspan` and `rowspan` are laid out on a grid that lines up: the value is
+  written once, in the first cell its span covers, and the cells it covers are
+  empty;
+- a **nested** table is flattened into the cell that holds it, its cells joined
+  with ` / ` and its rows with `; `, so the table around it stays a table.
+
+A cell is a single line either way: a cell the page wrote as two paragraphs
+becomes one line, and a `|` inside a cell is escaped. A `<caption>` is kept, as
+a paragraph above the table.
 
 Every link and image is made **absolute against the page's own URL**, so a note
 still points at something once it has left the browser. Three deliberate
