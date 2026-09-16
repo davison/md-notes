@@ -1,4 +1,6 @@
-// Package source reads and conditionally replaces existing markdown source.
+// Package source reads markdown notes, conditionally replaces them, and
+// creates and deletes them. Every path it opens goes through a handle on
+// the root, so no operation here can reach a file outside it.
 package source
 
 import (
