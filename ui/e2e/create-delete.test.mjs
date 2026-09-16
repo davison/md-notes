@@ -21,10 +21,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { TAP_TARGET, loadPlaywright, missingPrerequisite, startFixture, waitFor } from "./harness.mjs";
 
-/** The tap-target floor the e-ink task set, in CSS pixels. Imported from
- * ./harness.mjs once #78's reshaping of this directory lands. */
-const TAP_TARGET = 40;
-
 const playwright = loadPlaywright();
 const blocker = missingPrerequisite(playwright);
 if (blocker) console.log(`# skipped: ${blocker}`);
@@ -223,6 +219,55 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
         await ctx.close();
       }
     }
+  });
+
+  it("closes only the prompt when Escape is pressed over the editor", async () => {
+    // The dialog answers Escape on the window in the capture phase and stops
+    // it there, so the layer below — the editor, whose vim keymap reads
+    // Escape as "leave insert mode" — must not also see it. A reader who
+    // opens the prompt, changes their mind and presses Escape gets their
+    // prompt closed and their editor exactly as they left it, mid-word and
+    // still in insert mode. The unit test can only show that
+    // stopPropagation was called; this is what it buys. Left for this suite
+    // by the review of PR #83, and retargeted from the drawer to the editor
+    // when #85 moved the create control into the top bar, where the drawer's
+    // backdrop makes it unreachable while the drawer is open.
+    await page.goto(`${origin}/r/notes/index.md`);
+    await page.locator(".note-bar").waitFor();
+    await page.getByRole("button", { name: "Edit" }).click();
+    await page.locator(".cm-editor").waitFor();
+
+    // Into insert mode, and typing. `cm-vimMode` on the scroller is how the
+    // vim extension says the editor is in normal mode; inserting takes it
+    // off, and that is the state this check is about.
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("i");
+    await page.waitForFunction(() => !document.querySelector(".cm-scroller").classList.contains("cm-vimMode"));
+    await page.keyboard.type("half a wor");
+
+    await page.locator(".new-note").click();
+    await dialogReady();
+    await page.keyboard.press("Escape");
+    await waitFor(() => modal().count().then((n) => n === 0), "the prompt to close");
+
+    assert.equal(
+      await page.evaluate(() => document.querySelector(".cm-scroller").classList.contains("cm-vimMode")),
+      false,
+      "the editor under the prompt is still in insert mode",
+    );
+    assert.match(
+      await page.locator(".cm-content").textContent(),
+      /half a wor/,
+      "and still holds what was typed",
+    );
+
+    // The control, so the check above is known to be about the dialog and
+    // not about an editor that ignores Escape: closing the prompt hands
+    // focus back to the button that opened it, so the editor is given it
+    // again, and then the very same key does leave insert mode.
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.querySelector(".cm-scroller").classList.contains("cm-vimMode"));
   });
 
   it("works in the drawer layout on a coarse pointer, with 40 px tap targets", async () => {
