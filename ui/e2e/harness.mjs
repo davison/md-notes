@@ -206,14 +206,20 @@ export async function startFixture(label) {
  * `playwright.devices`: that registry's viewports move between Playwright
  * releases — 1.63 has Pixel 7 at 412x839 where the M4 harness measured
  * 412x792 — and a ported figure that changes with a dependency bump is a
- * check that fails for no regression. These are the viewports M4 measured,
- * in headless Chromium, which is the only browser CI downloads.
+ * check that fails for no regression.
+ *
+ * All four are the viewports M4 measured, in headless Chromium, which is the
+ * only browser CI downloads: 412x792 and 863x360 for the Pixel 7, 390x664 and
+ * 750x340 for the iPhone 14 (davison/md-notes#55, and PR #69's table). The
+ * landscape pair is not the portrait pair with its numbers swapped — the
+ * browser's own chrome is a different height when the device is on its side —
+ * which is why all four are written out rather than two of them derived.
  */
 export const PHONES = [
   { name: "Pixel 7 portrait", viewport: { width: 412, height: 792 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true },
-  { name: "Pixel 7 landscape", viewport: { width: 792, height: 412 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true },
+  { name: "Pixel 7 landscape", viewport: { width: 863, height: 360 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true },
   { name: "iPhone 14 portrait", viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true },
-  { name: "iPhone 14 landscape", viewport: { width: 664, height: 390 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true },
+  { name: "iPhone 14 landscape", viewport: { width: 750, height: 340 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true },
 ];
 
 /** The profile the M4 record's "On a phone" figures were measured at. */
