@@ -6,3 +6,4 @@
 | M2 | Editor, autosave and live-update follow-ups | [#17](https://github.com/davison/md-notes/issues/17) | [Done](docs/milestones/2-editor-autosave-and-live-update.md) |
 | M3 | Browser extension clipper, daemon authentication and tailnet access | [#35](https://github.com/davison/md-notes/issues/35) | [Done](docs/milestones/3-clipper-authentication-and-tailnet.md) |
 | M4 | Polish: mobile layout, e-ink, dark code colours, sync docs, tailnet extension, asset caching | [#55](https://github.com/davison/md-notes/issues/55) | [Done](docs/milestones/4-polish-phone-e-ink-and-the-bundle.md) |
+| M5 | Create and delete notes, a deterministic watch test, browser checks in CI | [#74](https://github.com/davison/md-notes/issues/74) | [Done](docs/milestones/5-create-and-delete-notes.md) |
