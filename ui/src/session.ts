@@ -398,6 +398,31 @@ export class Session {
     });
   }
 
+  /**
+   * The note has been deleted from this tab, and the draft goes with it.
+   * The session is left holding nothing: any scheduled save is cancelled
+   * first, so nothing recreates the file a moment later, and the stored
+   * mirror is removed only when it is this session's own — another tab's
+   * draft of the same note belongs to that tab and its banner.
+   */
+  forget() {
+    this.cancel();
+    const stored = readStored(this.key);
+    if (stored && this.mirrored && stored.draft === this.mirrored.draft && stored.revision === this.mirrored.revision) {
+      writeStored(this.key, null);
+    }
+    this.mirrored = null;
+    this.stored = null;
+    this.set({
+      base: null,
+      draft: "",
+      status: "error",
+      conflict: null,
+      error: { code: "not_found", message: "note no longer exists" },
+      generation: this.state.generation + 1,
+    });
+  }
+
   /** Drops the draft of a note that no longer exists. */
   discard() {
     const s = this.state;
@@ -436,6 +461,17 @@ export function getSession(slug: string, path: string): Session {
     sessions.set(key, s);
   }
   return s;
+}
+
+/**
+ * Forgets a note that has just been deleted: the session stops holding a
+ * draft and is dropped, so a note recreated under the same name later
+ * starts from the file rather than from what this page remembered.
+ */
+export function dropSession(slug: string, path: string) {
+  const key = slug + "\0" + path;
+  sessions.get(key)?.forget();
+  sessions.delete(key);
 }
 
 /**

@@ -77,6 +77,10 @@ function mockApi() {
           json: () => Promise.resolve({ root: "n", path, source: "", revision: "r1" }),
         } as Response);
       }
+      if (url.includes("/source/") && method === "DELETE") {
+        files = files.filter((f) => f !== path);
+        return Promise.resolve({ ok: true, status: 204, statusText: "No Content" } as Response);
+      }
       let body: unknown;
       if (url === "/api/roots") body = { roots: [{ slug: "n", path: "/n", kind: "notes" }] };
       else if (url === "/api/r/n/tree") body = treeOf(files);
@@ -527,5 +531,25 @@ describe("creating a note", () => {
 
     FakeEventSource.last!.emit(["docs/Shopping.md"]);
     await waitFor(() => expect(screen.getByText("Shopping.md")).toBeTruthy());
+  });
+});
+
+/** Deleting from the note bar, and where the shell goes afterwards. */
+describe("deleting the open note", () => {
+  it("deletes it after the confirmation and leaves it for the root's home", async () => {
+    mountAt("/r/n/docs/a.md", "docs/a.md");
+    await waitFor(() => expect(screen.getByText("b.md")).toBeTruthy());
+    const before = treeCalls();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(methods.filter((c) => c.method === "DELETE")).toHaveLength(0);
+    submit();
+    await waitFor(() => expect(location.pathname).toBe("/r/n/"));
+    expect(methods.filter((c) => c.method === "DELETE")).toHaveLength(1);
+
+    // And the navigator loses it the same way it gained the other one.
+    expect(treeCalls()).toBe(before);
+    FakeEventSource.last!.emit(["docs/a.md"]);
+    await waitFor(() => expect(screen.queryByText("a.md")).toBeNull());
   });
 });

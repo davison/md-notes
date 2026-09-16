@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { fetchNote, noteURL } from "./api";
+import { deleteNote, fetchNote, noteURL } from "./api";
+import { Dialog } from "./dialog";
 import { NoteView } from "./note-view";
 import {
+  dropSession,
   flushAll,
   getSession,
   hasStoredDraft,
@@ -90,6 +92,8 @@ interface Props {
   version?: number;
   /** Source line to scroll the rendered view to, from a search hit. */
   line?: number | null;
+  /** Called once the note has been deleted, so the shell can leave it. */
+  onDeleted?: () => void;
 }
 
 /**
@@ -97,7 +101,7 @@ interface Props {
  * bar showing the mode and the save state, and a banner when the file on
  * disk and the draft disagree.
  */
-export function NotePane({ slug, path, version = 0, line = null }: Props) {
+export function NotePane({ slug, path, version = 0, line = null, onDeleted }: Props) {
   // Keyed by note in RootView, so each note mounts its own pane.
   const session = useMemo(() => getSession(slug, path), [slug, path]);
   const state = useSession(session);
@@ -197,6 +201,7 @@ export function NotePane({ slug, path, version = 0, line = null }: Props) {
         </button>
         <span class="mode-name">{mode === "edit" ? "Editing" : "Viewing"}</span>
         <SaveStatus session={session} state={state} mode={mode} />
+        <DeleteNote slug={slug} path={path} unsaved={hasUnsaved(state)} onDeleted={onDeleted} />
       </div>
       {state.status === "conflict" && state.conflict && <ConflictBanner session={session} state={state} />}
       {mode === "edit" ? (
@@ -227,6 +232,88 @@ function EditorBody({ editor, session }: { editor: ReturnType<typeof useEditor>;
         Reload the page
       </button>
     </p>
+  );
+}
+
+/**
+ * The delete action, in the note bar, and the confirmation that names the
+ * file. Nothing is sent until it is confirmed: cancelling closes the dialog
+ * and leaves the note exactly as it was.
+ *
+ * A draft this tab has not saved is discarded with the note, and the
+ * confirmation says so before it is. Refusing to delete until the draft was
+ * saved would mean saving a note in order to throw it away. In another tab
+ * nothing changes here: that tab learns the file is gone from the events
+ * stream and shows the deleted-on-disk banner it already has, which keeps
+ * the draft and offers to copy it — no second dialog anywhere.
+ */
+function DeleteNote({
+  slug,
+  path,
+  unsaved,
+  onDeleted,
+}: {
+  slug: string;
+  path: string;
+  unsaved: boolean;
+  onDeleted?: () => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const remove = () => {
+    setBusy(true);
+    setError(null);
+    deleteNote(slug, path).then(
+      () => {
+        // The session goes before the shell moves: it is what a scheduled
+        // save would otherwise flush on the way out, against a file that
+        // is no longer there.
+        dropSession(slug, path);
+        setAsking(false);
+        onDeleted?.();
+      },
+      (e: Error) => {
+        setBusy(false);
+        setError(e.message);
+      },
+    );
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        class="delete-note"
+        onClick={() => {
+          setError(null);
+          setBusy(false);
+          setAsking(true);
+        }}
+      >
+        Delete
+      </button>
+      {asking && (
+        <Dialog
+          title="Delete this note?"
+          confirmLabel="Delete"
+          busy={busy}
+          onConfirm={remove}
+          onCancel={() => setAsking(false)}
+        >
+          <p>
+            <code class="modal-path">{path}</code> is removed from disk. Nothing here can put it back.
+          </p>
+          {unsaved && <p class="modal-warn">This tab has unsaved changes to this note. They go with it.</p>}
+          {error && (
+            <p class="modal-error" role="alert">
+              {error}
+            </p>
+          )}
+        </Dialog>
+      )}
+    </>
   );
 }
 
