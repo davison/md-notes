@@ -29,7 +29,13 @@ if (blocker) console.log(`# skipped: ${blocker}`);
 const LIGHT_BG = "rgb(251, 251, 250)";
 const DARK_BG = "rgb(27, 27, 27)";
 
-/** Every control the stylesheet's tap-target block names, by its selector. */
+/**
+ * Every control the stylesheet's tap-target block names, by its selector —
+ * `ui/src/style.css`, the `@media (pointer: coarse), (hover: none),
+ * (max-width: 60rem)` block. Each is a class rather than a position, so a
+ * control that moves — #85 is taking `.new-note` into the top bar — is still
+ * the same control to this list.
+ */
 const TAP_GROUPS = [
   ".tree .dir",
   ".tree .file",
@@ -44,6 +50,9 @@ const TAP_GROUPS = [
   ".tag-chip",
   ".note-bar button",
   ".metadata summary",
+  ".new-note",
+  ".modal button",
+  ".modal-name",
   // `.conflict button` is on the same list and is not reachable from a
   // browser without a save racing a change on disk; the Go suite covers the
   // conflict itself, and vitest covers the markup.
@@ -260,6 +269,25 @@ describe("the display settings and the tap targets", { skip: blocker ?? false },
       await page.click(".settings-toggle");
       await page.waitForSelector(".settings-panel");
       await collect();
+      // Closed with the gear rather than with Escape: the panel's Escape
+      // listener is attached by an effect a frame after the panel is in the
+      // page, and a key pressed in that frame reaches nothing. The button's
+      // own handler is there from the first render.
+      await page.click(".settings-toggle");
+      await page.waitForSelector(".settings-panel", { state: "detached" });
+
+      // The create control and the dialog behind it. Where the control lives
+      // is the application's business and is moving (#85): if it is on screen
+      // it is clicked where it stands, and only otherwise is the drawer it
+      // lives in today opened to reach it.
+      const create = page.locator(".new-note");
+      if (!(await create.isVisible())) await openDrawer("notes");
+      await create.click();
+      await page.waitForSelector(".modal-name");
+      await collect();
+      await page.keyboard.press("Escape");
+      await page.waitForSelector(".modal", { state: "detached" });
+
       return found;
     } finally {
       await close();
