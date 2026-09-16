@@ -280,7 +280,7 @@ describe("the display settings and the tap targets", { skip: blocker ?? false },
 
   it("leaves a mouse-driven window its density", async () => {
     const found = await tapTargets(DESKTOP, { drawer: false });
-    assert.equal(await Promise.resolve(found[".tree .file"].length > 0), true);
+    assert.ok(found[".tree .file"].length > 0, "the tree was measured");
     // The trade-off #62 recorded: 27 px rows under a mouse, 41 under a
     // finger. A rule that reached every width would have cost the navigator
     // a third of its notes.
