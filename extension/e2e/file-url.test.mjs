@@ -6,7 +6,10 @@
  * neither of which CI installs. Run it with
  *
  *     make build extension
- *     PLAYWRIGHT_ROOT=/path/to/a/playwright/install pnpm --dir extension e2e
+ *     pnpm --dir extension e2e
+ *
+ * Playwright is declared by `ui/package.json`, which `make ui-deps` installs
+ * and `ui/e2e` shares; `PLAYWRIGHT_ROOT` still names another installation.
  *
  * and it skips itself, loudly, when a prerequisite is missing.
  */
@@ -30,7 +33,7 @@ const dist = path.join(extensionDir, "dist");
 const mdnBin = process.env.MDN_BIN ?? path.join(repoRoot, "mdn");
 
 function loadPlaywright() {
-  const roots = [process.env.PLAYWRIGHT_ROOT, extensionDir, repoRoot].filter(Boolean);
+  const roots = [process.env.PLAYWRIGHT_ROOT, extensionDir, path.join(repoRoot, "ui"), repoRoot].filter(Boolean);
   for (const root of roots) {
     try {
       const require = createRequire(path.join(root, "noop.js"));

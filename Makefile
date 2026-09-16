@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 EXTENSION_ZIP := extension/mdn-extension.zip
 
-.PHONY: all build ui ui-deps extension extension-dist extension-deps test vet check install clean
+.PHONY: all build ui ui-deps extension extension-dist extension-deps test vet check e2e install clean
 PREFIX ?= $(HOME)/.local
 
 all: build
@@ -49,6 +49,16 @@ vet: ui-deps extension-deps
 
 ## check: everything CI runs
 check: vet test build extension
+
+## e2e: browser-level checks for the UI, in headless Chromium against the built daemon
+# Not part of `check`: it needs Playwright's Chromium, which `make ui-deps`
+# installs the driver for but does not download. Fetch it once with
+#
+#     pnpm --dir ui exec playwright install chromium
+#
+# The suite skips rather than fails when the browser or the binary is absent.
+e2e: build
+	pnpm --dir ui e2e
 
 ## install: copy the binary to $(PREFIX)/bin (default ~/.local/bin)
 install: build

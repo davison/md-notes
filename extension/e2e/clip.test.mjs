@@ -6,7 +6,10 @@
  * needs a Chromium binary and a built `mdn`, neither of which CI installs.
  *
  *     make build extension
- *     PLAYWRIGHT_ROOT=/path/to/a/playwright/install pnpm --dir extension e2e
+ *     pnpm --dir extension e2e
+ *
+ * Playwright is declared by `ui/package.json`, which `make ui-deps` installs
+ * and `ui/e2e` shares; `PLAYWRIGHT_ROOT` still names another installation.
  *
  * The clip is driven through the real popup document, opened as a tab with
  * `?tab=` naming the page to clip — a browser action popup cannot be clicked
@@ -32,7 +35,7 @@ const dist = path.join(extensionDir, "dist");
 const mdnBin = process.env.MDN_BIN ?? path.join(repoRoot, "mdn");
 
 function loadPlaywright() {
-  const roots = [process.env.PLAYWRIGHT_ROOT, extensionDir, repoRoot].filter(Boolean);
+  const roots = [process.env.PLAYWRIGHT_ROOT, extensionDir, path.join(repoRoot, "ui"), repoRoot].filter(Boolean);
   for (const root of roots) {
     try {
       const require = createRequire(path.join(root, "noop.js"));
