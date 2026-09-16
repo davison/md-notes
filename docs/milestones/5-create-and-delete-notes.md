@@ -773,3 +773,58 @@ surprise someone who has not read this far:
   The daemon's refusal set, the tailnet rule, the clock seam and the whole of the browser
   suite were judged by model sessions only — thoroughly, and by nobody who will be
   surprised by them in daily use.
+
+## Post-merge annotation — 2026-09-16
+
+*This section is appended after the record merged. Nothing above it is edited: a
+merged record is sealed, and a reader who followed a citation here should find what
+was written at the time.*
+
+Independent QA re-verified M5-R5 against merged `main` at
+[`60012e3`](https://github.com/davison/md-notes/commit/60012e3) — the state this
+record's own pull request produced — and **the superseding verdict is not satisfied**
+([#74](https://github.com/davison/md-notes/issues/74#issuecomment-5703359865)). The
+five deliverables M5-R5 names were all found present and could not be faulted against
+the binary: the API table's two rows answer exactly as written, every row of the
+refusal table and of the tailnet table holds, the roadmap row is there, and the
+outcomes table above matches QA's verdicts row for row. What failed it is the
+requirement's *first* clause, "user documentation reflects create and delete", and one
+page that neither this record nor its task had listed.
+
+[`docs/sync.md`](../sync.md), step 2 of *Resolving one*, still told the reader that
+"md-notes edits notes in place and cannot create, rename or delete one" and cited
+`introduction.md#editing` — the section this milestone rewrote to say the opposite, so
+the sentence contradicted its own citation — while step 3 sent them to a file manager
+or a shell to delete a Syncthing conflict copy. QA deleted one through the API
+instead: `DELETE` on
+`docs/guide.sync-conflict-20260916-101010-ABCDEFG.md` returned `204` with the copy
+gone and `guide.md` untouched
+([#79](https://github.com/davison/md-notes/issues/79#issuecomment-5703350101)). Two of
+that sentence's three verbs were false, in a page the README links twice and the
+introduction three times.
+
+**What this says about the milestone, rather than about one page.** The task that
+wrote this record enumerated its files — `README.md`, `docs/introduction.md`,
+`docs/e-ink.md`, `ROADMAP.md` and the record — from the requirement's *examples*, and
+the requirement's opening clause is wider than its examples. The grep that would have
+caught it was run only after QA ran it. The documentation obligation in the
+doc-synthesizer contract is "their claims about what exists and works must be true at
+every milestone boundary"; scoping that obligation to a file list is how a page the
+milestone made false stayed false through a review and a merge.
+
+Fixed by task [#93](https://github.com/davison/md-notes/issues/93), pull request
+[#94](https://github.com/davison/md-notes/pull/94), which narrows step 2's reason to
+renaming — the one verb still not in the application — names **New note** for the
+variant that keeps both texts, and offers **Delete** in the note bar as the first way
+to remove a conflict copy with the file manager, the shell and Markor kept beside it,
+the page's premise being devices that may have no daemon. The same task takes QA's
+cosmetic second finding, that the introduction's narrow-width bullet named the burger
+where the `mdn` home link is the `+`'s actual neighbour, measured at 390x664
+([#79](https://github.com/davison/md-notes/issues/79#issuecomment-5703355193)), and
+re-runs the grep across `docs/` and `README.md`: outside `docs/sync.md` every
+surviving statement of this shape is either about renaming alone, which remains true,
+or inside a sealed record for M2, M3 or M4, which is not edited.
+
+**The requirement outcomes table above is deliberately unchanged.** M5-R5's status is
+QA's to set, and the verdict that settles it is the one written after #94 merges, not
+this annotation.
