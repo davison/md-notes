@@ -318,6 +318,37 @@ describe("useUnsavedGuard", () => {
 });
 
 /**
+ * Where the delete button is in the bar. jsdom computes no layout, so the
+ * position itself is the browser suite's to measure (ui/e2e); what is
+ * checkable here is the invariant underneath it — the control is rendered
+ * in the bar in both modes and is the last thing in it, whether or not the
+ * save status beside it exists. Before #85 the status was the element
+ * carrying `margin-left: auto`, and a note that had never been read renders
+ * no status at all, which is why the button moved on the first edit.
+ */
+describe("the delete button's place in the note bar", () => {
+  const bar = () => document.querySelector(".note-bar")!;
+  const order = () => [...bar().children].map((c) => c.className);
+
+  it("is the last control in the bar in both modes, with or without a save status", async () => {
+    render(<NotePane slug="n" path="a.md" />);
+    await waitFor(() => expect(screen.getByText("body")).toBeTruthy());
+    // A note opened for reading has never been read as source, so there is
+    // no save status in the bar at all.
+    expect(order()).toEqual(["mode-toggle", "mode-name", "delete-note"]);
+
+    fireEvent.keyDown(document.body, ctrlE);
+    await waitFor(() => expect(editorText()).toContain("body"));
+    expect(order()).toEqual(["mode-toggle", "mode-name", "save-status muted", "delete-note"]);
+
+    fireEvent.keyDown(document.body, ctrlE);
+    await waitFor(() => expect(bar().textContent).toContain("Viewing"));
+    // The status stays once the note has been read; the button is still last.
+    expect(order()).toEqual(["mode-toggle", "mode-name", "save-status muted", "delete-note"]);
+  });
+});
+
+/**
  * Delete, from the note bar. The confirmation is the whole gate: nothing is
  * sent before it, and cancelling it sends nothing at all.
  */

@@ -255,6 +255,46 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
     );
   });
 
+  it("keeps the delete button in one place across an edit, in both layouts", async () => {
+    // The operator's finding on #74: on an unedited note the button sat at
+    // the left of the bar, moved right on entering the editor and stayed
+    // there on the way back. Its place must not be a function of whether
+    // the session has read the note yet, so it is measured three times —
+    // before, during and after an edit — at both layouts.
+    const layouts = [
+      { name: "wide", viewport: { width: 1280, height: 900 } },
+      { name: "drawer", viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true },
+    ];
+    for (const layout of layouts) {
+      const ctx = await browser.newContext(layout);
+      try {
+        const view = await ctx.newPage();
+        await view.goto(`${origin}/r/notes/index.md`);
+        await view.locator(".note-bar").waitFor();
+        const del = view.locator(".note-bar .delete-note");
+
+        const unedited = await del.boundingBox();
+        await view.getByRole("button", { name: "Edit" }).click();
+        await view.locator(".cm-editor").waitFor();
+        const editing = await del.boundingBox();
+        await view.getByRole("button", { name: "View" }).click();
+        await view.locator(".note-body").waitFor();
+        const afterwards = await del.boundingBox();
+
+        assert.deepEqual(editing, unedited, `${layout.name}: the button moved on entering the editor`);
+        assert.deepEqual(afterwards, unedited, `${layout.name}: the button moved on leaving the editor`);
+        // And it is where it is meant to be: hard right, inside the bar.
+        const bar = await view.locator(".note-bar").boundingBox();
+        assert.ok(
+          unedited.x + unedited.width > bar.x + bar.width - 40,
+          `${layout.name}: the button is not at the right-hand end (${unedited.x + unedited.width} of ${bar.x + bar.width})`,
+        );
+      } finally {
+        await ctx.close();
+      }
+    }
+  });
+
   it("works in the drawer layout on a coarse pointer, with 40 px tap targets", async () => {
     // A phone: the narrow layout, a touch screen and no hover — the three
     // things the drawer and the tap-target block key off.

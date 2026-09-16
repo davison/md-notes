@@ -325,8 +325,17 @@ code {
   color: var(--fg);
 }
 
+/*
+ * The save status is a label, and it is not always there: SaveStatus renders
+ * nothing for a note that has never been read, which is every note opened
+ * for reading. So it cannot be the element that positions the controls
+ * around it — an `auto` margin here put the delete button at the left of an
+ * unedited note's bar and moved it right the moment the note was opened in
+ * the editor (#85). It sits where it falls, after the mode name, and
+ * shrinks rather than pushing its neighbours about.
+ */
 .save-status {
-  margin-left: auto;
+  min-width: 0;
 }
 
 .unsaved-drafts {
@@ -380,7 +389,15 @@ code {
   border-color: var(--accent);
 }
 
+/*
+ * One place, at the right-hand end of the bar, in both modes and at every
+ * width: the auto margin belongs to the control whose position must not
+ * move, not to a sibling that may not be in the page. The right-hand end
+ * because it is destructive and the mode toggle at the other end is what a
+ * thumb aims at (#85).
+ */
 .note-bar .delete-note {
+  margin-left: auto;
   flex: none;
 }
 
