@@ -594,6 +594,110 @@ func TestOpenDirFollowsLinksInsideTheRoot(t *testing.T) {
 	}
 }
 
+// A link with no target may be one hop of a chain, and a chain that starts
+// inside the root can still end outside it. EscapesChain follows it; a
+// circular chain ends the walk rather than running forever.
+func TestEscapesChainFollowsDanglingHops(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	links := [][2]string{
+		{filepath.Join(base, "gone.md"), "out.md"},    // one hop, out
+		{"hop.md", "two.md"},                          // two hops, the second out
+		{filepath.Join(base, "gone.md"), "hop.md"},    //
+		{"sub/deeper.md", "deep.md"},                  // three hops, the last out
+		{"../../gone.md", "sub/deeper.md"},            //
+		{"gone.md", "inside.md"},                      // dangling, but inside
+		{"loop-b.md", "loop-a.md"},                    // circular
+		{"loop-a.md", "loop-b.md"},                    //
+		{"self.md", "self.md"},                        //
+		{filepath.Join(root, "sub"), "abs-inside.md"}, // absolute, inside
+	}
+	for _, l := range links {
+		if err := os.Symlink(l[0], filepath.Join(root, l[1])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r, err := New(root, filepath.Join(t.TempDir(), "s.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	only := r.List()[0]
+
+	for _, c := range []struct {
+		dir, base string
+		want      bool
+	}{
+		{root, "out.md", true},
+		{root, "two.md", true},
+		{root, "deep.md", true},
+		{root, "inside.md", false},
+		{root, "loop-a.md", false},
+		{root, "self.md", false},
+		{root, "abs-inside.md", false},
+		{root, "sub", false},       // a real directory, not a link at all
+		{root, "absent.md", false}, // nothing of that name
+		{filepath.Join(root, "sub"), "deeper.md", true},
+	} {
+		if got := only.EscapesChain(c.dir, c.base); got != c.want {
+			t.Errorf("EscapesChain(%q, %q) = %v, want %v", c.dir, c.base, got, c.want)
+		}
+	}
+}
+
+// DanglingEscape is the same question asked of a whole path: the link that
+// leaves the root may be a directory component, and the components before
+// it may themselves be links that stay inside.
+func TestDanglingEscapeWalksTheComponents(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	links := [][2]string{
+		{filepath.Join(base, "gone-dir"), "out-dir"}, // a directory link with no target, out
+		{"sub", "live"},                            // a live link, inside
+		{"gone-dir", "inside-dir"},                 // a directory link with no target, inside
+		{"hop.md", "two.md"},                       // a two-hop chain, out
+		{filepath.Join(base, "gone.md"), "hop.md"}, //
+	}
+	for _, l := range links {
+		if err := os.Symlink(l[0], filepath.Join(root, l[1])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(base, "gone.md"), filepath.Join(root, "sub", "out.md")); err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(root, filepath.Join(t.TempDir(), "s.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	only := r.List()[0]
+
+	for _, c := range []struct {
+		rel  string
+		want bool
+	}{
+		{"out-dir/new.md", true},
+		{"out-dir/deeper/new.md", true},
+		{"out-dir", true},
+		{"two.md", true},
+		{"live/out.md", true},
+		{"inside-dir/new.md", false},
+		{"live/absent.md", false},
+		{"sub/absent.md", false},
+		{"absent.md", false},
+		{"sub", false},
+	} {
+		if got := only.DanglingEscape(c.rel); got != c.want {
+			t.Errorf("DanglingEscape(%q) = %v, want %v", c.rel, got, c.want)
+		}
+	}
+}
+
 // Escapes answers for a link Resolve cannot follow, which is the only
 // reason it exists: a dangling one has no real path.
 func TestEscapesIsLexical(t *testing.T) {

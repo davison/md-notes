@@ -155,6 +155,21 @@ func TestCreateNoteRefusals(t *testing.T) {
 	if err := os.Symlink(filepath.Join(base, "gone.md"), filepath.Join(notes, "dangling.md")); err != nil {
 		t.Fatal(err)
 	}
+	// A *directory* link with no target, pointing out of the root: the walk
+	// that makes missing parents must call it an escape rather than a
+	// directory it can make.
+	if err := os.Symlink(filepath.Join(base, "gone-dir"), filepath.Join(notes, "out-dir")); err != nil {
+		t.Fatal(err)
+	}
+	// Two hops, neither of which exists: the first target is inside the
+	// root and only the second leaves it, so reading one link is not
+	// enough to tell.
+	if err := os.Symlink("hop.md", filepath.Join(notes, "two-hop.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(base, "gone.md"), filepath.Join(notes, "hop.md")); err != nil {
+		t.Fatal(err)
+	}
 	before := listing(t, base)
 
 	for _, c := range []struct {
@@ -177,6 +192,8 @@ func TestCreateNoteRefusals(t *testing.T) {
 		{"an escape through a linked folder", "/api/r/notes/source/out/new.md", `{"source":"x"}`, 403, "outside_root"},
 		{"an escape through a folder not made yet", "/api/r/notes/source/out/deeper/new.md", `{"source":"x"}`, 403, "outside_root"},
 		{"a dangling link out of the root", "/api/r/notes/source/dangling.md", `{"source":"x"}`, 403, "outside_root"},
+		{"a dangling directory link out of the root", "/api/r/notes/source/out-dir/new.md", `{"source":"x"}`, 403, "outside_root"},
+		{"a dangling two-hop chain out of the root", "/api/r/notes/source/two-hop.md", `{"source":"x"}`, 403, "outside_root"},
 		{"a component that is a file", "/api/r/notes/source/hello.md/child.md", `{"source":"x"}`, 404, "not_found"},
 		{"a folder under a file", "/api/r/notes/source/hello.md/deeper/child.md", `{"source":"x"}`, 404, "not_found"},
 		{"an unknown root", "/api/r/missing/source/new.md", `{"source":"x"}`, 404, "not_found"},
@@ -196,6 +213,9 @@ func TestCreateNoteRefusals(t *testing.T) {
 			}
 			if body["error"] == "" {
 				t.Errorf("code %q carries no message", body["code"])
+			}
+			if got := listing(t, base); !equal(got, before) {
+				t.Fatalf("a refusal changed the root:\n got %v\nwant %v", got, before)
 			}
 		})
 	}
@@ -307,6 +327,17 @@ func TestDeleteNoteRefusals(t *testing.T) {
 	if err := os.Symlink("also-gone.md", filepath.Join(notes, "stale.md")); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Symlink(filepath.Join(base, "gone-dir"), filepath.Join(notes, "out-dir")); err != nil {
+		t.Fatal(err)
+	}
+	// Two hops, neither of which exists, and only the second leaves the
+	// root.
+	if err := os.Symlink("hop.md", filepath.Join(notes, "two-hop.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(base, "gone.md"), filepath.Join(notes, "hop.md")); err != nil {
+		t.Fatal(err)
+	}
 	before := listing(t, base)
 
 	for _, c := range []struct {
@@ -327,6 +358,8 @@ func TestDeleteNoteRefusals(t *testing.T) {
 		{"a symlink inside the root", "/api/r/notes/source/inside.md", 422, "unsupported_source"},
 		{"a dangling link out of the root", "/api/r/notes/source/dangling.md", 403, "outside_root"},
 		{"a dangling link inside the root", "/api/r/notes/source/stale.md", 422, "unsupported_source"},
+		{"a dangling directory link out of the root", "/api/r/notes/source/out-dir/note.md", 403, "outside_root"},
+		{"a dangling two-hop chain out of the root", "/api/r/notes/source/two-hop.md", 403, "outside_root"},
 		{"a component that is a file", "/api/r/notes/source/hello.md/child.md", 404, "not_found"},
 		{"an absent note", "/api/r/notes/source/absent.md", 404, "not_found"},
 		{"an unknown root", "/api/r/missing/source/hello.md", 404, "not_found"},
