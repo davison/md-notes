@@ -6,8 +6,9 @@
  * is served, and a GET from the extension's background context — which carries
  * no `Origin` — passes the guard with no token at all. Under a `tailnet_host`
  * name nothing is served without proof the caller holds the token, and even
- * then only the allow-list's endpoints are reachable: reads, yes; `POST
- * /api/roots` and `POST /api/clip`, no (see `internal/server/tailnet.go`).
+ * then only the allow-list's endpoints are reachable: reads, the source
+ * writes and `POST /api/clip`, yes; `POST /api/roots`, no (see
+ * `internal/server/tailnet.go`).
  *
  * So the configured URL decides two things — whether to present the bearer
  * token, and what to say when the daemon refuses. Both live here, pure, so
@@ -82,12 +83,18 @@ export function registerRefusedRemotely(daemonUrl: string): string {
   );
 }
 
-/** Why clipping cannot work under a tailnet name. Same allow-list, same reason. */
-export function clipRefusedRemotely(daemonUrl: string): string {
+/**
+ * Why a clip was refused under a tailnet name *now that it should not be*.
+ * Since M6-R1 the daemon admits `POST /api/clip` there, so a `loopback_only`
+ * on a clip means the daemon on the other end is older than this extension —
+ * not that the token is wrong, which is the misdiagnosis #51 ended.
+ */
+export function clipRefusedByOlderDaemon(daemonUrl: string, detail: string): string {
   return (
-    `Clipping is refused over ${daemonHost(daemonUrl)}: the daemon serves ` +
-    "`POST /api/clip` on loopback only. Clip from a browser on the machine running " +
-    "the daemon, or point this extension back at its loopback address."
+    `The daemon at ${daemonHost(daemonUrl)} still serves \`POST /api/clip\` on ` +
+    `loopback only (${detail}). That daemon predates the version that admits ` +
+    "clipping over the tailnet: update `mdn` on the machine holding the notes, or " +
+    "point this extension back at its loopback address."
   );
 }
 
@@ -107,11 +114,14 @@ export function badHostMessage(daemonUrl: string, detail: string): string {
 
 /**
  * What the tailnet allow-list leaves working, said in one clause so the popup
- * and the connection test can agree.
+ * and the connection test can agree. Clipping joined the list in M6-R1; what
+ * is left on the right-hand side is registering a folder, which is the step
+ * from a network credential to any directory on the machine.
  */
 export const TAILNET_LIMITS =
-  "opening a file already inside a registered root works here, but registering a " +
-  "folder and clipping are refused — the daemon serves both on loopback only";
+  "opening a file already inside a registered root and clipping both work here, " +
+  "but registering a folder is refused — the daemon serves `POST /api/roots` on " +
+  "loopback only";
 
 /** The daemon line at the top of the popup, which names the limits up front. */
 export function describeDaemonReach(settings: Settings): string {

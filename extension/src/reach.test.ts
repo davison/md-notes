@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   TAILNET_LIMITS,
   badHostMessage,
-  clipRefusedRemotely,
+  clipRefusedByOlderDaemon,
   daemonHost,
   describeDaemonReach,
   isLoopbackUrl,
@@ -95,11 +95,17 @@ describe("the messages the tailnet allow-list needs", () => {
     expect(message).not.toMatch(/rejected the token/);
   });
 
-  it("names the endpoint and the action when clipping is refused", () => {
-    const message = clipRefusedRemotely("https://laptop.ts.net");
+  it("blames an out-of-date daemon when a clip is refused as loopback-only", () => {
+    // M6-R1 admits the clip under a tailnet name, so this refusal can only
+    // come from a daemon older than the extension talking to it.
+    const message = clipRefusedByOlderDaemon(
+      "https://laptop.ts.net",
+      "this endpoint is served on loopback only; it is not reachable under laptop.ts.net",
+    );
     expect(message).toContain("laptop.ts.net");
     expect(message).toContain("`POST /api/clip`");
-    expect(message).toContain("loopback only");
+    expect(message).toContain("predates");
+    expect(message).toContain("update `mdn`");
     expect(message).not.toContain("mdn token");
     expect(message).not.toMatch(/rejected the token/);
   });
@@ -125,6 +131,10 @@ describe("describeDaemonReach", () => {
     const line = describeDaemonReach({ daemonUrl: "https://laptop.ts.net", token: "t" });
     expect(line).toContain("Daemon: https://laptop.ts.net");
     expect(line).toContain(TAILNET_LIMITS);
-    expect(line).toMatch(/registering a folder and clipping are refused/);
+    expect(line).toMatch(/registering a folder is refused/);
+    // Clipping is admitted over the tailnet since M6-R1, so the line no
+    // longer warns about it before the button is pressed.
+    expect(line).not.toMatch(/clipping (?:is|are) refused/);
+    expect(line).toMatch(/clipping both work here/);
   });
 });
