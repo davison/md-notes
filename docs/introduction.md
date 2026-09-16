@@ -605,8 +605,11 @@ the tag chip, the 40-pixel targets under a coarse pointer with the mouse-driven
 window's density left alone, the light override applied with the application bundle
 blocked — so nothing but the inline boot script can have applied it — the flash
 suppressed by the setting and by `prefers-reduced-motion`, and a second page load
-that fetches no asset bytes. It needs Chromium, which is a separate download; see
-the README's **Building** section.
+that fetches no asset bytes. The same suite drives creating and deleting a note end
+to end, in the wide layout and in the drawer: a name typed into the prompt, a refusal
+corrected in place, the new note reaching a second tab through the events stream, and
+a deletion that a cancelled confirmation does not perform. It needs Chromium, which
+is a separate download; see the README's **Building** section.
 
 ## Editing
 
