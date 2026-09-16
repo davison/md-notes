@@ -201,6 +201,17 @@ func TestCreateNoteRefusals(t *testing.T) {
 	// where they end. 255 is as far as the resolver itself goes; one link
 	// further and the resolver refuses the path before the walk sees it,
 	// and the name is simply held by something nothing can follow.
+	// A name a reader may legitimately use — and the text of the one
+	// error filepath.EvalSymlinks writes without a path. A link out of
+	// the root whose target happens to carry it is still a link out of
+	// the root, and a note called that is still a note.
+	phrase := filepath.Join(base, "too many links", "gone.md")
+	if err := os.Symlink(phrase, filepath.Join(notes, "phrase-link.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(base, "too many links"), filepath.Join(notes, "phrase-dir")); err != nil {
+		t.Fatal(err)
+	}
 	longOut := filepath.Join(base, "gone.md")
 	chain41 := danglingChain(t, notes, "hop41", longOut, 41)
 	chain255 := danglingChain(t, notes, "hop255", longOut, 255)
@@ -232,6 +243,8 @@ func TestCreateNoteRefusals(t *testing.T) {
 		{"a dangling 41-link chain out of the root", "/api/r/notes/source/" + chain41, `{"source":"x"}`, 403, "outside_root"},
 		{"a dangling 255-link chain out of the root", "/api/r/notes/source/" + chain255, `{"source":"x"}`, 403, "outside_root"},
 		{"a chain longer than the resolver follows", "/api/r/notes/source/" + chain256, `{"source":"x"}`, 409, "exists"},
+		{"a dangling link out of the root whose target reads like the give-up", "/api/r/notes/source/phrase-link.md", `{"source":"x"}`, 403, "outside_root"},
+		{"a dangling directory link out of the root whose target reads like the give-up", "/api/r/notes/source/phrase-dir/new.md", `{"source":"x"}`, 403, "outside_root"},
 		{"a name the filesystem calls too long", "/api/r/notes/source/" + tooLongName, `{"source":"x"}`, 400, "invalid_path"},
 		{"a component that is a file", "/api/r/notes/source/hello.md/child.md", `{"source":"x"}`, 404, "not_found"},
 		{"a folder under a file", "/api/r/notes/source/hello.md/deeper/child.md", `{"source":"x"}`, 404, "not_found"},
@@ -267,6 +280,38 @@ func TestCreateNoteRefusals(t *testing.T) {
 	}
 	if data, err := os.ReadFile(filepath.Join(base, "secret.md")); err != nil || string(data) != "secret" {
 		t.Fatalf("escaped the root: %q %v", data, err)
+	}
+}
+
+// "EvalSymlinks: too many links" is the one error the resolver writes
+// without a path in it, and it is also a name a reader may give a note.
+// The note wins: nothing about a name makes a missing file anything but
+// missing, or a new one anything but created.
+func TestANoteNamedLikeTheResolversGiveUp(t *testing.T) {
+	ts, base := newTestServer(t)
+	const name = "/api/r/notes/source/too%20many%20links.md"
+	if resp := do(t, ts, "GET", name, "", nil); resp.StatusCode != 404 {
+		t.Errorf("read before it exists = %d, want 404", resp.StatusCode)
+	}
+	if resp := do(t, ts, "DELETE", name, "", nil); resp.StatusCode != 404 {
+		t.Errorf("delete before it exists = %d, want 404", resp.StatusCode)
+	}
+	resp := do(t, ts, "POST", name, `{"source":"# hi"}`, jsonHeader())
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create = %d: %s", resp.StatusCode, readAll(t, resp.Body))
+	}
+	if _, err := os.Stat(filepath.Join(base, "notes", "too many links.md")); err != nil {
+		t.Fatalf("the note is not on disk: %v", err)
+	}
+	if resp := do(t, ts, "GET", name, "", nil); resp.StatusCode != 200 {
+		t.Errorf("read after create = %d, want 200", resp.StatusCode)
+	}
+	if resp := do(t, ts, "DELETE", name, "", nil); resp.StatusCode != 204 {
+		t.Errorf("delete = %d, want 204", resp.StatusCode)
+	}
+	// And a folder of that name is an ordinary folder.
+	if resp := do(t, ts, "POST", "/api/r/notes/source/too%20many%20links/note.md", `{"source":"x"}`, jsonHeader()); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create under a folder of that name = %d: %s", resp.StatusCode, readAll(t, resp.Body))
 	}
 }
 
@@ -383,6 +428,17 @@ func TestDeleteNoteRefusals(t *testing.T) {
 	// where they end. 255 is as far as the resolver itself goes; one link
 	// further and the resolver refuses the path before the walk sees it,
 	// and the name is simply held by something nothing can follow.
+	// A name a reader may legitimately use — and the text of the one
+	// error filepath.EvalSymlinks writes without a path. A link out of
+	// the root whose target happens to carry it is still a link out of
+	// the root, and a note called that is still a note.
+	phrase := filepath.Join(base, "too many links", "gone.md")
+	if err := os.Symlink(phrase, filepath.Join(notes, "phrase-link.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(base, "too many links"), filepath.Join(notes, "phrase-dir")); err != nil {
+		t.Fatal(err)
+	}
 	longOut := filepath.Join(base, "gone.md")
 	chain41 := danglingChain(t, notes, "hop41", longOut, 41)
 	chain255 := danglingChain(t, notes, "hop255", longOut, 255)
@@ -412,6 +468,10 @@ func TestDeleteNoteRefusals(t *testing.T) {
 		{"a dangling 41-link chain out of the root", "/api/r/notes/source/" + chain41, 403, "outside_root"},
 		{"a dangling 255-link chain out of the root", "/api/r/notes/source/" + chain255, 403, "outside_root"},
 		{"a chain longer than the resolver follows", "/api/r/notes/source/" + chain256, 422, "unsupported_source"},
+		{"a dangling link out of the root whose target reads like the give-up", "/api/r/notes/source/phrase-link.md", 403, "outside_root"},
+		{"a dangling directory link out of the root whose target reads like the give-up", "/api/r/notes/source/phrase-dir/new.md", 403, "outside_root"},
+		{"an absent note named like the give-up", "/api/r/notes/source/too%20many%20links.md", 404, "not_found"},
+		{"an absent note under a folder named like the give-up", "/api/r/notes/source/too%20many%20links/note.md", 404, "not_found"},
 		{"a name the filesystem calls too long", "/api/r/notes/source/" + tooLongName, 400, "invalid_path"},
 		{"a component that is a file", "/api/r/notes/source/hello.md/child.md", 404, "not_found"},
 		{"an absent note", "/api/r/notes/source/absent.md", 404, "not_found"},

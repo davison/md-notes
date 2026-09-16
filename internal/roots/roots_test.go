@@ -730,6 +730,45 @@ func TestDanglingEscapeWalksTheComponents(t *testing.T) {
 	}
 }
 
+// The resolver's own give-up carries no path; every other error it returns
+// quotes one, and a path is a name someone chose. A root whose own path
+// reads like that message must not make every absent name under it answer
+// for a chain of links, and neither must a note called that.
+func TestResolveTellsTheGiveUpFromANameThatReadsLikeIt(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "too many links")
+	root := filepath.Join(base, "notes")
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "too many links.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	chain(t, root, "longer", filepath.Join(base, "gone.md"), maxLinkHops+1)
+	r, err := New(root, filepath.Join(t.TempDir(), "s.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	only := r.List()[0]
+
+	for _, c := range []struct {
+		rel     string
+		wantErr error
+	}{
+		{"absent.md", os.ErrNotExist},
+		{"sub/absent.md", os.ErrNotExist},
+		{"too many links.md", nil},
+		{"too many links/absent.md", os.ErrNotExist},
+		// The real thing still answers for what it is: a chain longer
+		// than this resolver will follow.
+		{"longer-1.md", ErrTooManyLinks},
+	} {
+		_, err := only.Resolve(c.rel)
+		if !errors.Is(err, c.wantErr) {
+			t.Errorf("Resolve(%q) = %v, want %v", c.rel, err, c.wantErr)
+		}
+	}
+}
+
 // Escapes answers for a link Resolve cannot follow, which is the only
 // reason it exists: a dangling one has no real path.
 func TestEscapesIsLexical(t *testing.T) {
