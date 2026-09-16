@@ -1172,9 +1172,10 @@ decides otherwise.
 could register any directory on the machine and then read every file under it
 through the raw endpoint. On loopback that is inside the premise below — anything
 that can reach the port runs as you and can read those files anyway. Over the
-tailnet it is not, so it stays on the machine. It is also the *only* thing left on
-the right, which is the difference between this list and the one milestone three
-wrote.
+tailnet it is not, so it stays on the machine. It is also the only endpoint *named*
+on the right — everything else there is the default, an endpoint nobody has
+considered under this heading yet — which is the difference between this list and
+the one milestone three wrote.
 
 `POST /api/clip` was on the right until milestone six. It was refused for a weaker
 reason than root registration — not that a clip is dangerous, but that no write at
