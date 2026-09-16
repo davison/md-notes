@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -315,11 +316,15 @@ func (root Root) Resolve(rel string) (string, error) {
 	if err != nil {
 		// EvalSymlinks gives up on a chain longer than its own budget
 		// with an error it makes itself: no errno to match on and no
-		// exported sentinel, so the one message it can carry is matched
-		// here and given a name a caller can test for. Such a path names
-		// no file anything can open, and it reached the error mapping
-		// unrecognised — a 500 — before this.
-		if strings.Contains(err.Error(), "too many links") {
+		// exported sentinel, so it is recognised here and given a name a
+		// caller can test for. What makes that safe to do by text is the
+		// shape of the error and not the text: every other error
+		// EvalSymlinks returns is an *fs.PathError quoting the path, and
+		// a path is a name a reader chose — a note called "too many
+		// links.md" would otherwise answer for a chain it is not, and so
+		// would every absent name under a root whose own path says it.
+		var pathErr *fs.PathError
+		if !errors.As(err, &pathErr) && strings.Contains(err.Error(), "too many links") {
 			return "", ErrTooManyLinks
 		}
 		return "", err
