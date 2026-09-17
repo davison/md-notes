@@ -41,6 +41,7 @@ const DARK_BG = "rgb(27, 27, 27)";
 const TAP_GROUPS = [
   ".tree .dir",
   ".tree .file",
+  ".nav-order",
   ".tag",
   ".tag-clear",
   ".hit",
