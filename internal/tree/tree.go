@@ -373,16 +373,6 @@ func Stat(root string, files []string, warnf func(string, ...any)) []File {
 	return out
 }
 
-// Paths returns the paths of the listed files, for a caller that has a
-// tree to build and no times to put in it.
-func Paths(files []File) []string {
-	out := make([]string, len(files))
-	for i, f := range files {
-		out[i] = f.Path
-	}
-	return out
-}
-
 // Build arranges listed files into a tree whose root node has an empty
 // name and path. Directories appear only because a file lies beneath
 // them. The order is alphanumeric — directories first, then files, each
