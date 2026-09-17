@@ -276,9 +276,14 @@ phone's folder is **Send & Receive** like every other — see
 is the edit you occasionally make, and a receive-only folder would strand it on
 the phone.
 
-There is no md-notes application on Android. The phone gets plain files and a
-plain editor, which is the point of keeping notes as plain files; the daemon and
-its browser UI stay on the machines.
+There is no md-notes application on Android in the Play Store sense. The phone
+gets plain files and a plain editor, which is the point of keeping notes as
+plain files; the daemon and its browser UI stay on the machines. What the phone
+*can* have is the browser UI installed as an app of its own, in its own window,
+against the daemon over the tailnet — see
+[Installing it on the phone](#installing-it-on-the-phone) below. That is the
+same one copy the tailnet route always was, in a window without a browser bar;
+it is not a local copy and it does not edit the synced folder.
 
 **Clipping from the phone is not built yet.** The plan is an inbox file of
 URLs, shared to from the phone's share sheet, which the daemon turns into
@@ -300,6 +305,49 @@ token login, as does the extension's clipping. The
 README's [Over the tailnet](../README.md#over-the-tailnet) section and
 [the introduction](introduction.md#reaching-the-daemon-over-the-tailnet) cover
 the setup and what it narrows.
+
+### Installing it on the phone
+
+Over the tailnet the daemon is reached through `tailscale serve`, which
+terminates TLS — an HTTPS origin, which is what a browser requires before it
+will install a page as an app. So:
+
+1. Log in once at the tailnet name in **Brave or Chrome** on the phone, with
+   the token. The session is a cookie and survives what follows.
+2. The browser's menu offers **Install app**, or **Add to Home screen** and
+   then *Install*. Take the one that says install: the other makes a bookmark
+   with an icon, which opens in a browser tab rather than a window of its own.
+3. The icon lands on the home screen. Opening it starts the app at the roots
+   page, in its own window, with no browser bar — notes, the navigator, the
+   editor, search and live update, exactly as in the tab.
+
+Links into the app stay in the app: every route under the daemon's name is
+inside the installed window, so a note opened from a link or a clip does not
+hand you back to the browser.
+
+**What works with the daemon unreachable**, whether the phone is off the
+tailnet or the machine is asleep: the app opens. You get the application
+itself — its shell, its stylesheet, its script, from the browser's cache —
+and a line saying the daemon is not answering, instead of the browser's own
+"site cannot be reached" page. **Your notes are not there.** Nothing is
+stored on the phone: every note, the tree and the search come from the
+daemon, and they come back when it does. The offline copy is the application,
+not the notes. If you want the notes themselves on the phone, that is
+Syncthing and Markor above, and the two can live side by side.
+
+**Updating.** There is nothing to update by hand. The app asks the daemon for
+its shell every time it opens, so the next open after you rebuild the daemon
+is already the new UI; the parts that did not change are not fetched again.
+Closing every window of the app is what lets a new version's worker take over
+from the old one, which usually happens without your noticing.
+
+**Uninstalling** is the launcher's own long-press and *Uninstall*. It removes
+the app and its cache from the phone and nothing else — no note, no root, no
+setting on the daemon.
+
+On iOS the same page adds to the home screen from Safari's share sheet and
+opens full-screen. It has not been checked on an iPhone; the figures and
+behaviour above are from Android and from headless Chromium.
 
 The two routes answer different questions, and this project uses both:
 

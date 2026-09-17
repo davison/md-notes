@@ -685,6 +685,52 @@ whitespace) and from inline hashtags: `#` at the start of a line or after whites
 followed by letters, digits, `_`, `-` or `/`, containing at least one letter, outside
 fenced and inline code, lower-cased. Tags are collected per request, with no index.
 
+### Installing the app
+
+The UI ships a web app manifest and a service worker, so a browser reached over
+HTTPS — the tailnet name behind `tailscale serve` — offers to install it, and
+the installed app opens in its own window at the roots page with no browser bar.
+`http://localhost:<port>` is a secure context too, so the same works on the
+daemon's own machine. [Installing it on the
+phone](sync.md#installing-it-on-the-phone) has the steps and what to expect of
+it; this is what it is made of.
+
+The manifest is `/manifest.webmanifest`: the name, the icons at 192 and 512
+pixels and a maskable variant, `display: standalone`, `start_url: /` and
+`scope: /`. The scope is the whole origin, so `/r/{slug}/…` — every note, every
+root — is inside the installed window. The page asks for the manifest with
+`crossorigin="use-credentials"`, without which a browser fetches it with no
+cookie, is handed the tailnet login page, and concludes there is nothing to
+install. The manifest carries one theme colour and one background colour
+because that is all a manifest can carry; the page's two `theme-color` meta tags
+carry the light and the dark one.
+
+The service worker is `/sw.js`, registered after the page has loaded. What it
+does with a request depends on what the request is for:
+
+- **Nothing under `/api/`** is intercepted at all. The events stream is never
+  buffered, a save reaches the daemon or fails, the login and the session
+  cookie are never touched, and no API response is ever stored. Neither is
+  `/login`, nor anything that is not a same-origin GET.
+- **The hashed files under `/assets/`** are served from the cache when they are
+  in it. Their names carry their content, so a cached one cannot be wrong.
+- **The shell, the manifest and the icons** are fetched from the network first
+  and cached as they arrive; the cache answers only when the network cannot.
+  That is the `no-cache` rule above surviving the worker: a rebuilt shell is
+  picked up the next time the app is opened, and a stale one is never served
+  while the daemon is answering.
+
+The cache is named after its own contents, so a new build is a new cache and
+the old one is deleted whole when the new worker activates. The worker does not
+push itself in front of a page that is already open: a tab running the previous
+build keeps the previous worker, which is the only one still holding that
+build's lazily loaded chunks.
+
+With the daemon unreachable, a navigation is answered with the cached shell, so
+the app opens at the route that was asked for and says the daemon is not
+answering. The notes are not cached and are not available; nothing about the
+notes is stored on the device.
+
 ### Display settings
 
 The **gear** at the right of the top bar, at every width, opens a panel with two
@@ -827,6 +873,13 @@ since each one's parser is a chunk of its own: 197,808 bytes for a note with no 
 [The milestone four record](milestones/4-polish-phone-e-ink-and-the-bundle.md#corrections-to-the-record-itself)
 carries the measurements, who took them, and how far they had already drifted inside one
 milestone.
+
+Three files in the bundle are not part of that page load. `/manifest.webmanifest`
+is served as `application/manifest+json`, `/sw.js` as JavaScript, and the icons as
+PNG and SVG; none of them is under `/assets/`, so all of them carry `no-cache` and
+an `ETag` like `index.html` does — a service worker that could be cached for a year
+would keep a year-old shell with it. [Installing the app](#installing-the-app)
+above says what the two of them do.
 
 ### Creating and deleting a note
 
