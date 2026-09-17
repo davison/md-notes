@@ -14,6 +14,13 @@ export const API_PREFIX = "/api/";
  * The tailnet login form. It exists only under the tailnet host, carries
  * `Cache-Control: no-store`, and is the one page whose staleness would lock
  * a reader out of their own notes, so it is left to the network like the API.
+ *
+ * The cost, seen and accepted: over loopback there is no login handler — the
+ * daemon mounts it only under the tailnet host — so `/login` is an ordinary
+ * client-side route there, and the one route in the application the offline
+ * shell does not open. It shows the browser's error page instead. Nobody
+ * navigates to it on loopback, and under the tailnet, where they do, an
+ * offline login could not succeed anyway.
  */
 export const LOGIN_PATH = "/login";
 

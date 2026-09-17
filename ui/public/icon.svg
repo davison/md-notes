@@ -6,7 +6,12 @@
 
       rsvg-convert -w 192 -h 192 public/icon.svg > public/icon-192.png
       rsvg-convert -w 512 -h 512 public/icon.svg > public/icon-512.png
-      rsvg-convert -w 512 -h 512 public/icon-maskable.svg > public/icon-maskable-512.png
+      rsvg-convert -w 512 -h 512 icons/icon-maskable.svg > public/icon-maskable-512.png
+
+  This file is in public/ because it is served: the page's favicon link and
+  a manifest entry both name it. Its maskable sibling is a build source that
+  nothing fetches, so it is in ui/icons/ and stays out of the bundle and out
+  of the binary.
 
   The colours are the application's own: the page background and foreground
   of the dark scheme in ui/src/style.css, so the mark sits on the same ink as
