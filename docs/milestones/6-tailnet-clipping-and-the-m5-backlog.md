@@ -834,11 +834,15 @@ QA's six items — the two findings and four observations tabled above — are a
 dispositioned at
 [#96](https://github.com/davison/md-notes/issues/96#issuecomment-5706613081): none blocks
 a requirement, and each is small and either already in hand or a rider on a later task.
-Four of them are the four rows above that cite QA; the other two are #107, already
-captured by the re-review that established its trade-off, and `docs/sync.md`, folded into
-this task's sweep. [#110](https://github.com/davison/md-notes/issues/110) is not among
-QA's items at all — it came from the review of #109, through the correction that withdrew
-the figure it was first written from.
+Four of them are rows above — [#107](https://github.com/davison/md-notes/issues/107),
+[#108](https://github.com/davison/md-notes/issues/108),
+[#111](https://github.com/davison/md-notes/issues/111) and
+[#112](https://github.com/davison/md-notes/issues/112); the other two are the
+documentation finding on [#97](https://github.com/davison/md-notes/issues/97#issuecomment-5706541449),
+corrected by this task's sweep, and `docs/sync.md`, folded into it.
+[#110](https://github.com/davison/md-notes/issues/110) is not among QA's items at all — it
+came from the review of #109, through the correction that withdrew the figure it was first
+written from.
 
 ## Known gaps at the boundary
 
