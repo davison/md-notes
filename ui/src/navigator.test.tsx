@@ -4,16 +4,41 @@ import { Navigator, ancestors } from "./navigator";
 import { ORDER_KEY } from "./order";
 import type { TreeNode } from "./api";
 
-/** Modification times, oldest first, so a recency order is visible. */
-const OLD = Date.UTC(2026, 8, 1);
-const MID = Date.UTC(2026, 8, 5);
-const NEW = Date.UTC(2026, 8, 9);
+/** A day in September 2026, as the daemon would send it. */
+const on = (day: number) => Date.UTC(2026, 8, day);
 
+/**
+ * The fixture, chosen so that the alphanumeric order and the recency order
+ * are a different list at *every* level — the root's folders, the root's
+ * notes, inside `docs`, inside `docs/deep`, and under the tag filter the
+ * cases below apply. A fixture whose two orders coincide cannot fail when
+ * the ordering is removed, whatever a case is named
+ * (davison/md-notes#119, review finding 1).
+ *
+ *                             modified   alphanumeric   by recency
+ *   archive/  old.md           3 Sep      1st folder     2nd folder
+ *   docs/     deep/  beta.md   5 Sep      1st in deep    2nd in deep
+ *                   inner.md   7 Sep      2nd in deep    1st in deep
+ *             guide.md         1 Sep      1st note       2nd note
+ *             notes.md         9 Sep      2nd note       1st note
+ *   alpha.md                   2 Sep      1st note       2nd note
+ *   top.md                     8 Sep      2nd note       1st note
+ *
+ * `docs` is ahead of `archive` by recency because `notes.md` (9 Sep) lies
+ * beneath it, which is the folders-by-newest-descendant rule; both stay
+ * ahead of the notes, which is the grouping rule.
+ */
 const tree: TreeNode = {
   name: "",
   path: "",
   dir: true,
   children: [
+    {
+      name: "archive",
+      path: "archive",
+      dir: true,
+      children: [{ name: "old.md", path: "archive/old.md", dir: false, modified: on(3) }],
+    },
     {
       name: "docs",
       path: "docs",
@@ -23,12 +48,17 @@ const tree: TreeNode = {
           name: "deep",
           path: "docs/deep",
           dir: true,
-          children: [{ name: "inner.md", path: "docs/deep/inner.md", dir: false, modified: MID }],
+          children: [
+            { name: "beta.md", path: "docs/deep/beta.md", dir: false, modified: on(5) },
+            { name: "inner.md", path: "docs/deep/inner.md", dir: false, modified: on(7) },
+          ],
         },
-        { name: "guide.md", path: "docs/guide.md", dir: false, modified: OLD },
+        { name: "guide.md", path: "docs/guide.md", dir: false, modified: on(1) },
+        { name: "notes.md", path: "docs/notes.md", dir: false, modified: on(9) },
       ],
     },
-    { name: "top.md", path: "top.md", dir: false, modified: NEW },
+    { name: "alpha.md", path: "alpha.md", dir: false, modified: on(2) },
+    { name: "top.md", path: "top.md", dir: false, modified: on(8) },
   ],
 };
 
@@ -113,30 +143,66 @@ describe("Navigator", () => {
 });
 
 /**
- * The order toggle (M7-R3, davison/md-notes#116). The ordering rules
- * themselves are held by ./order.test.ts; these are the control, what it
+ * The order toggle (M7-R3, davison/md-notes#116). ./order.test.ts holds
+ * the ordering rules on their own terms; these hold the control, what it
  * remembers, and the two things a reader would lose if it re-mounted the
- * tree from scratch.
+ * tree from scratch — but they hold the order too, and they have to: a
+ * fixture whose two orders coincide leaves cases that pass with the
+ * ordering taken out (davison/md-notes#119, review finding 1). Every
+ * expected list below therefore differs from the other order at every
+ * level it names.
  */
 describe("the order control", () => {
+  /** The whole tree open, which is where the two orders differ the most. */
+  const openAll = () => {
+    fireEvent.click(screen.getByText("archive"));
+    fireEvent.click(screen.getByText("docs"));
+    fireEvent.click(screen.getByText("deep"));
+  };
+
+  const ALPHANUMERIC = [
+    "archive",
+    "old.md",
+    "docs",
+    "deep",
+    "beta.md",
+    "inner.md",
+    "guide.md",
+    "notes.md",
+    "alpha.md",
+    "top.md",
+  ];
+
+  const BY_RECENCY = [
+    "docs",
+    "deep",
+    "inner.md",
+    "beta.md",
+    "notes.md",
+    "guide.md",
+    "archive",
+    "old.md",
+    "top.md",
+    "alpha.md",
+  ];
+
   it("starts on the alphanumeric order the daemon sent", () => {
     render(<Navigator slug="notes" tree={tree} current="" />);
     expect(orderButton().getAttribute("aria-pressed")).toBe("false");
-    expect(rows()).toEqual(["docs", "top.md"]);
+    openAll();
+    expect(rows()).toEqual(ALPHANUMERIC);
   });
 
-  it("puts the most recently modified note on top when pressed", () => {
+  it("orders every level by recency when pressed", () => {
     render(<Navigator slug="notes" tree={tree} current="" />);
+    openAll();
     fireEvent.click(orderButton());
     expect(orderButton().getAttribute("aria-pressed")).toBe("true");
-    // docs is a folder and folders stay grouped first; top.md is the
-    // newest note and leads the notes.
-    expect(rows()).toEqual(["docs", "top.md"]);
-    fireEvent.click(screen.getByText("docs"));
-    // guide.md (1 Sep) against deep/, whose newest note is 5 Sep — but
-    // deep/ is a folder, so it is first either way, and the check that
-    // matters is that the rows below it are the recency order.
-    expect(rows()).toEqual(["docs", "deep", "guide.md", "top.md"]);
+    // Folders before notes at both levels; docs ahead of archive on a
+    // note two levels down; inner.md ahead of beta.md inside deep.
+    expect(rows()).toEqual(BY_RECENCY);
+    fireEvent.click(orderButton());
+    expect(rows()).toEqual(ALPHANUMERIC);
   });
 
   it("keeps its accessible name whichever order is on", () => {
@@ -156,24 +222,25 @@ describe("the order control", () => {
     cleanup();
     render(<Navigator slug="another-root" tree={tree} current="" />);
     expect(orderButton().getAttribute("aria-pressed")).toBe("true");
+    openAll();
+    expect(rows()).toEqual(BY_RECENCY);
   });
 
   it("restores a stored order on first render", () => {
     localStorage.setItem(ORDER_KEY, "recent");
     render(<Navigator slug="notes" tree={tree} current="" />);
     expect(orderButton().getAttribute("aria-pressed")).toBe("true");
+    openAll();
+    expect(rows()).toEqual(BY_RECENCY);
   });
 
   it("leaves the expanded directories open across a toggle", () => {
     render(<Navigator slug="notes" tree={tree} current="" />);
-    fireEvent.click(screen.getByText("docs"));
-    fireEvent.click(screen.getByText("deep"));
-    expect(screen.getByText("inner.md")).toBeTruthy();
+    openAll();
     fireEvent.click(orderButton());
-    expect(screen.getByText("inner.md")).toBeTruthy();
-    expect(screen.getByText("guide.md")).toBeTruthy();
+    expect(rows()).toEqual(BY_RECENCY);
     fireEvent.click(orderButton());
-    expect(screen.getByText("inner.md")).toBeTruthy();
+    expect(rows()).toEqual(ALPHANUMERIC);
   });
 
   it("leaves the selected note selected across a toggle", () => {
@@ -182,16 +249,26 @@ describe("the order control", () => {
     const link = screen.getByText("inner.md");
     expect(link.classList.contains("active")).toBe(true);
     expect(link.getAttribute("aria-current")).toBe("page");
+    // The reveal put docs and deep open, and the order applies inside them.
+    expect(rows()).toEqual(["docs", "deep", "inner.md", "beta.md", "notes.md", "guide.md", "archive", "top.md", "alpha.md"]);
   });
 
-  it("orders the tag-filtered tree too, and keeps the filter", () => {
-    // Only the two notes carrying the tag, one of them inside docs/.
-    const only = new Set(["docs/guide.md", "top.md"]);
+  it("orders the tag-filtered tree by the notes it is showing", () => {
+    // The tag is on the two oldest notes in the two folders, and on both
+    // top-level notes. docs is left showing guide.md (1 Sep) and archive
+    // old.md (3 Sep), so the filtered recency order puts archive first —
+    // the reverse of the unfiltered recency order, where docs leads on a
+    // note the filter has pruned away. That is the whole reason the
+    // daemon sends no folder aggregate.
+    const only = new Set(["archive/old.md", "docs/guide.md", "alpha.md", "top.md"]);
     render(<Navigator slug="notes" tree={tree} current="" only={only} query="?tag=x" />);
+
+    // The filter opens the folders holding a match; deep/ was pruned with
+    // the notes it held.
+    expect(rows()).toEqual(["archive", "old.md", "docs", "guide.md", "alpha.md", "top.md"]);
+
     fireEvent.click(orderButton());
-    // top.md (9 Sep) is the newer of the two; docs/ is still first, and
-    // deep/ has been pruned away with the note it held.
-    expect(rows()).toEqual(["docs", "guide.md", "top.md"]);
+    expect(rows()).toEqual(["archive", "old.md", "docs", "guide.md", "top.md", "alpha.md"]);
     expect((screen.getByText("top.md") as HTMLAnchorElement).getAttribute("href")).toBe("/r/notes/top.md?tag=x");
   });
 

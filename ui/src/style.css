@@ -813,9 +813,13 @@ code {
     line-height: 2.75rem;
   }
 
+  /* Height only. The base rule below is declared later at the same
+     specificity, so its padding wins here whatever this block says —
+     the same shape `.tree .dir, .tree .file` above has — and a
+     horizontal padding written here would be read as a choice and
+     applied as nothing (davison/md-notes#119, review finding 2). */
   .nav-order {
     min-height: 2.75rem;
-    padding: 0 0.75rem;
   }
 
   .tag {

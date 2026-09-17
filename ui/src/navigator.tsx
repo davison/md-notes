@@ -149,6 +149,13 @@ export function Navigator({ slug, tree: fullTree, current, only = null, query = 
  * A name that swapped between "Recent first" and "A to Z" would say what
  * the button does next while the pressed state said what is on now, and
  * the two would be read out together.
+ *
+ * It carries no `title` either, for the same reason one way round: a
+ * constant tooltip describes what the click will do, so with the order
+ * already on it describes the order in force and reads as an instruction
+ * to turn on what is on (davison/md-notes#119, review finding 3). The
+ * label and the pressed state are the whole of what this control has to
+ * say.
  */
 function OrderToggle({ order, onChange }: { order: Order; onChange: (next: Order) => void }) {
   const on = order === "recent";
@@ -157,7 +164,6 @@ function OrderToggle({ order, onChange }: { order: Order; onChange: (next: Order
       type="button"
       class={on ? "nav-order on" : "nav-order"}
       aria-pressed={on}
-      title="Order the notes by when they were last modified, newest first"
       onClick={() => onChange(on ? "name" : "recent")}
     >
       Recent first
