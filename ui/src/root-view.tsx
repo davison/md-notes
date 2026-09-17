@@ -24,6 +24,15 @@ import { rootTabTitle, useDocumentTitle } from "./title";
  */
 export function RootView({ slug, note }: { slug: string; note?: string }) {
   const [root, setRoot] = useState<Root | null | undefined>(undefined);
+  /**
+   * Why the roots listing did not produce a root, when it did not. A listing
+   * that *failed* and a listing that *succeeded without this slug* are two
+   * different things and were once the same `null`: with the service worker
+   * opening the app offline, that made every note route say the root did not
+   * exist — "my notes are gone" — where the daemon being unreachable was the
+   * whole of it.
+   */
+  const [rootError, setRootError] = useState<string | null>(null);
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
   // Bumped when the open note changes on disk, so NoteView refetches.
@@ -51,9 +60,10 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
 
   useEffect(() => {
     setRoot(undefined);
+    setRootError(null);
     listRoots().then(
       (roots) => setRoot(roots.find((r) => r.slug === slug) ?? null),
-      () => setRoot(null),
+      (e: Error) => setRootError(e.message),
     );
   }, [slug]);
 
@@ -132,6 +142,19 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
     () => route("/", true),
   );
 
+  // Before the two states below, because neither of them is true: nothing was
+  // listed, so nothing is known about this root either way.
+  if (rootError) {
+    return (
+      <main class="page">
+        <h1>mdn</h1>
+        <p class="error">{rootError}</p>
+        <p>
+          <a href="/">Back to roots</a>
+        </p>
+      </main>
+    );
+  }
   if (root === undefined) return <main class="page muted">Loading…</main>;
   if (root === null) {
     return (
