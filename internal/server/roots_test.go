@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -10,12 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/token"
+	"github.com/davison/md-notes/internal/tree"
 )
 
 // The registry's two new answers — refusing a registration whose stated
@@ -494,5 +497,112 @@ func TestRootRefusalsCarryACode(t *testing.T) {
 	code, message = refusalOf(t, resp)
 	if code != "notes_root" || message == "" {
 		t.Errorf("the notes root: code %q, message %q", code, message)
+	}
+}
+
+// withDirs replaces the directory listing a watcher setup starts with, so
+// a test can hold one setup open while the registry changes under it.
+func withDirs(f func(context.Context, string, func(string, ...any)) ([]tree.Dir, error)) Option {
+	return func(s *Server) { s.listDirs = f }
+}
+
+// A slug freed by a removal can come back for a different folder while the
+// first folder's watcher is still being set up, and the watcher that
+// finishes must not be installed under the slug that now means somewhere
+// else. Before M7-R2 no slug could be freed while the daemon ran, so the
+// slug was a safe proxy for the root; unregistering is what ends that.
+//
+// The sequence, with the first setup held inside its directory listing:
+// register /a/docs (slug "docs"), remove it, register /b/docs (slug "docs"
+// again — its own setup returns at once, because the first is still
+// marked as starting), then let the first setup finish. What comes out has
+// to be a watcher on /b/docs: with the guard asking only whether *something*
+// holds the slug, it is a watcher on /a/docs, and the stream for "docs"
+// then reports a folder nobody is looking at.
+func TestWatcherSetupTargetsTheRootItStartedFor(t *testing.T) {
+	base := t.TempDir()
+	first := filepath.Join(base, "a", "docs")
+	second := filepath.Join(base, "b", "docs")
+	for _, dir := range []string{first, second} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	held := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	ts, _, _ := newRootsServer(t, withDirs(func(ctx context.Context, root string, warnf func(string, ...any)) ([]tree.Dir, error) {
+		if root == first {
+			once.Do(func() { close(held) })
+			<-release
+		}
+		return tree.Dirs(ctx, root, warnf)
+	}))
+
+	if resp := do(t, ts, "POST", "/api/roots", `{"path":"`+first+`"}`, nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("register the first folder: status %d", resp.StatusCode)
+	}
+	<-held
+	if resp := do(t, ts, "DELETE", "/api/roots/docs", "", nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("remove it: status %d", resp.StatusCode)
+	}
+	var added roots.Root
+	resp := do(t, ts, "POST", "/api/roots", `{"path":"`+second+`"}`, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("register the second folder: status %d", resp.StatusCode)
+	}
+	json.NewDecoder(resp.Body).Decode(&added)
+	if added.Slug != "docs" || added.Path != second {
+		t.Fatalf("the second folder did not take the freed slug: %+v", added)
+	}
+	close(release)
+
+	// The stream under the slug is the folder the slug now names. A change
+	// in it arrives; the wait is what a watcher on the other folder fails.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/r/docs/events", nil)
+	req.Host = "localhost:7337"
+	stream, err := waitForStream(t, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Body.Close()
+	next := sseReader(t, stream.Body)
+	next(func(l string) bool { return l == ": connected" })
+	os.WriteFile(filepath.Join(second, "new.md"), []byte("# new\n"), 0o644)
+	// A write in the folder the slug no longer names must not answer for
+	// it. Written second, so a stream that reports it rather than the one
+	// above is reporting the wrong folder and not merely racing.
+	os.WriteFile(filepath.Join(first, "wrong.md"), []byte("# wrong\n"), 0o644)
+	// The status event carries coverage, which is 1 directory either way;
+	// the change is what names the folder.
+	next(func(l string) bool { return l == "event: change" })
+	line := next(func(l string) bool { return strings.HasPrefix(l, "data: ") })
+	if !strings.Contains(line, "new.md") || strings.Contains(line, "wrong.md") {
+		t.Fatalf("the stream under slug \"docs\" reported %q; it is watching the wrong folder", line)
+	}
+}
+
+// waitForStream opens the event stream once the root has a watcher. The
+// setup runs in the background, so a request that arrives before it has
+// finished is answered 503 rather than made to wait.
+func waitForStream(t *testing.T, req *http.Request) (*http.Response, error) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, err := http.DefaultClient.Do(req.Clone(req.Context()))
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode == http.StatusOK {
+			return resp, nil
+		}
+		resp.Body.Close()
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("the events endpoint answered %d for ten seconds; the root never got a watcher", resp.StatusCode)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
