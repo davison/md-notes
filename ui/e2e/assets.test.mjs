@@ -61,7 +61,11 @@ describe("the embedded assets over the wire", { skip: blocker ?? false }, () => 
    */
   for (const { how, cpu } of [
     { how: "on an idle machine", cpu: 1 },
-    { how: "with the CPU slowed until the worker answers the second load", cpu: 8 },
+    // Not "until the worker answers": it answers at 1x too, and the log line
+    // from that case says so. What the throttling changes is whether Chromium
+    // reports the module request twice, and this string is what a failure
+    // prints.
+    { how: "with the CPU slowed until the worker answers the second load's script twice", cpu: 8 },
   ]) {
     it(`fetches no asset bytes on a second page load, ${how}`, async () => {
       const { name, ...options } = DESKTOP;
