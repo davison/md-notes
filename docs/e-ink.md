@@ -143,10 +143,13 @@ no transition and no flash under the no-animation setting, every tap target at
 by the height of an on-screen keyboard.
 
 Since milestone five that is no longer a measurement taken once: the `ui/e2e`
-suite re-measures the light override, the suppressed flash and every named tap
-target — the create control, the dialogs' own controls and the navigator's order
-toggle included — on five
-coarse-pointer profiles on every push, as a CI job of its own. [What holds these
+suite re-measures the light override, the suppressed flash and the tap targets
+its own list names — the create control, the dialogs' own controls and the
+navigator's order toggle included — on five coarse-pointer profiles on every
+push, as a CI job of its own. Two of the controls listed above are measured
+where they are raised instead, since no state that list walks has them on
+screen: the conflict banner's buttons with a note deleted under an open draft,
+and the home page's **Remove** control on one coarse profile. [What holds these
 numbers](introduction.md#what-holds-these-numbers) says what it covers.
 
 What has not been checked is the tablet. Nothing here has run on a Boox, and the

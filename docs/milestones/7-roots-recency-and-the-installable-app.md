@@ -6,9 +6,9 @@ implementation tasks are merged on `main` at
 
 Independent QA ran against that commit and found M7-R1, M7-R2, M7-R3 and M7-R5
 satisfied, M7-R4 untestable until this record merges
-([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719043677)). Its one finding — a browser check that
-M7-R5's own worker had made flaky — became a fix task inside the milestone,
-[#124](https://github.com/davison/md-notes/issues/124), merged at
+([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719043677)). Its
+one finding — a browser check that M7-R5's own worker had made flaky — became a fix task
+inside the milestone, [#124](https://github.com/davison/md-notes/issues/124), merged at
 [`0c049f4`](https://github.com/davison/md-notes/commit/0c049f4); this record is what is
 left.
 
@@ -114,10 +114,11 @@ across the milestone, about 4.8 per cent:
 Neither pull request's table says this: #119's and #120's were each measured on a branch
 that did not carry the other's commits, so #120's "+403 B" describes a tree that was
 never shipped. QA measured the merged figures
-([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5719027735)) and the coordinator's disposition directs
-this record to cite them ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719060998)). They are reproduced
-here rather than copied: both trees were exported with `git archive` into scratch
-directories, built with the same `pnpm --dir ui install --frozen-lockfile` and
+([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5719027735)) and the
+coordinator's disposition directs this record to cite them
+([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719060998)). They
+are reproduced here rather than copied: both trees were exported with `git archive` into
+scratch directories, built with the same `pnpm --dir ui install --frozen-lockfile` and
 `pnpm --dir ui build`, and the `.br` siblings the build writes were measured with `stat`
 — every figure above matches QA's to the byte. Fetched after the page has loaded rather
 than with it, merged `main` also carries `sw.js` at 1,133 B brotli and the manifest at
@@ -166,16 +167,17 @@ spellings of "the note is not there", every one a `200` and a permanent root on 
 ## Requirement outcomes
 
 The verdicts are from the independent QA comment on the milestone issue
-([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719043677)), run against a clean worktree of merged
-`main` at [`1407305`](https://github.com/davison/md-notes/commit/1407305) — never the
-operator's checkout — with scratch daemons on ports 8841–8845, their own roots, token
-files and state files, and a TLS stand-in on 8844 in front of a made-up tailnet name, so
-the daemon on 7337 and `~/.local/state/mdn` were untouched. The floor, which QA is
-explicit is the floor and not the evidence: `make check` clean (Go, 291 UI tests, 212
-extension tests, both builds and the zip), `go test -race -count=5 ./internal/...` clean,
-the extension's unit and e2e suites 212/212 and 28/28 three times each, and `make e2e`
-nine times — five runs 53 of 53 and four runs 52 of 53, every failure the same case,
-which is the finding below.
+([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719043677)), run
+against a clean worktree of merged `main` at
+[`1407305`](https://github.com/davison/md-notes/commit/1407305) — never the operator's
+checkout — with scratch daemons on ports 8841–8845, their own roots, token files and
+state files, and a TLS stand-in on 8844 in front of a made-up tailnet name, so the
+daemon on 7337 and `~/.local/state/mdn` were untouched. The floor, which QA is explicit
+is the floor and not the evidence: `make check` clean (Go, 291 UI tests, 212 extension
+tests, both builds and the zip), `go test -race -count=5 ./internal/...` clean, the
+extension's unit and e2e suites 212/212 and 28/28 three times each, and `make e2e` nine
+times — five runs 53 of 53 and four runs 52 of 53, every failure the same case, which is
+the finding below.
 
 | ID | Requirement | What the work established | QA |
 |----|-------------|---------------------------|----|
@@ -194,10 +196,11 @@ paths rather than only the byte total. The property the case exists to protect h
 every failing run — zero asset bytes on the wire, the extra response served from the
 worker's cache rather than fetched — and the file passes 22 of 22 runs on its own, even
 under eight spinning CPU hogs; it needs the rest of the suite beside it
-([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5719027735)). The coordinator's disposition made it a fix
-task *inside* M7 rather than a capture, because the milestone's own gates make the e2e
-job a merge gate for everything that follows and a flaky gate would read as the next
-task's failure ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719060998)).
+([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5719027735)). The
+coordinator's disposition made it a fix task *inside* M7 rather than a capture, because
+the milestone's own gates make the e2e job a merge gate for everything that follows and
+a flaky gate would read as the next task's failure
+([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719060998)).
 
 **What the flake was.** [#124](https://github.com/davison/md-notes/issues/124) went back
 to CDP before changing anything, and the extra row is neither the worker's precache fetch
@@ -220,23 +223,26 @@ and each row records who answered. And the interleaving that used to arrive by l
 arrives on every run: the case is parameterised over Chromium's CPU throttling, ×1 and
 ×8, so both shapes are covered on any machine. The old assertions under the same ×8
 throttling fail with QA's message verbatim, three times in three; the new case ran
-**thirty consecutive full-suite runs green**, and the reviewer's own twelve runs saw both
-interleavings on every one of them ([#126](https://github.com/davison/md-notes/pull/126),
-[review](https://github.com/davison/md-notes/pull/126#issuecomment-5719422345)). #124 also took QA's second note — the tailnet
-guard test covered the manifest and the worker but not the four icons — and the review
-turned that leg into something stronger than the measurement it replaced: each of the six
-files is now asked for with its own `Sec-Fetch-Dest`, so the refusal an image decoder
-meets is asserted to be the JSON `401` rather than the login page
+**thirty consecutive full-suite runs green**, and the reviewer's own twelve runs saw
+both interleavings on every one of them
+([#126](https://github.com/davison/md-notes/pull/126),
+[review](https://github.com/davison/md-notes/pull/126#issuecomment-5719422345)). #124
+also took QA's second note — the tailnet guard test covered the manifest and the worker
+but not the four icons — and the review turned that leg into something stronger than the
+measurement it replaced: each of the six files is now asked for with its own
+`Sec-Fetch-Dest`, so the refusal an image decoder meets is asserted to be the JSON `401`
+rather than the login page
 ([#126](https://github.com/davison/md-notes/pull/126#issuecomment-5719486897)).
 
 The review approved with two wording findings and took both on the way past: the case
 title said the throttling makes "the worker answer the second load", where what it
-changes is whether Chromium reports the module request *twice* — the worker answers at ×1
-as well — and the guard test's anonymous leg asked for icons with navigation headers
+changes is whether Chromium reports the module request *twice* — the worker answers at
+×1 as well — and the guard test's anonymous leg asked for icons with navigation headers
 while its comment reasoned about a browser fetching them on a path of its own. The same
 review left `docs/introduction.md`'s copy of the first sentence alone on the ground that
 this task owns the page, and this task has taken the reviewer's wording there
-([review](https://github.com/davison/md-notes/pull/126#issuecomment-5719422345), [#126](https://github.com/davison/md-notes/pull/126#issuecomment-5719486897)).
+([review](https://github.com/davison/md-notes/pull/126#issuecomment-5719422345),
+[#126](https://github.com/davison/md-notes/pull/126#issuecomment-5719486897)).
 
 **What QA did beyond the requirement text** is, as in M6, where most of the confidence
 comes from: the shipped suites were already green, and QA went looking for the shapes
@@ -643,8 +649,8 @@ issue ([#115](https://github.com/davison/md-notes/issues/115#issuecomment-571846
 and then carried to the milestone issue at the re-reviewer's insistence, so that QA judges
 M7-R2 against what the code does rather than against words it does not meet
 ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5718608764)). The
-re-review's phrasing is the one worth keeping: it is "a narrowing of M7-R2, not merely a
-note"
+re-review's phrasing is the one worth keeping: it is "a narrowing of M7-R2, though, not
+merely a note"
 ([#121](https://github.com/davison/md-notes/pull/121#issuecomment-5718597230)).
 
 ### The `404 not_found` is about the note; the folder keeps `mdn open`'s `400`
@@ -843,19 +849,21 @@ Adopted and closed by this milestone:
 |---------|-----------|-------------|
 | [#50](https://github.com/davison/md-notes/issues/50) | [#115](https://github.com/davison/md-notes/issues/115) | The file-URL intercept registering a permanent root for a file that does not exist, with no way to unregister one short of editing the state file. Raised by M3 QA ([#35](https://github.com/davison/md-notes/issues/35#issuecomment-5633486688), finding 1), dispositioned to the backlog then, and taken up here on the operator's ask. Closed by `gh codecrew task finish 115` ([#50](https://github.com/davison/md-notes/issues/50#issuecomment-5718607329)) |
 
-Raised by this milestone's reviews, for a later task to adopt:
+Raised by this milestone's reviews and by its QA, for a later task to adopt — the
+**From** cell says which, since one of the four came through the coordinator's
+disposition of QA's report rather than through a review:
 
 | Capture | From | What it is |
 |---------|------|-----------|
 | [#122](https://github.com/davison/md-notes/issues/122) | the re-review of [#121](https://github.com/davison/md-notes/pull/121#issuecomment-5718597230) | The watcher hand-off is spawned from one exit of the setup goroutine while `starting[slug]` is released on every exit, so a registration landing in the window between the guard's unlock and the deferred delete — or meeting the `watch.New` failure path — can still leave a registered root with no watcher. Milder than what was fixed: the page says "live update is not available", never a wrong folder's changes. Found by reading, not reproduced |
 | [#123](https://github.com/davison/md-notes/issues/123) | the re-review of [#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718739359), observation R2 | The roots-listing effect in `ui/src/root-view.tsx` has no cancellation guard, so a rejection from the slug a reader has just left can settle after they navigate and stick on the new slug — `rootError` is cleared only by a slug change. Demonstrated in jsdom on the branch and, with the two new lines reverted, on the code before it, where the stuck message was the worse "Unknown root". Older than the branch; the fix is the `cancelled` guard the very next effect in the same file already uses |
-
 | [#125](https://github.com/davison/md-notes/issues/125) | M7 QA, through the coordinator's disposition ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719060998)) | Removing the last recent root writes `{"recent": null}` to the state file rather than `{"recent": []}`. It reloads correctly and nothing depends on the shape; captured so nobody has to rediscover it |
 | [#127](https://github.com/davison/md-notes/issues/127) | the review of [#126](https://github.com/davison/md-notes/pull/126#issuecomment-5719422345) | Nothing asserts that the editor chunk stays off a reading page. M4-R7 promised it and every bundle table since has reported it, but `ui/e2e/assets.test.mjs` never held it — old and new alike assert two *or more* assets on a cold load and compare the second load to the first, so an eager editor chunk would pass; the only assertion naming the chunk is about the worker's precache. True today, asserted nowhere for the page itself |
 
 QA's other two items did not become captures. The flaky browser check became a fix task
-inside the milestone, [#124](https://github.com/davison/md-notes/issues/124), which also
-takes the tailnet guard test's missing icons; and
+inside the milestone, [#124](https://github.com/davison/md-notes/issues/124), merged at
+[`0c049f4`](https://github.com/davison/md-notes/commit/0c049f4), which also took the
+tailnet guard test's missing icons; and
 [#122](https://github.com/davison/md-notes/issues/122)'s residual window, which QA's
 probes did not reach, stays a capture as it was
 ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719060998)).
@@ -890,78 +898,81 @@ probes did not reach, stays a capture as it was
   model sessions under one identity. The order toggle was driven on a Pixel 7 profile in
   headless Chromium and the remove control on a coarse-pointer desktop profile; neither
   has been touched on the operator's phone or on the Boox, and the milestone's headline
-  feature is an app that installs on a phone nobody has installed it on. M6's record said
-  the same, and the one M5 finding that reads most like a person's remains the model for
-  what these sessions do not catch.
-- **`docs/sync.md` carried a claim no task's file list would have caught.** It said a
-  Syncthing conflict file "sorts next to the note it came from", which after #116 is only
-  the alphanumeric order's answer. Nothing in either task's plan, PR body or review
-  named that page; it was found by this task reading every page in `docs/` rather than
-  the two the reviews handed over. M5's lesson was that a requirement's first clause is
-  wider than its file list and M6's was that writing the sweep into a plan is not the same
-  as running it — this is the third instance, and the sweep is now the only mechanism
-  that has ever caught one.
-- **The introduction's opening sentence had been stale since M6.** It said the page
-  described the system "at the end of milestone five" and was still saying so after M6's
-  own documentation task, whose record named documentation staleness as its closing
-  lesson. Corrected here.
-- **The `ui/e2e` figure in the introduction was wrong before this milestone touched it.**
-  The page said 35 checks; the suite ran 38 on `main` before M7 and runs 53 now. This
-  task re-measured by running `make e2e` in its own worktree rather than by adding the
-  merged pull requests' counts together — no single PR's number would have been right,
-  since each was measured against a base without the other two.
-- **No `cc:needs-decision` gate was raised in this milestone, and neither implementation
-  task had an ask-the-human point.** Both said so explicitly in their plans, on the ground
+  feature is an app that installs on a phone nobody has installed it on. M6's record
+  said the same, and the one M5 finding that reads most like a person's remains the
+  model for what these sessions do not catch. - **`docs/sync.md` carried a claim no
+  task's file list would have caught.** It said a Syncthing conflict file "sorts next to
+  the note it came from", which after #116 is only the alphanumeric order's answer.
+  Nothing in either task's plan, PR body or review named that page; it was found by this
+  task reading every page in `docs/` rather than the two the reviews handed over. M5's
+  lesson was that a requirement's first clause is wider than its file list and M6's was
+  that writing the sweep into a plan is not the same as running it — this is the third
+  instance, and the sweep is now the only mechanism that has ever caught one. - **The
+  introduction's opening sentence had been stale since M6.** It said the page described
+  the system "at the end of milestone five" and was still saying so after M6's own
+  documentation task, whose record named documentation staleness as its closing lesson.
+  Corrected here. - **The `ui/e2e` figure in the introduction was stale for three
+  milestones, and no task whose work changed it noticed.** The page said 35 checks from
+  M4 until M7's last task; the suite ran 38 on `main` before this milestone and runs 54
+  now. The correction was made by [#124](https://github.com/davison/md-notes/issues/124)
+  in [`a62ce62`](https://github.com/davison/md-notes/commit/a62ce62) — "The count had
+  been 35 since M4 and the suite is 54 checks; M7 added ten and this task one" — and
+  this task only measured the figure it inherited. What none of the three milestones
+  between had is anything that would fail when the number drifts: it is a count in
+  prose, and every merge that adds a check makes it wrong again. - **No
+  `cc:needs-decision` gate was raised in this milestone, and neither implementation task
+  had an ask-the-human point.** Both said so explicitly in their plans, on the ground
   that the requirements had already fixed the defaults and everything else was an
-  implementation decision to be recorded. The one human decision the milestone contains —
-  adding a fifth requirement to an open milestone — was taken by the coordinator on the
-  operator's words in a session that is not on GitHub, and recorded after the fact
+  implementation decision to be recorded. The one human decision the milestone contains
+  — adding a fifth requirement to an open milestone — was taken by the coordinator on
+  the operator's words in a session that is not on GitHub, and recorded after the fact
   ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5717938933)). That
-  is the same shape M6's record named, and it stands here.
-- **The severity assessment of #50 is the coordinator's, and nothing independent tested
-  it.** Neither review nor this record re-derived the claim that the defect is bounded by
-  the `file:` trigger and by loopback-only registration; QA's brief covers the code's
-  behaviour, not the threat model. The assessment is recorded and reasoned
+  is the same shape M6's record named, and it stands here. - **The severity assessment
+  of #50 is the coordinator's, and nothing independent tested it.** Neither review nor
+  this record re-derived the claim that the defect is bounded by the `file:` trigger and
+  by loopback-only registration; QA's brief covers the code's behaviour, not the threat
+  model. The assessment is recorded and reasoned
   ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5717883455)), and
-  it is a single session's judgement.
-- **A merged record said a check held something it did not.** PR #120's body said
-  `assets.test.mjs` "still measures two assets on a cold reading-page load", which reads
-  as the editor chunk being held off the reading page; the review of #126 found that
-  neither the old case nor the new one makes that claim, and that no check in the tree
-  does ([#126](https://github.com/davison/md-notes/pull/126#issuecomment-5719422345)). The property is true and has been
-  true since M4 — what was never true is that anything would notice if it stopped being.
-  Captured as [#127](https://github.com/davison/md-notes/issues/127); the sealed record
-  it touches is not this one's to edit.
-- **Nothing measured how long a root registered by accident had been possible to reach
-  over the tailnet in practice.** #50 was raised in M3 QA and fixed in M7, four milestones
-  later, on a daemon the operator runs. The record contains no statement about whether any
-  such root ever existed on it.
-- **A decision comment was destroyed by a tool flag and nothing but a review noticed.** The
-  half hour in which #118's decision said only a scratchpad path is recorded
+  it is a single session's judgement. - **A merged record said a check held something it
+  did not.** PR #120's body said `assets.test.mjs` "still measures two assets on a cold
+  reading-page load", which reads as the editor chunk being held off the reading page;
+  the review of #126 found that neither the old case nor the new one makes that claim,
+  and that no check in the tree does
+  ([#126](https://github.com/davison/md-notes/pull/126#issuecomment-5719422345)). The
+  property is true and has been true since M4 — what was never true is that anything
+  would notice if it stopped being. Captured as
+  [#127](https://github.com/davison/md-notes/issues/127); the sealed record it touches
+  is not this one's to edit. - **Nothing measured how long a root registered by accident
+  had been possible to reach over the tailnet in practice.** #50 was raised in M3 QA and
+  fixed in M7, four milestones later, on a daemon the operator runs. The record contains
+  no statement about whether any such root ever existed on it. - **A decision comment
+  was destroyed by a tool flag and nothing but a review noticed.** The half hour in
+  which #118's decision said only a scratchpad path is recorded
   ([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718760030)), and
   the re-review is what found it. Nothing in the protocol reads a comment back after
   writing it, and `gh codecrew milestone evidence` checks that a record's citations
   *resolve* — which this one did, to an empty decision. What the incident does not
   establish is how many other comments in this project's history were edited and never
-  read back.
-- **The milestone's requirements grew by 20% after it opened, and the record cannot say
-  what that cost.** M7-R5 arrived with both implementation tasks already in flight, and
-  the third task ran in parallel with the two that were already running. It merged last
-  and needed two review rounds where the others needed one, which is consistent with
-  being the largest task and equally consistent with being the one written under the most
-  time pressure; nothing here distinguishes the two.
+  read back. - **The milestone's requirements grew by 20% after it opened, and the
+  record cannot say what that cost.** M7-R5 arrived with both implementation tasks
+  already in flight, and the third task ran in parallel with the two that were already
+  running. It merged last and needed two review rounds where the others needed one,
+  which is consistent with being the largest task and equally consistent with being the
+  one written under the most time pressure; nothing here distinguishes the two.
 
 - **One of QA's observations reached GitHub only through a session.**
   [#125](https://github.com/davison/md-notes/issues/125) — the state file written as
   `{"recent": null}` after the last removal — first cited "observation 3" of the QA
   verdict, and the published verdict
-  ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719043677)) has no numbered observations and does not
-  mention the shape at all. Its real source is the out-of-scope observations in QA's
-  report to the coordinator, which only the coordinator's disposition
-  ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719060998)) carries onto the record; the capture now
-  says so, corrected after this record found the original citation did not resolve to
-  what it named. The finding and the fix were never in doubt — what was missing is the
-  path from the probe that found it to the issue that records it. That is the same class
-  of gap as #118's decision comment overwritten by a flag, and as M5's decisions written
-  down only after a record named their absence: a session holds something GitHub does
-  not, and only somebody reading the record against its sources notices.
+  ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719043677)) has
+  no numbered observations and does not mention the shape at all. Its real source is the
+  out-of-scope observations in QA's report to the coordinator, which only the
+  coordinator's disposition
+  ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719060998))
+  carries onto the record; the capture now says so, corrected after this record found
+  the original citation did not resolve to what it named. The finding and the fix were
+  never in doubt — what was missing is the path from the probe that found it to the
+  issue that records it. That is the same class of gap as #118's decision comment
+  overwritten by a flag, and as M5's decisions written down only after a record named
+  their absence: a session holds something GitHub does not, and only somebody reading
+  the record against its sources notices.
