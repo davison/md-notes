@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The maskable variant of public/icon.svg: the background bleeds to the edge
+  because the launcher decides the shape, and the note is scaled to sit inside
+  the safe zone — the centre circle of 80% diameter that every mask keeps.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="MD Notes">
+  <rect width="512" height="512" fill="#1b1b1b"/>
+  <rect x="147" y="128" width="218" height="256" rx="22" fill="#fbfbfa"/>
+  <rect x="178" y="165" width="118" height="23" rx="11" fill="#1b1b1b"/>
+  <g fill="#c4c4bf">
+    <rect x="178" y="215" width="156" height="14" rx="7"/>
+    <rect x="178" y="250" width="131" height="14" rx="7"/>
+    <rect x="178" y="284" width="156" height="14" rx="7"/>
+    <rect x="178" y="318" width="94" height="14" rx="7"/>
+  </g>
+</svg>

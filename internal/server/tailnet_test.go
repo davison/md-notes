@@ -415,6 +415,44 @@ func TestTailnetSessionServesTheUI(t *testing.T) {
 	}
 }
 
+// TestTailnetGuardsTheInstallableAppsFiles records what the installable app
+// costs over the tailnet and what it does not. The manifest and the service
+// worker are ordinary files in the bundle: the guard covers them like every
+// other, so neither is readable without a session, and the allow-list is not
+// widened by a byte to make the app installable.
+//
+// It is also why ui/index.html asks for the manifest with
+// crossorigin="use-credentials". A manifest is fetched with credentials
+// omitted by default, and a browser doing that here would be handed the
+// login page under a 401 — exactly what the first half of this test shows —
+// and would conclude there is no manifest to install.
+func TestTailnetGuardsTheInstallableAppsFiles(t *testing.T) {
+	ts, base := newTailnetServer(t)
+	for _, p := range []string{"/manifest.webmanifest", "/sw.js"} {
+		anon := tdo(t, ts, "GET", p, "", navigation())
+		if anon.StatusCode != http.StatusUnauthorized {
+			t.Errorf("GET %s with no session: status %d, want 401", p, anon.StatusCode)
+		}
+	}
+	cookie := login(t, ts, base)
+	for p, want := range map[string]string{
+		"/manifest.webmanifest": "application/manifest+json",
+		"/sw.js":                "text/javascript; charset=utf-8",
+	} {
+		resp := tdo(t, ts, "GET", p, "", map[string]string{"Cookie": cookie})
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s over the session: status %d", p, resp.StatusCode)
+			continue
+		}
+		if got := resp.Header.Get("Content-Type"); got != want {
+			t.Errorf("GET %s: Content-Type %q, want %q", p, got, want)
+		}
+		if got := resp.Header.Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("GET %s: Cache-Control %q, want no-cache", p, got)
+		}
+	}
+}
+
 // Live update has to work over the proxy, or the remote UI is a stale
 // snapshot. The cookie rides the EventSource request like any other.
 func TestTailnetSessionStreamsEvents(t *testing.T) {

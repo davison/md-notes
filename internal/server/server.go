@@ -913,14 +913,18 @@ var uiEncodings = []struct{ coding, suffix string }{
 // kinds from (ui/vite.config.ts); TestUITypesCoverTheBundle holds them
 // together by failing on any extension in dist that is missing here.
 var uiTypes = map[string]string{
-	".css":   "text/css; charset=utf-8",
-	".html":  "text/html; charset=utf-8",
-	".js":    "text/javascript; charset=utf-8",
-	".json":  "application/json",
-	".map":   "application/json",
-	".png":   "image/png",
-	".svg":   "image/svg+xml",
-	".woff2": "font/woff2",
+	".css":  "text/css; charset=utf-8",
+	".html": "text/html; charset=utf-8",
+	".js":   "text/javascript; charset=utf-8",
+	".json": "application/json",
+	".map":  "application/json",
+	".png":  "image/png",
+	".svg":  "image/svg+xml",
+	// The web app manifest. Its own media type, not application/json: a
+	// browser that is offered JSON here does not treat the document as a
+	// manifest, and the app is then not installable.
+	".webmanifest": "application/manifest+json",
+	".woff2":       "font/woff2",
 }
 
 // serveUI serves a file from the UI bundle when one matches the request

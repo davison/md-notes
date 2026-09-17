@@ -15,6 +15,20 @@
     />
     <title>MD Notes</title>
     <!--
+      crossorigin="use-credentials" is not decoration: a manifest is fetched
+      with credentials omitted unless it is asked for, and over the tailnet a
+      request without the session cookie is answered with the login page — so
+      the manifest would never parse and no browser would offer to install
+      the app. Same origin either way.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <!-- The manifest carries one theme colour; these two follow the device's
+         scheme, and are the page backgrounds in ui/src/style.css. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfbfa" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1b1b1b" />
+    <!--
       The display settings, before the stylesheet paints: a reader who has
       overridden a dark device to light must not see a frame of the scheme
       they overrode. The bundle is a deferred module and runs too late for
