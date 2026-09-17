@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "preact/hooks";
+import { listRoots } from "./api";
 
 /**
  * How much of a root the daemon watches. An unwatched directory is not
@@ -27,22 +28,28 @@ export type LiveUpdate = Coverage | "unavailable";
  * meaning "anything may have changed", so the caller refetches everything.
  * onLive, if given, receives the root's watch coverage when the stream
  * opens and whenever it changes, and "unavailable" if the daemon refuses
- * the stream.
+ * the stream. onGone, if given, is called when the stream has closed for
+ * good *and* the root is no longer one the daemon serves — which is how a
+ * tab open on a root somebody has just unregistered finds out (M7-R2).
  */
 export function useEvents(
   slug: string,
   onChange: (paths: string[]) => void,
   onLive?: (live: LiveUpdate) => void,
+  onGone?: () => void,
 ) {
   const handler = useRef(onChange);
   handler.current = onChange;
   const status = useRef(onLive);
   status.current = onLive;
+  const gone = useRef(onGone);
+  gone.current = onGone;
 
   useEffect(() => {
     if (typeof EventSource === "undefined") return;
     const es = new EventSource(`/api/r/${encodeURIComponent(slug)}/events`);
     let dropped = false;
+    let done = false;
     es.addEventListener("change", (e) => {
       try {
         const batch = JSON.parse((e as MessageEvent).data) as { paths?: string[] };
@@ -63,7 +70,20 @@ export function useEvents(
       // A stream the daemon refused — a root whose watcher never started
       // answers 503 — closes for good rather than retrying, and that is
       // the most limited coverage there is.
-      if (es.readyState === 2 /* CLOSED */) status.current?.("unavailable");
+      if (es.readyState !== 2 /* CLOSED */) return;
+      status.current?.("unavailable");
+      // A root that has been unregistered ends its streams and then
+      // answers 404 to the reconnect, which closes the stream in exactly
+      // the same way. The listing is what tells the two apart, and it is
+      // asked only here, where a stream has already ended for good.
+      void listRoots()
+        .then((roots) => {
+          if (!done && !roots.some((r) => r.slug === slug)) gone.current?.();
+        })
+        .catch(() => {
+          // A daemon that will not answer the listing either is a daemon
+          // that is down, not a root that has gone.
+        });
     };
     es.onopen = () => {
       if (dropped) {
@@ -71,7 +91,10 @@ export function useEvents(
         handler.current([]);
       }
     };
-    return () => es.close();
+    return () => {
+      done = true;
+      es.close();
+    };
   }, [slug]);
 }
 

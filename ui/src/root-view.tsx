@@ -126,6 +126,10 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
       if (current && affects(paths, current)) setNoteVersion((v) => v + 1);
     },
     setLive,
+    // The root was unregistered from the home page, or from another tab.
+    // There is nothing here to look at any more and no route to stay on,
+    // so this tab goes back to the list of roots (M7-R2).
+    () => route("/", true),
   );
 
   if (root === undefined) return <main class="page muted">Loading…</main>;
