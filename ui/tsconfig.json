@@ -15,5 +15,7 @@
     "noEmit": true,
     "types": ["vite/client"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "//": "src/sw.ts is the service worker, checked against the worker scope by tsconfig.sw.json instead.",
+  "exclude": ["src/sw.ts"]
 }
