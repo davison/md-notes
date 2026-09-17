@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { UNREACHABLE } from "./api";
 import {
   SAVE_DELAY,
   Session,
@@ -241,7 +242,9 @@ describe("Session: failed saves", () => {
     );
     await s.flush();
     expect(s.state.status).toBe("failed");
-    expect(s.state.error).toEqual({ code: "network", message: "Failed to fetch" });
+    // The message is the API layer's, not the browser's: a save that failed
+    // because the daemon is not there says so on the banner.
+    expect(s.state.error).toEqual({ code: "network", message: UNREACHABLE });
     expect(s.state.draft).toBe("kept\n");
   });
 

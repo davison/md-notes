@@ -18,8 +18,28 @@ async function errorFrom(res: Response): Promise<Error> {
   return new Error(message);
 }
 
+/**
+ * What a reader is told when the daemon is not there at all. `fetch` rejects
+ * with the browser's own `Failed to fetch` for a refused connection, a dead
+ * network and a daemon that has been stopped alike, and that string is what
+ * the pages then put on screen. An installed app opening from the service
+ * worker's cache with no daemon behind it is the case that made this worth
+ * naming: the shell renders, every call fails, and the reason should be a
+ * sentence about mdn rather than a sentence about fetch.
+ */
+export const UNREACHABLE = "The daemon is not answering. It may be stopped, or this device may be off the network that reaches it.";
+
+/** `fetch`, with a network failure named. Refusals from the daemon are its own. */
+async function send(input: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new Error(UNREACHABLE);
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  const res = await send(path, init);
   if (!res.ok) throw await errorFrom(res);
   return (await res.json()) as T;
 }
@@ -56,7 +76,7 @@ export function encodePath(path: string): string {
 }
 
 export async function fetchRaw(slug: string, path: string): Promise<string> {
-  const res = await fetch(rawURL(slug, path));
+  const res = await send(rawURL(slug, path));
   if (!res.ok) throw await errorFrom(res);
   return res.text();
 }
@@ -139,7 +159,7 @@ async function sourceErrorFrom(res: Response): Promise<SourceError> {
 
 /** The unmodified markdown source of a note and its current revision. */
 export async function fetchSource(slug: string, path: string): Promise<Source> {
-  const res = await fetch(sourceURL(slug, path), { cache: "no-store" });
+  const res = await send(sourceURL(slug, path), { cache: "no-store" });
   if (!res.ok) throw await sourceErrorFrom(res);
   return (await res.json()) as Source;
 }
@@ -157,7 +177,7 @@ export async function saveSource(
   revision: string,
   keepalive = false,
 ): Promise<Source> {
-  const res = await fetch(sourceURL(slug, path), {
+  const res = await send(sourceURL(slug, path), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source, revision }),
@@ -195,13 +215,13 @@ export async function createNote(slug: string, path: string, source?: string): P
     init.headers = { "Content-Type": "application/json" };
     init.body = JSON.stringify({ source });
   }
-  const res = await fetch(sourceURL(slug, path), init);
+  const res = await send(sourceURL(slug, path), init);
   if (!res.ok) throw await sourceErrorFrom(res);
   return (await res.json()) as CreatedNote;
 }
 
 /** Deletes one markdown note. Rejects with a SourceError. */
 export async function deleteNote(slug: string, path: string): Promise<void> {
-  const res = await fetch(sourceURL(slug, path), { method: "DELETE" });
+  const res = await send(sourceURL(slug, path), { method: "DELETE" });
   if (!res.ok) throw await sourceErrorFrom(res);
 }
