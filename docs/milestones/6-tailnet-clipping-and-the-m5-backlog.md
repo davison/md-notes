@@ -102,11 +102,13 @@ is the one it grew.
 | [#101](https://github.com/davison/md-notes/issues/101) Test hygiene: the vitest teardown flake and two e2e harness edges | M6-R5 | [#87](https://github.com/davison/md-notes/issues/87), [#89](https://github.com/davison/md-notes/issues/89) | [#109](https://github.com/davison/md-notes/pull/109) | [`ed1d5f3`](https://github.com/davison/md-notes/commit/ed1d5f3) |
 | [#102](https://github.com/davison/md-notes/issues/102) Document M6 and synthesize its record | M6-R6 | — | this one | — |
 
-**The shape of the milestone is the review loop.** Four of the five tasks needed more
-than one round, and three of those rounds found a real defect **in the fix the previous
-round asked for**, not in the original work. #104's first fix for a silently-abandoned
-symlink walk introduced a string match that put the very defects the task exists to close
-back for any path whose *name* contained the words `too many links`. #106's fix for a
+**The shape of the milestone is the review loop.** Every one of the five tasks needed a
+fix pass and a re-review — four of the five reviews requested changes on the first pass
+and the fifth requested them on the delta — and three of those later rounds found a real
+defect **in the fix the previous round asked for**, not in the original work. #104's
+first fix for a silently-abandoned symlink walk introduced a string match that put the
+very defects the task exists to close back for any path whose *name* contained the words
+`too many links`. #106's fix for a
 caret that jumped to the top of the note introduced a silent whole-file line-ending
 rewrite reachable with no conflict and no reader action. #105's fix for layout tables
 being squashed into one cell took a single-column headerless table out of the
@@ -146,7 +148,7 @@ observations, none blocking; the coordinator's disposition of them is at
 
 | ID | Requirement | Status |
 |----|-------------|--------|
-| M6-R1 | Clipping over the tailnet: the clip admitted and saved exactly as on loopback, `POST /api/roots` still refused `loopback_only` with its message unchanged, a handler test proving both, the extension no longer naming clipping as refused, and the introduction, the extension page and a dated annotation on the sealed M4 record saying what changed | [Satisfied](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141) — QA read the allow-list diff as well as exercising it, and confirmed the milestone's gate holds by both. One documentation finding, on two pages neither M6-R1 nor #97's file list named: [#97](https://github.com/davison/md-notes/issues/97#issuecomment-5706541449). Delivered in [#103](https://github.com/davison/md-notes/pull/103) |
+| M6-R1 | Clipping over the tailnet: the clip admitted and saved exactly as on loopback, `POST /api/roots` still refused `loopback_only` with its message unchanged, a handler test proving both, the extension no longer naming clipping as refused, and the introduction, the extension page and a dated annotation on the sealed M4 record saying what changed | [Satisfied](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141) — QA read the allow-list diff as well as exercising it, and confirmed the milestone's gate holds by both. One documentation finding: two pages were still denying tailnet clipping on `main`, and the task's own plan had undertaken to re-check every other page at the end — naming the README among them — so the grep that would have found them was written down and not run ([#97](https://github.com/davison/md-notes/issues/97#issuecomment-5706541449)). Delivered in [#103](https://github.com/davison/md-notes/pull/103) |
 | M6-R2 | Clipper conversion: a headerless table as a GFM table with a synthesised header, `colspan` and nested tables degraded to readable markdown, content beside a code block kept and only chrome dropped, six fixtures each shown failing against the current converter | [Satisfied](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141) — twelve fixture shapes driven through the **real built extension** in Chromium against the built daemon, not the unit converter, and the flattened cells fed back through the daemon's own renderer. No finding. Delivered in [#105](https://github.com/davison/md-notes/pull/105) |
 | M6-R3 | Refusal codes: a too-long basename `400 invalid_path` naming the limit on create and save; a dangling directory symlink and a dangling two-hop chain out of the root `403 outside_root` on create and delete; a row per case in the create and delete tables with the whole tree compared after every case; the introduction's caveat paragraph gone; the `true == false` literal gone | [Satisfied](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141) — every row exercised on the exact byte and hop boundaries, with the tree inside *and* outside the root compared after every case. One observation, the 256-link create split, captured as [#111](https://github.com/davison/md-notes/issues/111). Delivered in [#104](https://github.com/davison/md-notes/pull/104) |
 | M6-R4 | Note bar and banner: `scrollWidth == clientWidth` at 320 px and 1280 px under an unbreakable message of any length, the full text on hover or focus; the banner naming **New note** and offering a control that opens the create prompt pre-filled with the path and the draft; the stray `name` field gone from `browser.newContext` | [Satisfied](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141) — twenty width-and-message combinations the shipped case does not use, and the recreated file compared byte for byte against the draft mirror. One finding, the vim mode after a recreate, captured as [#112](https://github.com/davison/md-notes/issues/112). Delivered in [#106](https://github.com/davison/md-notes/pull/106) |
@@ -187,9 +189,10 @@ claim.
 On the refusals: the boundaries by the byte and by the hop rather than near them — 255
 bytes creates `201` and 256 is `400`; chains of 17 and 255 links out of the root are `403`
 on both verbs and 256 is answered by the resolver at `422`, which is exactly what the
-`maxLinkHops = 255` decision predicts. Both spoofing shapes the second re-review's fix
-exists for are clean: a note literally named `too many links.md` is `403 outside_root`, and
-a root whose *directory path* carries the phrase registers, reads and deletes like any
+`maxLinkHops = 255` decision predicts. Both spoofing shapes the fix in `2933ce3` exists
+for — the one the first re-review's blocking finding produced — are clean: a note
+literally named `too many links.md` is `403 outside_root`, and a root whose *directory
+path* carries the phrase registers, reads and deletes like any
 other. Nothing was created, removed or modified by any refusal, and the daemon logged no
 `io_error`.
 
@@ -827,9 +830,15 @@ Raised by this milestone's reviews, for a later task to adopt:
 | [#112](https://github.com/davison/md-notes/issues/112) | [M6 QA](https://github.com/davison/md-notes/issues/100#issuecomment-5706548457) | A confirmed **Recreate the note** returns the editor in vim normal mode where cancelling the same prompt keeps insert mode. The reader was typing when the note vanished and is typing again when it returns; the remount the adopted revision causes is what changes it |
 | [#110](https://github.com/davison/md-notes/issues/110) | [#101](https://github.com/davison/md-notes/issues/101), reworded after the review of [#109](https://github.com/davison/md-notes/pull/109#issuecomment-5706208251) | Install the UI test cleanup once, in a vitest setup file, rather than per test file. Every file under `ui/src` now cleans up in an `afterEach`, but nothing stops the next one from getting it wrong and the fix lives in thirteen places. Written first from the "nine other files" figure and rewritten from the census once that was corrected — the capture the review said should *not* be opened from the old number, opened from the right one |
 
-All six are dispositioned at
+QA's six items — the two findings and four observations tabled above — are all
+dispositioned at
 [#96](https://github.com/davison/md-notes/issues/96#issuecomment-5706613081): none blocks
 a requirement, and each is small and either already in hand or a rider on a later task.
+Four of them are the four rows above that cite QA; the other two are #107, already
+captured by the re-review that established its trade-off, and `docs/sync.md`, folded into
+this task's sweep. [#110](https://github.com/davison/md-notes/issues/110) is not among
+QA's items at all — it came from the review of #109, through the correction that withdrew
+the figure it was first written from.
 
 ## Known gaps at the boundary
 
