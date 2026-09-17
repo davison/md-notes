@@ -905,13 +905,17 @@ probes did not reach, stays a capture as it was
   being the largest task and equally consistent with being the one written under the most
   time pressure; nothing here distinguishes the two.
 
-- **The capture for `{"recent": null}` cites an observation this record cannot find.**
-  [#125](https://github.com/davison/md-notes/issues/125) opens "Backlog capture from M7
-  QA …, observation 3", but the published QA verdict
+- **One of QA's observations reached GitHub only through a session.**
+  [#125](https://github.com/davison/md-notes/issues/125) — the state file written as
+  `{"recent": null}` after the last removal — first cited "observation 3" of the QA
+  verdict, and the published verdict
   ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719043677)) has no numbered observations and does not
-  mention the shape at all; the disposition names it without a source either. The
-  behaviour is plausible from the code and the capture describes the fix, so nothing is
-  lost — but the only record of how it was found is a citation that does not resolve to
-  the thing it names. Recorded here rather than tidied, because it is the same class of
-  gap as #118's overwritten comment: a claim about the record that only reading the
-  record catches.
+  mention the shape at all. Its real source is the out-of-scope observations in QA's
+  report to the coordinator, which only the coordinator's disposition
+  ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5719060998)) carries onto the record; the capture now
+  says so, corrected after this record found the original citation did not resolve to
+  what it named. The finding and the fix were never in doubt — what was missing is the
+  path from the probe that found it to the issue that records it. That is the same class
+  of gap as #118's decision comment overwritten by a flag, and as M5's decisions written
+  down only after a record named their absence: a session holds something GitHub does
+  not, and only somebody reading the record against its sources notices.
