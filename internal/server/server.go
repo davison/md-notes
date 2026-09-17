@@ -145,6 +145,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 	}
 	s.mux.HandleFunc("GET /api/roots", s.listRoots)
 	s.mux.HandleFunc("POST /api/roots", s.addRoot)
+	s.mux.HandleFunc("DELETE /api/roots/{slug}", s.removeRoot)
 	s.mux.HandleFunc("POST /api/clip", s.clipHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/raw/{path...}", s.rawFile)
 	s.mux.HandleFunc("GET /api/r/{slug}/tree", s.treeHandler)
@@ -288,12 +289,41 @@ func (s *Server) watchRoot(root roots.Root) {
 			return
 		default:
 		}
+		// The root can be unregistered while its watcher is being set up.
+		// The registry is read inside the same critical section the
+		// watcher is installed in, so a removal either sees the watcher
+		// and stops it or is seen here and the watcher is never installed.
+		if _, ok := s.reg.Get(root.Slug); !ok {
+			s.wmu.Unlock()
+			w.Close()
+			return
+		}
 		hub := watch.NewHub()
 		s.hubs[root.Slug] = hub
 		s.watchers[root.Slug] = w
 		s.wmu.Unlock()
 		go hub.Pump(w)
 	}()
+}
+
+// unwatchRoot stops watching a root that is no longer served and ends the
+// event streams open on it. Closing the hub is what those streams notice:
+// each reader's channel closes, the handler returns, and the browser's
+// reconnect meets the 404 an unknown slug gives — which is how a tab open
+// on a removed root finds out it has to go home.
+func (s *Server) unwatchRoot(slug string) {
+	s.wmu.Lock()
+	w := s.watchers[slug]
+	h := s.hubs[slug]
+	delete(s.watchers, slug)
+	delete(s.hubs, slug)
+	s.wmu.Unlock()
+	if w != nil {
+		w.Close()
+	}
+	if h != nil {
+		h.Close()
+	}
 }
 
 // hub returns the root's hub, waiting for a setup in progress. The second
@@ -659,6 +689,39 @@ func (s *Server) addRoot(w http.ResponseWriter, r *http.Request) {
 func noSuchNote(w http.ResponseWriter, file string) {
 	writeSourceError(w, http.StatusNotFound, "not_found",
 		"no such note under that folder: "+file)
+}
+
+// removeRoot unregisters a recent root: out of the registry, out of the
+// state file, its watcher stopped and its open event streams ended. It
+// removes nothing from disk (M7-R2).
+//
+// The configured notes root is refused `notes_root`: it is the daemon's
+// configuration rather than a registration, and a daemon serving nothing
+// until its next restart is not a state the home page should be able to
+// ask for. An unknown slug is `not_found`, which is also what removing the
+// same root twice gets. Under the tailnet name the request never reaches
+// here at all — the allow-list admits `GET /api/roots` and nothing else
+// under that path, and this endpoint is refused by that default.
+func (s *Server) removeRoot(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	slug := r.PathValue("slug")
+	root, err := s.reg.Remove(slug)
+	switch {
+	case errors.Is(err, roots.ErrNotesRoot):
+		writeSourceError(w, http.StatusForbidden, "notes_root",
+			"the notes root is the daemon's configuration, not a registration; it cannot be removed")
+		return
+	case errors.Is(err, os.ErrNotExist):
+		writeSourceError(w, http.StatusNotFound, "not_found", "no such root: "+slug)
+		return
+	case err != nil:
+		s.log.Printf("remove root %q: %v", slug, err)
+		writeSourceError(w, http.StatusInternalServerError, "io_error", "could not remove the root")
+		return
+	}
+	s.unwatchRoot(root.Slug)
+	s.log.Printf("unregistered root %s (%s); nothing was removed from disk", root.Slug, root.Path)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // treeHandler returns the markdown files of a root as a directory tree.

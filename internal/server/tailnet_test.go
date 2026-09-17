@@ -579,6 +579,13 @@ func TestTailnetNarrowsWhatTheCredentialReaches(t *testing.T) {
 		{"PUT", "/api/r/notes/tree"},
 		{"POST", "/api/r/notes/search"},
 		{"POST", "/api/roots/"},
+		// Unregistering a root is refused by that same default: the
+		// allow-list names `/api/roots` and admits reads of it, and
+		// `/api/roots/{slug}` is a path nobody has put on the list.
+		// M7-R2 adds the endpoint and adds nothing here.
+		{"DELETE", "/api/roots/notes"},
+		{"DELETE", "/api/roots/anything"},
+		{"DELETE", "/api/roots"},
 		{"POST", "/api/r/notes/source/../../../roots"},
 	} {
 		resp := tdo(t, ts, c.method, c.path, "", bearerHeader(tok))
