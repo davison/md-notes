@@ -1,14 +1,12 @@
 # M7 — No root registered by accident, a navigator sorted by recency, and an installable app
 
-Tracking issue: [#114](https://github.com/davison/md-notes/issues/114). Its first two
+Tracking issue: [#114](https://github.com/davison/md-notes/issues/114). Its three
 implementation tasks are merged on `main` at
-[`f9dfbd3`](https://github.com/davison/md-notes/commit/f9dfbd3).
+[`1407305`](https://github.com/davison/md-notes/commit/1407305).
 
-> **Placeholder — stage two.** The third implementation task,
-> [#118](https://github.com/davison/md-notes/issues/118) (M7-R5, the installable app),
-> was in a fix pass when this record was drafted, and independent QA had not run. Every
-> block below marked like this paragraph is written when #118 has merged and QA has
-> posted its verdicts, and the head commit above is corrected then.
+> **Placeholder.** Independent QA had not posted its verdicts when this record was
+> written. The **QA** column of the requirement-outcomes table, and the blocks marked
+> like this paragraph, are written when it has.
 
 ## Goal and outcome
 
@@ -80,14 +78,28 @@ confirmation naming the folder and saying that nothing leaves the disk, and a ta
 a removed root lands on the home page
 ([#121](https://github.com/davison/md-notes/pull/121)).
 
-> **Placeholder — stage two.** The installable app: the manifest, the worker's routing
-> policy, what it caches and what it never touches, the installability audit, and the
-> figures it moved ([#118](https://github.com/davison/md-notes/issues/118),
-> [#120](https://github.com/davison/md-notes/pull/120)).
+**The app installs, and opens with no daemon behind it.** `ui/public/manifest.webmanifest`
+declares the name, `display: standalone`, `start_url: /`, `scope: /`, the colours and
+icons at 192 and 512 with a maskable 512 beside them, and `ui/index.html` links it with
+`crossorigin="use-credentials"` — without which a browser over the tailnet fetches the
+manifest with no cookie, is handed the login page under a `401`, and concludes there is
+nothing to install. `ui/src/sw.ts`, built to `/sw.js` by a second Vite pass, never
+intercepts anything under `/api/` or `/login` or anything that is not a same-origin GET;
+serves `/assets/**` cache-first because those names carry their content hash; and asks
+the network first for the shell, the manifest and the icons, so a rebuilt shell is picked
+up on the next open and the cache answers only when the network cannot. Offline, a
+navigation is answered with the cached shell and the app says the daemon is not
+answering — at the roots page and at every `/r/{slug}/…` route, the second of which took
+the review to get right. The daemon gained one content type
+(`.webmanifest → application/manifest+json`) and nothing else; the tailnet guard, the
+session cookie and the Host and Origin checks are untouched, and
+`TestTailnetGuardsTheInstallableAppsFiles` says so
+([#120](https://github.com/davison/md-notes/pull/120)).
 
 The system as it stands is described in [the introduction](../introduction.md);
 [Roots](../introduction.md#roots), [The web UI](../introduction.md#the-web-ui),
 [On a phone](../introduction.md#on-a-phone),
+[Installing the app](../introduction.md#installing-the-app),
 [Display settings](../introduction.md#display-settings),
 [The HTTP API](../introduction.md#the-http-api) and
 [What is reachable under that name](../introduction.md#what-is-reachable-under-that-name-and-what-is-not)
@@ -99,14 +111,18 @@ is the one it corrected.
 |------|--------------|--------|----|-----------|
 | [#115](https://github.com/davison/md-notes/issues/115) Roots: refuse registration for a missing file, and unregister a recent root | M7-R1, M7-R2 | [#50](https://github.com/davison/md-notes/issues/50) | [#121](https://github.com/davison/md-notes/pull/121) | [`f9dfbd3`](https://github.com/davison/md-notes/commit/f9dfbd3) |
 | [#116](https://github.com/davison/md-notes/issues/116) Navigator: toggle between alphanumeric and last-modified order | M7-R3 | — | [#119](https://github.com/davison/md-notes/pull/119) | [`50d3197`](https://github.com/davison/md-notes/commit/50d3197) |
-| [#118](https://github.com/davison/md-notes/issues/118) Installable app: web app manifest and service worker | M7-R5 | — | [#120](https://github.com/davison/md-notes/pull/120) | _pending_ |
+| [#118](https://github.com/davison/md-notes/issues/118) Installable app: web app manifest and service worker | M7-R5 | — | [#120](https://github.com/davison/md-notes/pull/120) | [`1407305`](https://github.com/davison/md-notes/commit/1407305) |
 | [#117](https://github.com/davison/md-notes/issues/117) Document M7 and synthesize its record | M7-R4 | — | this one | — |
 
-**The two implementation tasks ran in parallel and did not meet.** #115 is the roots
+**The three implementation tasks ran in parallel and did not meet.** #115 is the roots
 registry, the server's roots handlers, the extension's open-file flow and the home page;
-#116 is `internal/tree`, the navigator and a new `ui/src/order.ts`. The one file both
-milestones' branches could have collided in is `ui/src/api.ts`, and the reviewer of #119
-checked the hunks were disjoint before either merged
+#116 is `internal/tree`, the navigator and a new `ui/src/order.ts`; #118 is the manifest,
+the worker, a second Vite pass and the asset-serving table. The one file more than one of
+them touched is `ui/src/api.ts`, and the reviewer of #119 checked the hunks were disjoint
+— the `TreeNode` interface on one branch, the `send`/`fetch` wrappers on the other —
+before either merged, and confirmed that the worker returns `"network"` for every path
+under `/api/`, so the whole-tree refetch the order toggle leans on can never be answered
+from a cache
 ([#119](https://github.com/davison/md-notes/pull/119#issuecomment-5718387766)).
 
 **Both tasks wrote their tests first and showed them failing.** #116's new cases were run
@@ -119,11 +135,9 @@ spellings of "the note is not there", every one a `200` and a permanent root on 
 
 ## Requirement outcomes
 
-> **Placeholder — stage two.** The **QA** column below is written from the independent QA
-> comment on [#114](https://github.com/davison/md-notes/issues/114) when it is posted;
-> until then each row records what the task and its review established, which is not a
-> verdict. M7-R5's row is pending [#118](https://github.com/davison/md-notes/issues/118)
-> entirely.
+> **Placeholder.** The **QA** column below is written from the independent QA comment on
+> [#114](https://github.com/davison/md-notes/issues/114) when it is posted; until then
+> each row records what the task and its review established, which is not a verdict.
 
 | ID | Requirement | What the work established | QA |
 |----|-------------|---------------------------|----|
@@ -131,7 +145,7 @@ spellings of "the note is not there", every one a `200` and a permanent root on 
 | M7-R2 | Unregister a recent root: `DELETE /api/roots/{slug}` from registry and state file, never the notes root, refused over the tailnet, a remove control with a confirmation naming the path, and a removed root's tabs landing on the home page | All of it, with two narrowings recorded on the milestone issue ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5718608764)): the route home holds for every root the daemon can *watch*, and the single `404 not_found` is about the note rather than the folder. The reviewer measured the refusal set, the state file after each case, and that no file leaves the disk | _pending_ |
 | M7-R3 | Navigator sort toggle: both orders, folders by their newest note, persistence per browser, the tag-filtered tree and both layouts, times from the daemon staying current through the events stream, the 40 px target, e-ink and no-motion, and no sorting library in the eager bundle | All of it, driven in Chromium at 1280 px and on a Pixel 7 profile by the implementer and again by the reviewer against a scratch root whose times disagree with the alphabetical order at three levels of nesting; the tag-filtered case comes back in the reverse of the unfiltered recency order, which is the premise the folder-rank decision rests on ([#119](https://github.com/davison/md-notes/pull/119#issuecomment-5718387766)) | _pending_ |
 | M7-R4 | Documentation and record: the refusal, the remove control, the sort toggle and the installable app, the introduction's API table and the extension page, the roadmap row, and this record | This task; its pull request is what delivers it | _pending_ |
-| M7-R5 | Installable app: manifest, service worker, install on Android over HTTPS, offline shell, `/api/` never intercepted, no stale shell after a rebuild | _pending [#118](https://github.com/davison/md-notes/issues/118)_ | _pending_ |
+| M7-R5 | Installable app: manifest, service worker, install on Android over HTTPS, offline shell, `/api/` never intercepted, no stale shell after a rebuild, content types and `no-cache`, the tailnet checks unchanged, the eager bundle not regressed | Chrome's installability criteria checked item by item in headless Chromium — over HTTP and through CDP `Page.getAppManifest`, whose `errors` array is asserted empty — because Lighthouse's PWA category, which held those audits, was removed in Lighthouse 12; `fromServiceWorker` false on every `/api/**` response with the assets in the same trace true as a control, and no `/api/` URL in any cache; a poisoned shell cache losing to the daemon's shell while the network is up and answering when it is down; a real rebuild picked up in one reload with the old cache deleted on activation; and the offline walk over four routes that the first review's blocking finding produced. The reviewer re-ran all of it on a TLS stand-in for `tailscale serve` as well ([#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718739359)) | _pending_ |
 
 ## Decisions
 
@@ -394,9 +408,120 @@ in `mdn:nav:<slug>`. Both the read and the write are wrapped, so a browser that 
 storage gets the alphanumeric default and keeps a change for the life of the page
 ([#116](https://github.com/davison/md-notes/issues/116#issuecomment-5718168243)).
 
-> **Placeholder — stage two.** #118's decisions: the worker's routing policy per class,
-> the second Vite pass, the generated precache list, the manifest's colours across both
-> schemes, and whatever the review moved.
+### The worker does not intercept `/api/` at all, rather than passing it through
+
+The routing policy is decided per class of request, and the first row is the one the rest
+of the design hangs on: nothing under `/api/` reaches `respondWith`, so the request goes
+to the network exactly as it would with no worker installed
+([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718162299)). A
+worker that passes an event stream *through* `respondWith` can still hold it; not
+answering at all is the only shape that cannot. `/login` is on the same rule — tailnet
+only, `no-store` at the daemon, and the one page whose staleness would lock a reader out
+of their own notes — as is anything that is not a same-origin GET. `/assets/**` is
+cache-first, because those names carry their content hash, which is the M4 immutable-year
+rule restated where the worker can see it; the shell, the manifest and the icons are
+network-first with the cache as the offline fallback, which is how the M4 `no-cache` rule
+on `index.html` survives the worker.
+
+- **Trade-off:** the offline app is the shell and the assets, never a note. Nothing about
+  the notes is stored on the device, and the page says so.
+- **Rejected:** intercepting `/api/` and passing it through, for the reason above. The
+  reviewer measured what the choice costs when it is honoured — the events stream's
+  disk-change latency is 167/167/166 ms with no worker and 174/166/167 ms with one — and
+  confirmed by mutation that the rule is the load-bearing one: deleting the `/api/` line
+  from `sw-policy.ts` fails three of the five browser checks
+  ([#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718549275)).
+
+### What is precached is read out of the built shell, and the editor is not in it
+
+The precache list is generated by the worker's own build pass from the built
+`index.html` — the entry chunk, its static imports and its CSS, plus the shell, the
+manifest and the SVG favicon — rather than written by hand, which is the definition of
+"what the shell fetches before it paints". The lazily loaded editor chunk is left out and
+cached only when it is first wanted, so installing the app does not pull 218 kB of
+CodeMirror; the 192 and 512 PNG icons are left out too, because Android keeps its own
+copy from the moment of install and an offline install prompt is not something anyone can
+act on. The cache is named for a SHA-256 over that list and the bytes of the unhashed
+files in it, so a rebuild is a new cache and `activate` deletes every `mdn-` cache that is
+not the current one; there is no `skipWaiting`, so a tab running the previous build keeps
+the worker that still holds that build's chunks, and `clients.claim()` on activate makes
+the first visit controlled rather than the one after it
+([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718162299)).
+
+- **Trade-off:** the first `Ctrl+E` after an install is a network fetch, and offline it is
+  not available at all until it has been taken once.
+- **Rejected:** precaching the whole build.
+
+### `start_url` and `scope` are both `/`, and the worker is served from the root
+
+The requirement's default, kept, and for a reason the review later made concrete: the
+scope is the whole origin so that `/r/{slug}/…` — every note, every root — is inside the
+installed window, and a note opened from a link, a clip or the extension is not handed
+back to the browser. The worker is served from `/sw.js` for the same reason: a worker's
+default scope is its own directory, and one at the root is the only one that covers `/r/`
+([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718162299)).
+
+- **Trade-off:** a scope that wide is what made the offline behaviour of `/r/…` a
+  requirement question rather than a detail — see B1 in
+  [What the reviews changed](#what-the-reviews-changed).
+- **Rejected:** a narrower scope.
+
+### The manifest link carries `crossorigin="use-credentials"`
+
+A manifest is fetched with credentials *omitted* by default, and a browser doing that
+over the tailnet is handed the login page under a `401` and concludes there is nothing to
+install. The attribute is the whole of what the tailnet made necessary: the guard, the
+session cookie and the Host and Origin checks are untouched, and the manifest and the
+worker are ordinary files in the bundle, refused to a caller with no session like every
+other (`TestTailnetGuardsTheInstallableAppsFiles`)
+([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718162299)).
+
+The PR flagged one thing it had not verified — whether a browser sends the session cookie
+when it downloads the manifest's *icons* — and the reviewer settled it rather than
+deferring it: the two fetches are governed by different code, and only the manifest
+document reads the attribute. The icons go through a path where `CredentialsMode::kInclude`
+is hardcoded and `ManifestUseCredentials()` is never consulted, with `SiteForCookies`
+taken from the document, so a same-origin icon carries the page's cookies exactly as an
+ordinary `<img>` would; `__Host-mdn_session; Secure; SameSite=Strict` is not excluded on a
+same-site request. Measured on a TLS stand-in for `tailscale serve`: the manifest parsed
+with `errors: []`, `fetch("/icon-192.png", {credentials: "omit"})` `401` and
+`{credentials: "same-origin"}` `200`, and a browser-initiated `<img>` loading 512×512. **No
+tailnet exemption was needed and none was made**
+([#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718549275),
+recorded as an addendum on
+[#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718162299)).
+
+- **Trade-off:** one attribute in the shell that a reader of `index.html` cannot guess the
+  purpose of. It carries a comment, and most of the shell's 274 added bytes are that
+  comment.
+- **Rejected:** widening what an unauthenticated caller may read under the tailnet name so
+  that the manifest could be fetched without credentials. The milestone's gate forbids it,
+  and the trace above shows nothing needed it.
+
+### The worker is hand-written, and built as a classic script by a second Vite pass
+
+Forty lines of routing table, with the policy itself a pure function in
+`ui/src/sw-policy.ts` so the rules that matter — above all that nothing under `/api/` is
+ever answered from a cache — are unit-tested without a browser as well as in one
+([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718162299)).
+
+- **Trade-off:** no Workbox. It would add a build dependency and a runtime larger than the
+  thing it generates, and its defaults would have to be argued out of precaching the
+  editor chunk.
+- **Trade-off:** a second Vite pass (`ui/vite.sw.config.ts`, library mode, IIFE) rather
+  than one build, because one Rollup build has one output format. It is the shape
+  `extension/vite.inject.config.ts` already uses.
+- **Rejected:** a module worker in one build. `register(…, {type: "module"})` is Chromium
+  91 and later, and the Boox's stock browser is older than that on some firmware — a
+  registration that failed there would take the offline shell with it.
+- **Rejected:** Lighthouse for the installability audit. Its PWA category, which held
+  `installable-manifest` and the service-worker audits, was removed in Lighthouse 12 and
+  nothing replaced it, so `ui/e2e/pwa.test.mjs` checks Chrome's documented criteria item
+  by item instead and reads the browser's own verdict out of CDP `Page.getAppManifest`.
+- **Rejected:** a manifest that changes colour with the scheme — it cannot; `theme_color`
+  and `background_color` are one value each, so the manifest carries the light pair and
+  the page's two `<meta name="theme-color" media="(prefers-color-scheme: …)">` tags carry
+  both.
 
 ## Deviations and narrowings
 
@@ -428,6 +553,18 @@ written said "one refusal for every way of failing", which is broader than what 
 Narrowed on the task issue and on the milestone issue, and the API table in
 [the introduction](../introduction.md#the-http-api) now states both answers rather than
 one.
+
+### M7-R5's offline promise held at `start_url` before it held everywhere
+
+The requirement asks that "the app opens offline to a page that says the daemon is
+unreachable rather than a browser error". At the first review that was true of the roots
+page and false of every `/r/{slug}/…` route, which said the root did not exist — and the
+task's own decision to set `scope: "/"` is what made those routes the installed app's
+business in the first place. Fixed in the fix pass rather than narrowed, with the check
+that would have caught it added at the same time
+([#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718647776)). Recorded
+here because the requirement was met on a reading of it that the task itself had already
+made too narrow.
 
 ### #116's plan made the refresh strategy conditional on a measurement, and the measurement kept it
 
@@ -462,14 +599,17 @@ silent](#where-the-record-is-silent) says what the sweep found beyond it.
 
 ## What the reviews changed
 
-Both pull requests were reviewed by a clean-context session under the reviewer contract,
-approved with non-blocking findings, and merged after a fix pass under the operator's
-standing confirmation
+All three pull requests were reviewed by a clean-context session under the reviewer
+contract and merged under the operator's standing confirmation
 ([#121](https://github.com/davison/md-notes/pull/121#issuecomment-5718606175),
-[#119](https://github.com/davison/md-notes/pull/119#issuecomment-5718471530)). #121's fix
-pass touched more than wording, so it got the focused re-review the M6 lesson asks for —
-and that re-review is the one that found the residual now captured as
-[#122](https://github.com/davison/md-notes/issues/122).
+[#119](https://github.com/davison/md-notes/pull/119#issuecomment-5718471530),
+[#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718768663)). #119 and
+#121 were approved with non-blocking findings; #120 was sent back twice, once for a
+defect and once for a record. Every fix pass here touched more than wording, so each got
+the focused re-review the M6 lesson asks for — and both re-reviews earned their place:
+#121's found the residual now captured as
+[#122](https://github.com/davison/md-notes/issues/122), and #120's found that the
+decision comment the whole task rests on had been overwritten.
 
 **The one real defect the milestone found was in code the milestone made reachable.**
 `watchRoot`'s setup goroutine re-read `s.reg.Get(root.Slug)` before installing the hub and
@@ -524,7 +664,75 @@ figures to the byte and re-measured the tree endpoint on their own machine; #121
 each, deleted load-bearing guards to watch the tests fail, and confirmed
 `closingIssuesReferences` carried the task issue alone.
 
-> **Placeholder — stage two.** What #118's review rounds found and changed.
+**#120's blocking finding is the milestone's own scope decision coming back.** `scope: "/"`
+was chosen so that `/r/{slug}/…` stays inside the installed window; the offline check
+reloaded `start_url` only. So the reviewer walked the routes and found that offline —
+worker active, network down, each route warmed first — `/` gave the unreachable line while
+`/r/notes/`, `/r/notes/alpha.md` and `/r/notes/docs/guide.md` all said **Unknown root — No
+root named `notes`**
+([#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718549275), B1). The
+cause was one line in `ui/src/root-view.tsx`: a `listRoots()` that *failed* and one that
+*succeeded and did not name this slug* both became `null`, and `null` renders "Unknown
+root". The review's own words for why it blocks are the ones worth keeping — the reader
+opens the installed app on the note they were last on and is told the root holding their
+notes does not exist, which "reads as 'my notes are gone', where `docs/sync.md`'s own
+paragraph promises 'Your notes are not there… nothing is lost'". It also made three
+statements untrue at once: the introduction's, the PR body's and the decision comment's,
+each of which said the app opens at the route asked for and says the daemon is not
+answering.
+
+The behaviour was created by the PR — before the worker, an offline `/r/…` navigation got
+the browser's error page — and the fix separates the two cases, renders the same
+unreachable line the roots page renders for a failed listing, and keeps `null` meaning
+what it always meant for a daemon that answered. The browser check was written first and
+watched fail on the previous head, and the offline half of `pwa.test.mjs` now walks four
+routes rather than reloading the origin, asserting at each that the unreachable line is
+there *and* that "Unknown root" is not
+([#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718647776)).
+
+The same round's five non-blocking findings were all taken: the cache's content-hashed
+name and the `activate` rotation were the one promise no test held — the reviewer replaced
+the hash with a constant and every browser check and all 260 unit tests still passed — and
+are now held by `ui/e2e/sw-build.test.mjs`, which runs the worker pass again with a byte
+changed in the shell and back out; a maskable SVG that nothing referenced left the served
+bundle; `/login` being the one client-side route the offline shell cannot open is written
+down beside the rule that causes it; a bundle figure that read as brotli and was an
+identity size was reworded; and two `api.ts` doc comments were brought in line with the
+new network-failure wrapper.
+
+**The re-review blocked on the record, not on the code**
+([#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718739359)): "The code
+delta is right and I have nothing left on it… One thing blocks, and it is not code: the
+decision record this PR cites no longer exists." See
+[Corrections to the record itself](#corrections-to-the-record-itself). Its one
+non-blocking observation — a roots-listing rejection from the slug a reader has left
+landing on the slug they went to — was demonstrated in jsdom on the branch *and* on the
+code before it, where the stuck message was the worse "Unknown root", so it is older than
+the branch and is captured as
+[#123](https://github.com/davison/md-notes/issues/123) rather than fixed in a PR that did
+not cause it.
+
+## Corrections to the record itself
+
+**The decision comment for #118 was overwritten with a file path, and was empty for about
+half an hour.** Appending the post-review addendum, the implementer edited the comment
+with `gh api -X PATCH … -f body=@<path>`; `-f` sets a string field verbatim and only `-F`
+expands `@`, so the API stored the path as the comment's text. The published decision went
+from 6,211 characters to 116, and what stood at that URL was a scratchpad path
+([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718760030)).
+
+The re-review caught it, refused to repair it — "the record is the implementer's to
+restore, not the reviewer's to write" — and named both routes back: the file the comment
+now pointed at, and, if that were lost, GitHub's own `userContentEdits` on the comment
+([#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718739359), R1). It
+also named what the loss cost while it stood: the PR body's citation resolved to a stray
+path, the milestone's "evidence links resolve" gate failed, and merging would have closed
+#118 with its decision gone. The comment was restored byte for byte from the file it came
+from, and the correction states the lesson in the form that generalises — a comment body
+long enough to be worth putting in a file is long enough that its edit should be read
+back, which `gh api … --jq '.body | length'` does in one line.
+
+This record cites that comment throughout. Everything it cites is in the restored body.
 
 ## Captures adopted, and captures raised
 
@@ -539,9 +747,10 @@ Raised by this milestone's reviews, for a later task to adopt:
 | Capture | From | What it is |
 |---------|------|-----------|
 | [#122](https://github.com/davison/md-notes/issues/122) | the re-review of [#121](https://github.com/davison/md-notes/pull/121#issuecomment-5718597230) | The watcher hand-off is spawned from one exit of the setup goroutine while `starting[slug]` is released on every exit, so a registration landing in the window between the guard's unlock and the deferred delete — or meeting the `watch.New` failure path — can still leave a registered root with no watcher. Milder than what was fixed: the page says "live update is not available", never a wrong folder's changes. Found by reading, not reproduced |
+| [#123](https://github.com/davison/md-notes/issues/123) | the re-review of [#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718739359), observation R2 | The roots-listing effect in `ui/src/root-view.tsx` has no cancellation guard, so a rejection from the slug a reader has just left can settle after they navigate and stick on the new slug — `rootError` is cleared only by a slug change. Demonstrated in jsdom on the branch and, with the two new lines reverted, on the code before it, where the stuck message was the worse "Unknown root". Older than the branch; the fix is the `cancelled` guard the very next effect in the same file already uses |
 
-> **Placeholder — stage two.** Captures raised by #118's review and by QA, with the
-> coordinator's disposition of QA's findings.
+> **Placeholder.** Captures raised by QA, with the coordinator's disposition of QA's
+> findings.
 
 ## Known gaps at the boundary
 
@@ -557,18 +766,22 @@ Raised by this milestone's reviews, for a later task to adopt:
 | Removing a root is in the app only. There is no `mdn` verb for it, and the state file remains the only other way | [the introduction](../introduction.md#the-daemon) |
 | **Renaming a note is still not in the application at all.** Untouched by this milestone, as by M5 and M6 | [the README](../../README.md) |
 | The M6 backlog is untouched: [#107](https://github.com/davison/md-notes/issues/107), [#108](https://github.com/davison/md-notes/issues/108), [#110](https://github.com/davison/md-notes/issues/110), [#111](https://github.com/davison/md-notes/issues/111) and [#112](https://github.com/davison/md-notes/issues/112) are all still open, by the scope decision | [#114](https://github.com/davison/md-notes/issues/114#issuecomment-5717883455) |
-
-> **Placeholder — stage two.** Gaps from #118 and from QA's findings.
+| A roots-listing rejection from a slug the reader has left can land on the slug they went to and stay there. Predates the installable app, which only made the message it leaves less alarming | [#123](https://github.com/davison/md-notes/issues/123) |
+| **The Android install has never been performed.** Everything about it was exercised in headless Chromium, including on a TLS stand-in for `tailscale serve`; no phone and no Boox has run it. The one part headless Chromium cannot reach is Chrome's WebAPK minting server, which cannot resolve a `.ts.net` name and is expected to use the icon bytes Chrome uploads — a claim about a server whose source is not public | [#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718162299), [docs/sync.md](../sync.md#installing-it-on-the-phone) |
+| `/login` is the one client-side route the offline shell does not open. Right under the tailnet, where it is the daemon's own page; on loopback it is an ordinary route and the sole one the worker leaves to the browser's error page | [#120](https://github.com/davison/md-notes/pull/120#issuecomment-5718549275), N3 |
+| The installable app costs the eager reading page 403 bytes brotli (21,675 → 22,078 B), most of the shell's share being the comment that explains the `crossorigin` attribute, plus `sw.js` at 1,130 B and the manifest at 682 B fetched after load. There is still no budget to weigh any of it against | [#120](https://github.com/davison/md-notes/pull/120) |
+| Offline the app is the shell, never a note: nothing about the notes is stored on the device, so an installed app with no network opens and can show nothing | [the introduction](../introduction.md#installing-the-app) |
 
 ## Where the record is silent
 
-- **The operator has still not used any of this.** Every trade-off in the two merged
+- **The operator has still not used any of this.** Every trade-off in the three merged
   tasks was judged by an implementer, a reviewer and — when it runs — a QA session, all
   model sessions under one identity. The order toggle was driven on a Pixel 7 profile in
   headless Chromium and the remove control on a coarse-pointer desktop profile; neither
-  has been touched on the operator's phone or on the Boox. M6's record said the same, and
-  the one M5 finding that reads most like a person's remains the model for what these
-  sessions do not catch.
+  has been touched on the operator's phone or on the Boox, and the milestone's headline
+  feature is an app that installs on a phone nobody has installed it on. M6's record said
+  the same, and the one M5 finding that reads most like a person's remains the model for
+  what these sessions do not catch.
 - **`docs/sync.md` carried a claim no task's file list would have caught.** It said a
   Syncthing conflict file "sorts next to the note it came from", which after #116 is only
   the alphanumeric order's answer. Nothing in either task's plan, PR body or review
@@ -582,10 +795,10 @@ Raised by this milestone's reviews, for a later task to adopt:
   own documentation task, whose record named documentation staleness as its closing
   lesson. Corrected here.
 - **The `ui/e2e` figure in the introduction was wrong before this milestone touched it.**
-  The page said 35 checks; the suite ran 38 on `main` before M7 and runs 47 now. This
+  The page said 35 checks; the suite ran 38 on `main` before M7 and runs 53 now. This
   task re-measured by running `make e2e` in its own worktree rather than by adding the
-  merged pull requests' counts together, which is the only reason the number in the page
-  is a measurement and not arithmetic.
+  merged pull requests' counts together — no single PR's number would have been right,
+  since each was measured against a base without the other two.
 - **No `cc:needs-decision` gate was raised in this milestone, and neither implementation
   task had an ask-the-human point.** Both said so explicitly in their plans, on the ground
   that the requirements had already fixed the defaults and everything else was an
@@ -604,6 +817,19 @@ Raised by this milestone's reviews, for a later task to adopt:
   over the tailnet in practice.** #50 was raised in M3 QA and fixed in M7, four milestones
   later, on a daemon the operator runs. The record contains no statement about whether any
   such root ever existed on it.
+- **A decision comment was destroyed by a tool flag and nothing but a review noticed.** The
+  half hour in which #118's decision said only a scratchpad path is recorded
+  ([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718760030)), and
+  the re-review is what found it. Nothing in the protocol reads a comment back after
+  writing it, and `gh codecrew milestone evidence` checks that a record's citations
+  *resolve* — which this one did, to an empty decision. What the incident does not
+  establish is how many other comments in this project's history were edited and never
+  read back.
+- **The milestone's requirements grew by 20% after it opened, and the record cannot say
+  what that cost.** M7-R5 arrived with both implementation tasks already in flight, and
+  the third task ran in parallel with the two that were already running. It merged last
+  and needed two review rounds where the others needed one, which is consistent with
+  being the largest task and equally consistent with being the one written under the most
+  time pressure; nothing here distinguishes the two.
 
-> **Placeholder — stage two.** Anything #118 and QA add to this list, including whether
-> the installability audit's Android half was ever run on a device.
+> **Placeholder.** Anything QA adds to this list.
