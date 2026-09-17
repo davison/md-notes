@@ -237,14 +237,34 @@ describe("the installable app", { skip: blocker ?? false }, () => {
     assert.ok(!cached.includes(STALE), "the cached shell was replaced by the one the daemon served");
 
     // Offline: the shell opens anyway, and the app says why it is empty
-    // rather than the browser saying the site cannot be reached.
+    // rather than the browser saying the site cannot be reached — on every
+    // route the scope covers, not only the start URL. A note route is where
+    // an installed app is most likely to be opened from: the last note read,
+    // or a link followed into it.
+    await page.goto(fixture.url("alpha.md"));
+    await page.waitForSelector(".note-body .markdown", { state: "attached" });
     await context.setOffline(true);
     try {
-      await page.reload();
+      for (const [what, url] of [
+        ["the roots page", `${fixture.origin}/`],
+        ["a root", fixture.url("")],
+        ["a note", fixture.url("alpha.md")],
+        ["a note in a folder", fixture.url("docs/guide.md")],
+      ]) {
+        await page.goto(url);
+        await page.waitForSelector("#app h1");
+        const text = await page.locator("#app").textContent();
+        assert.doesNotMatch(
+          text,
+          /Unknown root|No root named/,
+          `${what} offline says the root does not exist, which is false and frightening`,
+        );
+        const error = await page.locator(".error").textContent();
+        assert.match(error, /not answering/, `${what} offline names the daemon, not fetch`);
+        console.log(`# offline ${what}: ${JSON.stringify(error)}`);
+      }
+      await page.goto(`${fixture.origin}/`);
       await page.waitForSelector("#app h1");
-      const error = await page.locator(".error").textContent();
-      assert.match(error, /not answering/, "the home page names the daemon, not fetch");
-      console.log(`# offline shell: ${JSON.stringify(error)}`);
 
       // The last resort: offline with no cached shell at all, which is what
       // an install that never reached the network leaves behind. The worker

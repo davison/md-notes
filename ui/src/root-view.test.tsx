@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { LocationProvider } from "preact-iso";
+import { UNREACHABLE } from "./api";
 import { RootView } from "./root-view";
 import { getSession, resetSessions } from "./session";
 
@@ -134,6 +135,36 @@ function mount(url: string) {
     </LocationProvider>,
   );
 }
+
+describe("RootView when the listing produces no root", () => {
+  function mountSlug(slug: string) {
+    history.replaceState(null, "", `/r/${slug}/docs/a.md`);
+    return render(
+      <LocationProvider>
+        <RootView slug={slug} note="docs/a.md" />
+      </LocationProvider>,
+    );
+  }
+
+  it("says the daemon is unreachable when the listing failed", async () => {
+    // The offline case the service worker created: the cached shell opens on
+    // a note route with no daemon behind it. A rejected listing is not an
+    // absent root, and telling a reader their notes' root does not exist is
+    // the one thing the offline page was written to avoid.
+    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))));
+    mountSlug("n");
+    await waitFor(() => expect(screen.getByText(UNREACHABLE)).toBeTruthy());
+    expect(screen.queryByText("Unknown root")).toBeNull();
+  });
+
+  it("still says the root is unknown when the daemon answered without it", async () => {
+    // The daemon answered: this really is a root that does not exist, and
+    // the page that says so is still the right one.
+    mountSlug("gone");
+    await waitFor(() => expect(screen.getByText("Unknown root")).toBeTruthy());
+    expect(screen.queryByText(UNREACHABLE)).toBeNull();
+  });
+});
 
 describe("RootView live update", () => {
   it("refetches the tree on any batch and the note only when it is affected", async () => {
