@@ -245,6 +245,19 @@ describe("the installable app", { skip: blocker ?? false }, () => {
       const error = await page.locator(".error").textContent();
       assert.match(error, /not answering/, "the home page names the daemon, not fetch");
       console.log(`# offline shell: ${JSON.stringify(error)}`);
+
+      // The last resort: offline with no cached shell at all, which is what
+      // an install that never reached the network leaves behind. The worker
+      // writes the page itself rather than letting the browser say the site
+      // cannot be reached.
+      await page.evaluate(async () => {
+        const name = (await caches.keys()).find((k) => k.startsWith("mdn-"));
+        await (await caches.open(name)).delete("/index.html", { ignoreVary: true });
+      });
+      await page.reload();
+      assert.match(await page.locator("h1").textContent(), /unreachable/i);
+      assert.match(await page.locator("p").first().textContent(), /mdn is not answering/);
+      assert.equal(await page.locator("button").count(), 1, "and a way to try again");
     } finally {
       await context.setOffline(false);
     }
