@@ -310,8 +310,8 @@ funnel every request path goes through — cleaned lexically, symlinks evaluated
 path compared against the root's real path — and whether the name is a *note* is decided
 in the handler with `tree.IsMarkdown`, beside every other place that asks that question.
 
-- **Trade-off:** `POST /api/roots` grows a second job. It is kept to one field, absent by
-  default, so `mdn open`'s request is byte-for-byte what it was.
+- **Trade-off:** `POST /api/roots` grows a second job. It is kept to one field, absent
+  by default, so `mdn open`'s request is byte-for-byte what it was.
 - **Rejected:** the extension registering and checking through the new slug, for the
   window above.
 
@@ -433,7 +433,8 @@ said what is on now, and a screen reader reads the two together; a fixed name al
 WCAG 2.5.3 label-in-name true, which an `aria-label` over different visible text would
 not ([#116](https://github.com/davison/md-notes/issues/116#issuecomment-5718168243)).
 
-- **Trade-off:** a reader who does not use the pressed state has only the label to go on.
+- **Trade-off:** a reader who does not use the pressed state has only the label to go
+  on.
 - **Rejected:** a label that swaps; an `aria-label` unlike the visible text. The review
   took the third string away as well — a constant `title` describing only one direction
   ([#119](https://github.com/davison/md-notes/pull/119#issuecomment-5718463895)).
@@ -530,8 +531,8 @@ rule restated where the worker can see it; the shell, the manifest and the icons
 network-first with the cache as the offline fallback, which is how the M4 `no-cache` rule
 on `index.html` survives the worker.
 
-- **Trade-off:** the offline app is the shell and the assets, never a note. Nothing about
-  the notes is stored on the device, and the page says so.
+- **Trade-off:** the offline app is the shell and the assets, never a note. Nothing
+  about the notes is stored on the device, and the page says so.
 - **Rejected:** intercepting `/api/` and passing it through, for the reason above. The
   reviewer measured what the choice costs when it is honoured — the events stream's
   disk-change latency is 167/167/166 ms with no worker and 174/166/167 ms with one — and
@@ -555,8 +556,8 @@ the worker that still holds that build's chunks, and `clients.claim()` on activa
 the first visit controlled rather than the one after it
 ([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718162299)).
 
-- **Trade-off:** the first `Ctrl+E` after an install is a network fetch, and offline it is
-  not available at all until it has been taken once.
+- **Trade-off:** the first `Ctrl+E` after an install is a network fetch, and offline it
+  is not available at all until it has been taken once.
 - **Rejected:** precaching the whole build.
 
 ### `start_url` and `scope` are both `/`, and the worker is served from the root
@@ -598,12 +599,12 @@ tailnet exemption was needed and none was made**
 recorded as an addendum on
 [#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718162299)).
 
-- **Trade-off:** one attribute in the shell that a reader of `index.html` cannot guess the
-  purpose of. It carries a comment, and most of the shell's 274 added bytes are that
+- **Trade-off:** one attribute in the shell that a reader of `index.html` cannot guess
+  the purpose of. It carries a comment, and most of the shell's 274 added bytes are that
   comment.
-- **Rejected:** widening what an unauthenticated caller may read under the tailnet name so
-  that the manifest could be fetched without credentials. The milestone's gate forbids it,
-  and the trace above shows nothing needed it.
+- **Rejected:** widening what an unauthenticated caller may read under the tailnet name
+  so that the manifest could be fetched without credentials. The milestone's gate
+  forbids it, and the trace above shows nothing needed it.
 
 ### The worker is hand-written, and built as a classic script by a second Vite pass
 
@@ -612,23 +613,23 @@ Forty lines of routing table, with the policy itself a pure function in
 ever answered from a cache — are unit-tested without a browser as well as in one
 ([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718162299)).
 
-- **Trade-off:** no Workbox. It would add a build dependency and a runtime larger than the
-  thing it generates, and its defaults would have to be argued out of precaching the
+- **Trade-off:** no Workbox. It would add a build dependency and a runtime larger than
+  the thing it generates, and its defaults would have to be argued out of precaching the
   editor chunk.
 - **Trade-off:** a second Vite pass (`ui/vite.sw.config.ts`, library mode, IIFE) rather
   than one build, because one Rollup build has one output format. It is the shape
   `extension/vite.inject.config.ts` already uses.
-- **Rejected:** a module worker in one build. `register(…, {type: "module"})` is Chromium
-  91 and later, and the Boox's stock browser is older than that on some firmware — a
-  registration that failed there would take the offline shell with it.
+- **Rejected:** a module worker in one build. `register(…, {type: "module"})` is
+  Chromium 91 and later, and the Boox's stock browser is older than that on some
+  firmware — a registration that failed there would take the offline shell with it.
 - **Rejected:** Lighthouse for the installability audit. Its PWA category, which held
   `installable-manifest` and the service-worker audits, was removed in Lighthouse 12 and
   nothing replaced it, so `ui/e2e/pwa.test.mjs` checks Chrome's documented criteria item
   by item instead and reads the browser's own verdict out of CDP `Page.getAppManifest`.
-- **Rejected:** a manifest that changes colour with the scheme — it cannot; `theme_color`
-  and `background_color` are one value each, so the manifest carries the light pair and
-  the page's two `<meta name="theme-color" media="(prefers-color-scheme: …)">` tags carry
-  both.
+- **Rejected:** a manifest that changes colour with the scheme — it cannot;
+  `theme_color` and `background_color` are one value each, so the manifest carries the
+  light pair and the page's two `<meta name="theme-color" media="(prefers-color-scheme:
+  …)">` tags carry both.
 
 ## Deviations and narrowings
 
@@ -900,65 +901,69 @@ probes did not reach, stays a capture as it was
   has been touched on the operator's phone or on the Boox, and the milestone's headline
   feature is an app that installs on a phone nobody has installed it on. M6's record
   said the same, and the one M5 finding that reads most like a person's remains the
-  model for what these sessions do not catch. - **`docs/sync.md` carried a claim no
-  task's file list would have caught.** It said a Syncthing conflict file "sorts next to
-  the note it came from", which after #116 is only the alphanumeric order's answer.
-  Nothing in either task's plan, PR body or review named that page; it was found by this
-  task reading every page in `docs/` rather than the two the reviews handed over. M5's
-  lesson was that a requirement's first clause is wider than its file list and M6's was
-  that writing the sweep into a plan is not the same as running it — this is the third
-  instance, and the sweep is now the only mechanism that has ever caught one. - **The
-  introduction's opening sentence had been stale since M6.** It said the page described
-  the system "at the end of milestone five" and was still saying so after M6's own
-  documentation task, whose record named documentation staleness as its closing lesson.
-  Corrected here. - **The `ui/e2e` figure in the introduction was stale for three
-  milestones, and no task whose work changed it noticed.** The page said 35 checks from
-  M4 until M7's last task; the suite ran 38 on `main` before this milestone and runs 54
-  now. The correction was made by [#124](https://github.com/davison/md-notes/issues/124)
-  in [`a62ce62`](https://github.com/davison/md-notes/commit/a62ce62) — "The count had
-  been 35 since M4 and the suite is 54 checks; M7 added ten and this task one" — and
-  this task only measured the figure it inherited. What none of the three milestones
-  between had is anything that would fail when the number drifts: it is a count in
-  prose, and every merge that adds a check makes it wrong again. - **No
-  `cc:needs-decision` gate was raised in this milestone, and neither implementation task
-  had an ask-the-human point.** Both said so explicitly in their plans, on the ground
-  that the requirements had already fixed the defaults and everything else was an
+  model for what these sessions do not catch.
+- **`docs/sync.md` carried a claim no task's file list would have caught.** It said a
+  Syncthing conflict file "sorts next to the note it came from", which after #116 is
+  only the alphanumeric order's answer. Nothing in either task's plan, PR body or review
+  named that page; it was found by this task reading every page in `docs/` rather than
+  the two the reviews handed over. M5's lesson was that a requirement's first clause is
+  wider than its file list and M6's was that writing the sweep into a plan is not the
+  same as running it — this is the third instance, and the sweep is now the only
+  mechanism that has ever caught one.
+- **The introduction's opening sentence had been stale since M6.** It said the page
+  described the system "at the end of milestone five" and was still saying so after M6's
+  own documentation task, whose record named documentation staleness as its closing
+  lesson. Corrected here.
+- **The `ui/e2e` figure in the introduction was stale for three milestones, and no task
+  whose work changed it noticed.** The page said 35 checks from M4 until M7's last task;
+  the suite ran 38 on `main` before this milestone and runs 54 now. The correction was
+  made by [#124](https://github.com/davison/md-notes/issues/124) in
+  [`a62ce62`](https://github.com/davison/md-notes/commit/a62ce62) — "The count had been
+  35 since M4 and the suite is 54 checks; M7 added ten and this task one" — and this
+  task only measured the figure it inherited. What none of the three milestones between
+  had is anything that would fail when the number drifts: it is a count in prose, and
+  every merge that adds a check makes it wrong again.
+- **No `cc:needs-decision` gate was raised in this milestone, and neither implementation
+  task had an ask-the-human point.** Both said so explicitly in their plans, on the
+  ground that the requirements had already fixed the defaults and everything else was an
   implementation decision to be recorded. The one human decision the milestone contains
   — adding a fifth requirement to an open milestone — was taken by the coordinator on
   the operator's words in a session that is not on GitHub, and recorded after the fact
   ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5717938933)). That
-  is the same shape M6's record named, and it stands here. - **The severity assessment
-  of #50 is the coordinator's, and nothing independent tested it.** Neither review nor
-  this record re-derived the claim that the defect is bounded by the `file:` trigger and
-  by loopback-only registration; QA's brief covers the code's behaviour, not the threat
-  model. The assessment is recorded and reasoned
+  is the same shape M6's record named, and it stands here.
+- **The severity assessment of #50 is the coordinator's, and nothing independent tested
+  it.** Neither review nor this record re-derived the claim that the defect is bounded
+  by the `file:` trigger and by loopback-only registration; QA's brief covers the code's
+  behaviour, not the threat model. The assessment is recorded and reasoned
   ([#114](https://github.com/davison/md-notes/issues/114#issuecomment-5717883455)), and
-  it is a single session's judgement. - **A merged record said a check held something it
-  did not.** PR #120's body said `assets.test.mjs` "still measures two assets on a cold
-  reading-page load", which reads as the editor chunk being held off the reading page;
-  the review of #126 found that neither the old case nor the new one makes that claim,
-  and that no check in the tree does
-  ([#126](https://github.com/davison/md-notes/pull/126#issuecomment-5719422345)). The
-  property is true and has been true since M4 — what was never true is that anything
+  it is a single session's judgement.
+- **A merged record said a check held something it did not.** PR #120's body said
+  `assets.test.mjs` "still measures two assets on a cold reading-page load", which reads
+  as the editor chunk being held off the reading page; the review of #126 found that
+  neither the old case nor the new one makes that claim, and that no check in the tree
+  does ([#126](https://github.com/davison/md-notes/pull/126#issuecomment-5719422345)).
+  The property is true and has been true since M4 — what was never true is that anything
   would notice if it stopped being. Captured as
   [#127](https://github.com/davison/md-notes/issues/127); the sealed record it touches
-  is not this one's to edit. - **Nothing measured how long a root registered by accident
-  had been possible to reach over the tailnet in practice.** #50 was raised in M3 QA and
-  fixed in M7, four milestones later, on a daemon the operator runs. The record contains
-  no statement about whether any such root ever existed on it. - **A decision comment
-  was destroyed by a tool flag and nothing but a review noticed.** The half hour in
-  which #118's decision said only a scratchpad path is recorded
+  is not this one's to edit.
+- **Nothing measured how long a root registered by accident had been possible to reach
+  over the tailnet in practice.** #50 was raised in M3 QA and fixed in M7, four
+  milestones later, on a daemon the operator runs. The record contains no statement
+  about whether any such root ever existed on it.
+- **A decision comment was destroyed by a tool flag and nothing but a review noticed.**
+  The half hour in which #118's decision said only a scratchpad path is recorded
   ([#118](https://github.com/davison/md-notes/issues/118#issuecomment-5718760030)), and
   the re-review is what found it. Nothing in the protocol reads a comment back after
   writing it, and `gh codecrew milestone evidence` checks that a record's citations
   *resolve* — which this one did, to an empty decision. What the incident does not
   establish is how many other comments in this project's history were edited and never
-  read back. - **The milestone's requirements grew by 20% after it opened, and the
-  record cannot say what that cost.** M7-R5 arrived with both implementation tasks
-  already in flight, and the third task ran in parallel with the two that were already
-  running. It merged last and needed two review rounds where the others needed one,
-  which is consistent with being the largest task and equally consistent with being the
-  one written under the most time pressure; nothing here distinguishes the two.
+  read back.
+- **The milestone's requirements grew by 20% after it opened, and the record cannot say
+  what that cost.** M7-R5 arrived with both implementation tasks already in flight, and
+  the third task ran in parallel with the two that were already running. It merged last
+  and needed two review rounds where the others needed one, which is consistent with
+  being the largest task and equally consistent with being the one written under the
+  most time pressure; nothing here distinguishes the two.
 
 - **One of QA's observations reached GitHub only through a session.**
   [#125](https://github.com/davison/md-notes/issues/125) — the state file written as
