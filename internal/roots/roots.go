@@ -283,10 +283,18 @@ func (r *Registry) AddFor(dir, file string) (Root, error) {
 // hasFile reports whether file is a regular file inside root, through the
 // same confinement every request path goes through: cleaned lexically,
 // then resolved with symlinks evaluated and checked against the root's
-// real path, so a link out of the folder is not a file inside it. An
-// absolute path is accepted when it lies under the root and is refused
-// otherwise, because a caller holding the file's own path should not have
-// to take it apart to ask about it.
+// real path, so a link out of the folder is not a file inside it.
+//
+// An absolute file is made relative to the root's own path *lexically*,
+// before any symlink is evaluated, so it must be spelled under the path
+// this registration named — through an alias of that folder it is refused,
+// even where it names a file that is really inside. That is the price of
+// one confinement funnel: the relative path goes on to Resolve, which is
+// the same function every request path is confined by, rather than this
+// growing a second way of deciding what is inside a root. The extension
+// sends a base name, and a caller that holds an absolute path holds the
+// folder's spelling with it, so nothing in the daemon reaches the refused
+// shape. Reported in review of #121.
 func (root Root) hasFile(file string) error {
 	if filepath.IsAbs(file) {
 		rel, err := filepath.Rel(root.Path, filepath.Clean(file))

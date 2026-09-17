@@ -76,6 +76,19 @@ export function useEvents(
       // answers 404 to the reconnect, which closes the stream in exactly
       // the same way. The listing is what tells the two apart, and it is
       // asked only here, where a stream has already ended for good.
+      //
+      // So the route home is carried by the stream, and a root the daemon
+      // could not watch at all has none: its first connect is answered
+      // 503, EventSource does not retry a refused connection, and the one
+      // listing check that follows runs while the root is still there. A
+      // tab on such a root keeps its "live update is not available"
+      // notice and its stale tree when the root is removed, until it asks
+      // the daemon for something and is refused. Left as it is rather
+      // than polled for: the case is a root whose watcher never started,
+      // the page already says live update is off, and a timer asking
+      // "have I been removed yet" is a worse thing to have than a stale
+      // navigator. Recorded in review of #121; M7-R2's route home holds
+      // for every root with live update.
       void listRoots()
         .then((roots) => {
           if (!done && !roots.some((r) => r.slug === slug)) gone.current?.();
