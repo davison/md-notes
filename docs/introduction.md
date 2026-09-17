@@ -2,14 +2,16 @@
 
 md-notes is a local service that turns folders of markdown files into a notes
 application in the browser. This page describes what exists and works today, at the
-end of [milestone five](milestones/5-create-and-delete-notes.md): the
+end of [milestone seven](milestones/7-roots-recency-and-the-installable-app.md): the
 daemon and the rendered viewer from
 [milestone one](milestones/1-daemon-and-rendered-viewer.md), the editor from
 [milestone two](milestones/2-editor-autosave-and-live-update.md), the browser half
 from [milestone three](milestones/3-clipper-authentication-and-tailnet.md), the
-polish milestone four put on all three, and the create and delete verbs milestone
-five added to them. Notes are created, edited and deleted in the app; renaming one
-is still done with other tools.
+polish milestone four put on all three, the create and delete verbs milestone
+five added to them, the tailnet clipping and clipper repairs of
+[milestone six](milestones/6-tailnet-clipping-and-the-m5-backlog.md), and what
+milestone seven did to roots and the navigator. Notes are created, edited and deleted
+in the app; renaming one is still done with other tools.
 
 Milestone four is the one whose subject is how the rest of it is read rather than
 what it can do. The web UI works on a phone, where the note takes the whole viewport
@@ -37,6 +39,15 @@ tests in `internal/watch` are driven by a clock the test moves rather than by th
 wall clock, and the browser-level checks that used to live in a session's scratchpad
 are a suite in the repository that CI runs
 ([What holds these numbers](#what-holds-these-numbers)).
+
+Milestone seven took up an accident and an ask. Opening a `file:` URL for a markdown
+file that did not exist used to register its directory as a permanent root with no
+way to remove it from the app; now a registration can name the note it is for and the
+daemon registers nothing when that note is not there, a recent root is removed from
+the home page, and both of those stay on the machine rather than crossing the tailnet
+name ([Roots](#roots)). And the navigator's tree, alphanumeric since milestone one,
+has a **Recent first** toggle that puts the most recently modified note at the top
+([The web UI](#the-web-ui)).
 
 The browser half is a Chromium extension that clips a readable page or a selection
 into the notes root as markdown, and opens a local markdown file in the app instead
@@ -77,7 +88,10 @@ folders added with `mdn open` are remembered, and `--token-file FILE` (default
 `mdn open DIR` takes `--config FILE`, `--port N`, and `--no-browser` to print the URL
 instead of launching one. It resolves `DIR` against your working directory, POSTs it
 to the running daemon and opens `/r/<slug>/`. If no daemon answers on the port it
-prints how to start one and exits non-zero — it never starts a daemon itself.
+prints how to start one and exits non-zero — it never starts a daemon itself. There
+is no verb that undoes it: a folder registered this way is removed from the home
+page, which is where a root registered by accident is removed as well
+([Roots](#roots)).
 
 `mdn token` prints the daemon's bearer token, creating it if the daemon has not run
 yet, and takes `--token-file FILE` and `--rotate`. See
@@ -115,30 +129,85 @@ basename and deduplicated with a numeric suffix. There are two kinds:
 
 - The **notes root**, from `notes_root` or `--root`. It is permanent and always
   present.
-- **Recent roots**, added by `mdn open`. They persist to the state file with their
-  slugs, so a root's URL survives a restart. A recent root whose directory has since
-  disappeared is dropped when the daemon next starts.
+- **Recent roots**, added by `mdn open` or by the browser extension when you open a
+  local markdown file. They persist to the state file with their slugs, so a root's
+  URL survives a restart. A recent root whose directory has since disappeared is
+  dropped when the daemon next starts, and any of them can be removed from the home
+  page.
 
 Registering a path that is already a root returns the existing root rather than
 duplicating it; the comparison is on the real path, so a symlinked alias resolves to
 the same root. A directory nested inside an existing root can still be registered as
 a root of its own.
 
+**A registration that names a note the daemon cannot find registers nothing.** The
+body of `POST /api/roots` takes an optional `file` beside the `path` — a note inside
+the folder, relative to it or absolute and under it — and with it the daemon
+registers the folder only once it has found that note: a regular markdown file that
+resolves inside the folder through the same confinement every request path goes
+through. Anything else is `404 {"code":"not_found"}` naming the file, with nothing
+appended to the registry and nothing written to the state file. One answer covers
+every way of failing, because the caller is on loopback and already holds the path it
+asked about, and a finer answer would say more about what is *outside* the folder
+than about the folder
+([#115](https://github.com/davison/md-notes/issues/115#issuecomment-5718216788)). The
+folder is the other question and keeps its own answer: a `path` that is not a
+directory is still `400` with the filesystem's own sentence, which is the diagnostic
+`mdn open` prints to somebody who has just typed it
+([#115](https://github.com/davison/md-notes/issues/115#issuecomment-5718465965)).
+
+The check is a condition on registering, not a lease on the root. Once the folder is
+a root the note it was registered for can be deleted, renamed or emptied, and the
+folder goes on being served until somebody unregisters it. `mdn open` sends no
+`file`, so it is unaffected; the extension sends the note it was asked to open, which
+is what stops a `file:` URL for a note that does not exist from registering its
+directory for ever
+([#50](https://github.com/davison/md-notes/issues/50)).
+
+**Removing a recent root** is `DELETE /api/roots/{slug}`, and on the home page it is
+the **Remove** control beside the root, behind a confirmation naming the folder. The
+root leaves the registry and the state file at once. Nothing leaves the disk: the
+folder and every note in it stay exactly as they are, and registering the folder
+again brings the root back. Two things are refused: the configured notes root, with
+`403 {"code":"notes_root"}` — it is the daemon's configuration rather than a
+registration, and the next start would put it back — and a slug that is not
+registered, with `404 {"code":"not_found"}`, which is also what removing the same
+root twice gets.
+
+A tab left open on a root that has just been removed lands on the home page rather
+than on a dead route. The daemon ends the root's event streams when it unregisters
+it; the browser reconnects of its own accord, meets a `404` for the unknown slug, and
+the page asks the roots listing before concluding anything — a slug that has gone
+routes home, one that is still there keeps the "live update is not available" notice
+described under [When coverage is limited](#when-coverage-is-limited). That route
+rides on the stream, so it holds for every root the daemon can watch. The one root it
+does not hold for is a root whose watcher never started at all: its first events
+connect is refused, the browser does not retry a refused connection, and such a tab
+keeps its notice and its stale navigator until it next asks the daemon for something
+([#115](https://github.com/davison/md-notes/issues/115#issuecomment-5718465965)).
+
+Both are loopback-only. Registering a root and unregistering one are refused under a
+configured `tailnet_host` — see [What is reachable under that
+name](#what-is-reachable-under-that-name-and-what-is-not).
+
 The home page at `/` lists the notes root under "Notes" and every recent root under
-"Recent", each linking to its three-pane view.
+"Recent", each linking to its three-pane view, and each recent root with the
+**Remove** control beside it.
 
 ## The HTTP API
 
 All endpoints are on the loopback listener, and all of them are behind the guard
 described under [Confinement](#confinement). Most of them are also reachable under a
-configured `tailnet_host`, to an authenticated caller; `POST /api/roots` is not, and
+configured `tailnet_host`, to an authenticated caller; the two that change the set of
+roots — `POST /api/roots` and `DELETE /api/roots/{slug}` — are not, and
 the [tailnet section](#reaching-the-daemon-over-the-tailnet) says why.
 
 | Endpoint | What it does |
 |----------|--------------|
 | `GET /api/roots` | `{roots: [{slug, path, kind}]}` |
-| `POST /api/roots` | Registers `{"path": "/absolute/dir"}` and returns the root. Relative paths are refused |
-| `GET /api/r/{slug}/tree` | The root's markdown tree as nested `{name, path, dir, children}` |
+| `POST /api/roots` | Registers `{"path": "/absolute/dir"}` and returns the root. Relative paths are refused, and a path that is not a directory is `400` with the filesystem's own sentence. The optional `"file"` names a note inside that folder: with it the daemon registers only once it has found the note, and otherwise answers `404 {"code":"not_found"}` having written nothing. See [Roots](#roots) |
+| `DELETE /api/roots/{slug}` | Unregisters a recent root and returns `204 No Content`; the root leaves the registry and the state file, and no file leaves the disk. `403 {"code":"notes_root"}` for the configured notes root, `404 {"code":"not_found"}` for a slug that is not registered. See [Roots](#roots) |
+| `GET /api/r/{slug}/tree` | The root's markdown tree as nested `{name, path, dir, children}`, each file node also carrying `modified`, its modification time in Unix milliseconds — absent on a directory, and on a file whose time the daemon could not read. See [the navigator's order](#the-web-ui) |
 | `GET /api/r/{slug}/note/{path...}` | A rendered note as `{path, title, frontmatter, html}`. Non-markdown paths are 404 here |
 | `GET /api/r/{slug}/source/{path...}` | Existing UTF-8 markdown as `{source, revision}`; see [conditional saves](#conditional-saves) |
 | `PUT /api/r/{slug}/source/{path...}` | Conditionally saves JSON `{source, revision}` and returns the saved `{source, revision}` |
@@ -542,6 +611,11 @@ maximum and is `0` when there is none, never negative. A root with no watcher at
 has no stream: the endpoint answers 503, which an `EventSource` reports by closing
 for good rather than reconnecting.
 
+Unregistering a root ends the streams open on it, rather than leaving them on
+keepalives for a root the daemon no longer serves; the reconnect that follows meets
+the `404` an unknown slug gets, and [Roots](#roots) says what the page does with
+that.
+
 ## The web UI
 
 A Preact application, three panes per root on a wide screen and a note with a
@@ -552,7 +626,23 @@ what is on screen; [The browser tab](#the-browser-tab) below says how. The panes
   remembered per root in `localStorage`. The current note is highlighted and its
   ancestors are opened. Only markdown files and the directories containing them
   appear; `.md` and `.markdown` count, hidden entries do not, and everything ripgrep
-  would ignore is absent.
+  would ignore is absent. A **Recent first** toggle in the navigator's own header
+  chooses the order: unpressed, the tree is the alphanumeric one it has always been;
+  pressed, the most recently modified note is at the top — notes by their
+  modification time within a folder, folders by the newest note anywhere beneath
+  them, folders still grouped before notes, and every tie broken by the same
+  case-insensitive name comparison the daemon sorts by. A note whose modification
+  time could not be read sorts last among its siblings, and its folder last among
+  folders holding nothing newer: "we do not know when this changed" is not a claim
+  that it changed just now. The order applies to the tag-filtered tree, where a
+  folder is ranked by the newest note it is *showing*, and to the same navigator in
+  the drawer at narrow widths. The choice is kept in `localStorage` for the browser
+  rather than per root — unlike the expanded directories, which are per root — and a
+  toggle disturbs neither the expansion nor the selected note. The times ride on the
+  [tree response](#the-http-api) and the tree is refetched on every change batch that
+  can affect it, so a note saved in the app, or written on disk by something else,
+  moves to the top without a reload
+  ([#116](https://github.com/davison/md-notes/issues/116#issuecomment-5718168243)).
 - **Note.** The rendered note: title, a collapsed metadata panel holding the
   frontmatter, and the body. Notes render server-side as GitHub-flavoured markdown —
   tables, task lists, strikethrough, autolinks, footnotes, and fenced code
@@ -653,8 +743,8 @@ desktop window — the note takes the whole viewport under a compact top bar, in
 rendered view and in the editor alike. The two side panes move into one drawer:
 
 - The **burger** at the left of the top bar opens the drawer on its **Notes** tab,
-  which is the navigator, with the expanded directories and the tag filter it has at
-  any other width.
+  which is the navigator, with the expanded directories, the tag filter and the
+  **Recent first** toggle it has at any other width.
 - The **magnifier** at the right opens the same drawer on its **Search & tags** tab,
   with the cursor already in the search box. Selecting a hit scrolls the note to the
   line as it does on a wide screen.
@@ -750,10 +840,12 @@ and neither is sent anywhere.
 
 Tap targets are not a setting. Wherever the browser reports a coarse pointer or no
 hover — a phone, a tablet, a stylus — or the window is below the narrow breakpoint,
-every row and control that is tapped is at least 40 pixels tall: tree entries, tags
+every row and control that is tapped is at least 40 pixels tall: tree entries, the
+navigator's **Recent first** toggle, tags
 and the clear link, search hits and the search box, the drawer's tabs, the top bar's
 buttons including **New note**, the note bar's including **Delete**, the frontmatter
-disclosure, both dialogs' buttons, and the create prompt's name box. Links *inside* a note are the
+disclosure, both dialogs' buttons, the create prompt's name box, and the home page's
+**Remove** control on a recent root. Links *inside* a note are the
 exception, and have to be — their size is the line of prose they sit in. Under a mouse
 at a wide width the rows keep their compact density.
 
@@ -780,7 +872,12 @@ deleting a note end to end, in the wide layout and in the drawer layout: a name 
 into the prompt, a bare title landing in the open note's folder, a refusal corrected
 in place, the new note reaching a second tab through the events stream, the delete
 button holding one place across an edit, and a deletion that a cancelled confirmation
-does not perform. The viewports are the suite's own literals rather than Playwright's
+does not perform. It drives the navigator's two orders in both layouts — the choice
+surviving a reload, a note saved in the app and a note rewritten on disk each moving
+to the top with no reload — and the home page's **Remove** control: the confirmation
+naming the folder, a cancelled removal that removes nothing, the files still on disk
+afterwards, and a second tab landing on the home page when the root it was open on
+goes. The viewports are the suite's own literals rather than Playwright's
 device registry, whose numbers move between releases
 ([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426)). It
 needs Chromium, which is a separate download; see the README's **Building** section.
@@ -1143,7 +1240,9 @@ the root is not live — so they are one report:
 
 A root whose watcher never started is the same story with nothing covered: its event
 stream answers 503, and the page says live update is not available for that root and
-that changes show up on reload.
+that changes show up on reload. That notice is also the one place where removing a
+root leaves a tab behind: with no stream to end, such a tab keeps the notice and its
+tree instead of routing home — see [Roots](#roots).
 
 None of this stops the daemon, and none of it disables live update for the rest of a
 root. To cover a large root completely, raise `max_watches` (or set it to `0` for no
@@ -1249,7 +1348,8 @@ What an authenticated caller reaches is the UI's own API and nothing else:
 | Reachable | Not reachable |
 |-----------|---------------|
 | `GET /api/roots` | `POST /api/roots` |
-| the per-root reads — `tree`, `note`, `source`, `raw`, `search`, `tags`, `events` | anything else under `/api/` |
+| the per-root reads — `tree`, `note`, `source`, `raw`, `search`, `tags`, `events` | `DELETE /api/roots/{slug}` |
+| | anything else under `/api/` |
 | `PUT`, `POST` and `DELETE` on `/api/r/{slug}/source/{path…}` | |
 | `POST /api/clip`, to a caller presenting the token | |
 | the UI bundle and its client-side routes | |
@@ -1262,10 +1362,20 @@ decides otherwise.
 could register any directory on the machine and then read every file under it
 through the raw endpoint. On loopback that is inside the premise below — anything
 that can reach the port runs as you and can read those files anyway. Over the
-tailnet it is not, so it stays on the machine. It is also the only endpoint *named*
-on the right — everything else there is the default, an endpoint nobody has
+tailnet it is not, so it stays on the machine. It is the only endpoint the allow-list
+*names* on the right; everything else there is the default, an endpoint nobody has
 considered under this heading yet — which is the difference between this list and
 the one milestone three wrote.
+
+`DELETE /api/roots/{slug}`, which milestone seven added, is one of those defaults
+rather than a new exclusion: the allow-list admits reads of `/api/roots` and matches
+nothing for a slug beneath it, so the endpoint was refused under the tailnet name
+before it existed and nothing was added to the list to make it so
+([#115](https://github.com/davison/md-notes/issues/115#issuecomment-5718216788)). It
+is named in the table because a reader should not have to derive it. So milestone
+seven widened nothing here: changing the set of roots — adding one or taking one
+away — stays a thing that happens on the machine, and the `file` a registration may
+now carry changes what the daemon checks before it registers, not who may ask.
 
 `POST /api/clip` was on the right until milestone six. It was refused for a weaker
 reason than root registration — not that a clip is dangerous, but that no write at
@@ -1300,8 +1410,8 @@ registered — but `POST /api/roots` stays loopback-only, so nothing reachable o
 tailnet can widen the set of roots it applies to.
 
 So a remote device reads, searches, creates, edits, deletes and clips into the notes
-the daemon already serves. It cannot add a root, and `mdn open` remains a command for
-the daemon's own machine.
+the daemon already serves. It cannot add a root or remove one, and `mdn open` remains
+a command for the daemon's own machine.
 
 ### The premise, restated
 
@@ -1339,8 +1449,9 @@ fixed and did not go on to narrow.
   between a foreign page and a write.
 - Under `tailnet_host` nothing at all is served unauthenticated, and what an
   authenticated caller reaches is the UI's own API, plus `POST /api/clip` to a
-  caller presenting the token: `POST /api/roots` stays on the machine, and so does
-  any endpoint added later until somebody decides otherwise.
+  caller presenting the token: `POST /api/roots` and `DELETE /api/roots/{slug}` stay
+  on the machine, and so does any endpoint added later until somebody decides
+  otherwise.
 - Every path a request names is resolved through one function: it is cleaned and
   rejected if it leaves the root lexically, then symlinks are evaluated and it is
   rejected again if the real path leaves the root. A symlink pointing back inside the
@@ -1355,9 +1466,9 @@ fixed and did not go on to narrow.
   leaves the root is refused.
 
 The daemon assumes a single-user machine, where every local process already runs as
-the user who owns the notes — so any local process can list roots, register folders,
-and read files under them through the API without presenting anything, and files the
-navigator and search hide are still readable by direct URL. That premise was raised
+the user who owns the notes — so any local process can list roots, register folders
+and unregister them, and read files under them through the API without presenting
+anything, and files the navigator and search hide are still readable by direct URL. That premise was raised
 and accepted deliberately
 ([#2](https://github.com/davison/md-notes/issues/2#issuecomment-5572874194)). The
 [bearer token](#authentication) does not change it: it exists so that a client which
