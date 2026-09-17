@@ -86,6 +86,14 @@ What it needs:
 
 Then the gear, the two settings, and you are reading.
 
+If the tablet has Brave or Chrome on it as well, the UI can be installed as an
+app in its own window rather than opened in a tab —
+[Installing it on the phone](sync.md#installing-it-on-the-phone) is the same
+procedure, and the same caveat applies: what works with the daemon unreachable
+is the application, not the notes. NeoBrowser is a browser of its own and has
+not been checked for the install prompt; on a tablet that route matters less
+than on a phone, since there is no home screen habit to fit into.
+
 ## Route two: Syncthing-Fork and Markor
 
 The tablet holds its own copy of the notes folder and edits it with a plain
