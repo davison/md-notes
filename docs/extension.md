@@ -310,11 +310,21 @@ ending in `.md` or `.markdown` — from a file manager, a terminal's
    the tab goes to that note under that root: `/r/<slug>/<path in the root>`.
    Where two roots overlap, the deepest wins.
 3. Otherwise it registers the file's own directory as a new root — the same
-   thing `mdn open DIR` does — and goes to the note there. Registering a
+   thing `mdn open DIR` does — and goes to the note there. The registration
+   names the file as well as the directory, and the daemon looks for the note
+   before it registers anything: a `file:` URL for a markdown file that is not
+   there leaves the roots listing and the daemon's state file exactly as they
+   were, and the badge says so. That is the defect this step used to have —
+   `file:///etc/no-such-note.md` registered `/etc` for ever
+   ([#50](https://github.com/davison/md-notes/issues/50)). Registering a
    directory the daemon already serves under another name hands back the
    existing root rather than duplicating it, because the daemon compares real
    paths. **This step needs the token**; without one the page is left alone
    and the badge and popup say so.
+
+   A root that did get registered — by this step, or by `mdn open` — is removed
+   from the app's own home page; see
+   [Roots](introduction.md#roots).
 
 The mapping in step 1 assumes POSIX paths — `file:///home/you/notes/a.md`
 becomes `/home/you/notes/a.md`. That is the daemon's world: it runs on Linux
@@ -341,6 +351,7 @@ text the browser was going to show anyway, and the toolbar icon gains a red
 
 | What you see | What happened |
 |--------------|---------------|
+| `No such note: the daemon cannot find <path>, so <dir> was not registered as a root` | The file is not inside any registered root, and the daemon could not find it in the folder it was asked to register — it is gone, it is not markdown, or it is not really inside that folder. Nothing was registered and nothing was written to the daemon's state file. Create the file and reload. |
 | `daemon not reachable at http://localhost:7337` | Nothing is listening. Start `mdn serve`, or fix the daemon URL in the options. |
 | `cross-origin request refused: no token is stored` | The file is not in any registered root, and registering one needs the token. Run `mdn token` and paste it — or register the folder with `mdn open DIR` instead. |
 | `the daemon refused the extension's origin even with a token` | The daemon does not know about tokens: it was built before the token existed. Rebuild it, or use `mdn open DIR`. |
