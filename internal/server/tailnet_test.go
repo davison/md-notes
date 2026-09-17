@@ -429,36 +429,48 @@ func TestTailnetSessionServesTheUI(t *testing.T) {
 func TestTailnetGuardsTheInstallableAppsFiles(t *testing.T) {
 	ts, base := newTailnetServer(t)
 	// Every file the install needs, not only the two the app asks for by
-	// name: a browser downloads the icons itself, on a path of its own that
-	// no attribute in the page governs, and if the guard treated them
-	// differently from the manifest the install would be the one thing on
-	// this host reachable without a session.
-	files := map[string]string{
-		"/manifest.webmanifest":  "application/manifest+json",
-		"/sw.js":                 "text/javascript; charset=utf-8",
-		"/icon.svg":              "image/svg+xml",
-		"/icon-192.png":          "image/png",
-		"/icon-512.png":          "image/png",
-		"/icon-maskable-512.png": "image/png",
+	// name, and each of them asked for the way a browser asks for it: the
+	// manifest as a manifest, the worker as a worker, the icons as images.
+	// The icons are the point of this leg — a browser downloads them itself,
+	// on a path of its own that no attribute in the page governs — and none
+	// of the six is a navigation, which is also what decides the shape of
+	// the refusal: the login page is for a person who typed the name, and a
+	// subresource gets the JSON 401 that an image decoder cannot mistake
+	// for an image.
+	files := []struct{ path, ctype, dest, mode string }{
+		{"/manifest.webmanifest", "application/manifest+json", "manifest", "cors"},
+		{"/sw.js", "text/javascript; charset=utf-8", "serviceworker", "same-origin"},
+		{"/icon.svg", "image/svg+xml", "image", "no-cors"},
+		{"/icon-192.png", "image/png", "image", "no-cors"},
+		{"/icon-512.png", "image/png", "image", "no-cors"},
+		{"/icon-maskable-512.png", "image/png", "image", "no-cors"},
 	}
-	for p := range files {
-		anon := tdo(t, ts, "GET", p, "", navigation())
+	for _, f := range files {
+		anon := tdo(t, ts, "GET", f.path, "", map[string]string{
+			"Sec-Fetch-Dest": f.dest,
+			"Sec-Fetch-Mode": f.mode,
+			"Accept":         "*/*",
+		})
 		if anon.StatusCode != http.StatusUnauthorized {
-			t.Errorf("GET %s with no session: status %d, want 401", p, anon.StatusCode)
+			t.Errorf("GET %s as %s with no session: status %d, want 401", f.path, f.dest, anon.StatusCode)
+			continue
+		}
+		if got := anon.Header.Get("Content-Type"); got != "application/json" {
+			t.Errorf("GET %s as %s with no session: refused as %q, want the JSON refusal", f.path, f.dest, got)
 		}
 	}
 	cookie := login(t, ts, base)
-	for p, want := range files {
-		resp := tdo(t, ts, "GET", p, "", map[string]string{"Cookie": cookie})
+	for _, f := range files {
+		resp := tdo(t, ts, "GET", f.path, "", map[string]string{"Cookie": cookie})
 		if resp.StatusCode != http.StatusOK {
-			t.Errorf("GET %s over the session: status %d", p, resp.StatusCode)
+			t.Errorf("GET %s over the session: status %d", f.path, resp.StatusCode)
 			continue
 		}
-		if got := resp.Header.Get("Content-Type"); got != want {
-			t.Errorf("GET %s: Content-Type %q, want %q", p, got, want)
+		if got := resp.Header.Get("Content-Type"); got != f.ctype {
+			t.Errorf("GET %s: Content-Type %q, want %q", f.path, got, f.ctype)
 		}
 		if got := resp.Header.Get("Cache-Control"); got != "no-cache" {
-			t.Errorf("GET %s: Cache-Control %q, want no-cache", p, got)
+			t.Errorf("GET %s: Cache-Control %q, want no-cache", f.path, got)
 		}
 	}
 }
