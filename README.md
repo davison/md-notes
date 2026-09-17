@@ -29,7 +29,9 @@ deleted in it, and a browser-level suite holds the result in CI — and
 milestone six took up what five left behind: clipping works from another
 tailnet node, the clipper converts the tables and code blocks it used to
 mangle, the refusals say what is wrong, and the note bar and the
-deleted-on-disk banner do what they promise. The inbox is still ahead.
+deleted-on-disk banner do what they promise. Milestone seven closed the way a
+root could be registered by accident and left there, and gave the navigator a
+last-modified order beside its alphanumeric one. The inbox is still ahead.
 
 - **Daemon.** One static Go binary. Serves the web UI, watches one or more
   root folders, renders markdown server-side, shells out to ripgrep for
@@ -42,10 +44,13 @@ deleted-on-disk banner do what they promise. The inbox is still ahead.
   are created from the top bar behind a name prompt and deleted from the note
   bar behind a confirmation. The browser tab names the note you have open. The
   bundle is embedded in the binary, served compressed and cached, and does not
-  carry the editor to a page that is only reading. A Playwright suite under
+  carry the editor to a page that is only reading. The tree is alphanumeric or
+  most-recently-modified-first, at a toggle the browser remembers. A Playwright
+  suite under
   `ui/e2e` drives the built daemon in a real browser as a CI job of its own,
-  so the layout, the display settings, the tap targets, the asset cache and
-  the create and delete flows are held by a check rather than by a
+  so the layout, the display settings, the tap targets, the asset cache, the
+  create and delete flows, the navigator's two orders and removing a root are
+  held by a check rather than by a
   measurement in a comment.
 - **Browser extension.** Chromium Manifest V3. Clips a readable page or a
   selection as markdown and posts it to the daemon. Also intercepts local
@@ -134,6 +139,10 @@ mdn open ~/projects/some-repo
 That registers the folder with the running daemon, remembers it under
 "Recent" on the home page, and opens the browser at it. `--no-browser`
 prints the URL instead. The daemon must already be running.
+
+A recent root is removed again from the home page — the **Remove** control
+beside it, behind a confirmation naming the folder. Nothing leaves the disk,
+and the configured notes root cannot be removed at all.
 
 Search is a literal, case-insensitive phrase over the current root, run by
 ripgrep, so gitignored and hidden files never match. Results show the
@@ -239,9 +248,11 @@ token, which is how you revoke a device.
 What a caller reaches over the tailnet is narrower than on loopback: the
 UI's own API — the reads, creating, saving and deleting a note, the events
 stream, search and tags — and `POST /api/clip` to a caller presenting the
-token, but not `POST /api/roots`. Registering a folder is the step from
+token, but neither `POST /api/roots` nor `DELETE /api/roots/{slug}`.
+Registering a folder is the step from
 "read my notes" to "read any file on this machine", so it stays on the
-machine. The clip does not: it writes one file into the notes root's clips
+machine, and so does unregistering one: changing the set of roots is a thing
+that happens at the keyboard of the machine serving them. The clip does not: it writes one file into the notes root's clips
 directory, at a name the daemon chooses, which is narrower than the note
 save the tailnet already admits.
 
@@ -275,9 +286,10 @@ registering a folder is the one action that stays on the daemon's machine.
 **Opening local files.** Switch on **Allow access to file URLs** in its
 details and a local `.md` or `.markdown` file opens in md-notes instead of
 rendering as plain text: under the root that already contains it, or under its
-own folder, which the extension registers as a new root. The page is left
+own folder, which the extension registers as a new root — naming the file, so a
+URL for a note that is not there registers nothing. The page is left
 alone, with a red `!` on the toolbar icon saying why, when the daemon cannot be
-reached or no token is stored.
+reached, no token is stored, or the note the URL names does not exist.
 
 [docs/extension.md](docs/extension.md) covers loading it, the token, clipping,
 opening local files, and each permission it asks for and why.
@@ -316,7 +328,13 @@ under a long failure message, with the deleted-on-disk banner offering to
 recreate the note from the draft in one step. It also took the two
 test-suite sharp edges M5 left: the vitest teardown flake is gone at its
 cause, and a browser check now holds the rule that a dialog's `Escape`
-reaches nothing beneath it.
+reaches nothing beneath it. Milestone seven took two asks of the operator's:
+a `file:` URL for a markdown file that does not exist no longer registers its
+directory as a permanent root — the daemon looks for the note before it
+registers anything — and a root registered by accident is removed from the home
+page rather than by editing the state file, both of them refused under the
+tailnet name as registration always was; and the navigator's tree can be ordered
+by last modification, most recent first, at a toggle the browser remembers.
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
 today, [docs/extension.md](docs/extension.md) the extension,
 [docs/e-ink.md](docs/e-ink.md) the e-ink tablet, and the milestone
@@ -326,7 +344,8 @@ records
 [three](docs/milestones/3-clipper-authentication-and-tailnet.md),
 [four](docs/milestones/4-polish-phone-e-ink-and-the-bundle.md),
 [five](docs/milestones/5-create-and-delete-notes.md),
-[six](docs/milestones/6-tailnet-clipping-and-the-m5-backlog.md))
+[six](docs/milestones/6-tailnet-clipping-and-the-m5-backlog.md),
+[seven](docs/milestones/7-roots-recency-and-the-installable-app.md))
 record the decisions behind them. The inbox, which turns URLs shared from a
 phone into clips, follows in a later milestone. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
