@@ -1,0 +1,10 @@
+{
+  "//": "The service worker is checked on its own: its globals are the worker scope's, which the DOM lib the rest of the UI is checked against does not have, and the two libs cannot be in one program.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "WebWorker"],
+    "types": []
+  },
+  "include": ["src/sw.ts"],
+  "exclude": []
+}

@@ -1,65 +1,7 @@
 /// <reference types="vitest/config" />
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { brotliCompressSync, constants, gzipSync } from "node:zlib";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig } from "vite";
 import preact from "@preact/preset-vite";
-
-/**
- * What is worth compressing: the text kinds the build emits. Every
- * extension here must also appear in the daemon's own Content-Type table
- * (`uiTypes` in internal/server/server.go), or an asset this plugin
- * compresses would be served as application/octet-stream — which, for a
- * module script, is a load failure rather than a cosmetic one.
- * `TestUITypesCoverTheBundle` fails the build's own output against that
- * table, so the two lists cannot drift apart quietly.
- */
-const compressible = /\.(css|html|js|json|map|svg)$/;
-
-/**
- * Below this a compressed copy buys nothing worth the bytes it adds to the
- * binary: a gzip header and trailer alone are 18 bytes, and a payload this
- * small crosses the wire in the same packet either way.
- */
-const minBytes = 1024;
-
-/**
- * Writes `<file>.br` and `<file>.gz` beside each compressible build output,
- * so the daemon can answer `Accept-Encoding` from the embedded filesystem
- * without carrying a compressor. Node's own `zlib` does both codings, so
- * this costs no dependency; brotli runs at its maximum quality and gzip at
- * level 9 because a build pays for it once and every page load is repaid.
- * A copy that came out no smaller than its source is not written, and the
- * daemon falls back to the identity bytes when a sibling is missing.
- */
-function precompress(): Plugin {
-  let dir = "";
-  return {
-    name: "mdn-precompress",
-    apply: "build",
-    configResolved(config) {
-      dir = resolve(config.root, config.build.outDir);
-    },
-    closeBundle() {
-      for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {
-        if (!entry.isFile() || !compressible.test(entry.name)) continue;
-        const file = join(entry.parentPath, entry.name);
-        const raw = readFileSync(file);
-        if (raw.byteLength < minBytes) continue;
-        const br = brotliCompressSync(raw, {
-          params: {
-            [constants.BROTLI_PARAM_QUALITY]: constants.BROTLI_MAX_QUALITY,
-            [constants.BROTLI_PARAM_MODE]: constants.BROTLI_MODE_TEXT,
-            [constants.BROTLI_PARAM_SIZE_HINT]: raw.byteLength,
-          },
-        });
-        if (br.byteLength < raw.byteLength) writeFileSync(`${file}.br`, br);
-        const gz = gzipSync(raw, { level: 9 });
-        if (gz.byteLength < raw.byteLength) writeFileSync(`${file}.gz`, gz);
-      }
-    },
-  };
-}
+import { precompress } from "./vite.precompress.ts";
 
 export default defineConfig({
   plugins: [preact(), precompress()],
