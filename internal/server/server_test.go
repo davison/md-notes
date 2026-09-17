@@ -82,6 +82,10 @@ func newTestServerWith(t *testing.T, opts ...Option) (*httptest.Server, string) 
 		"assets/only-gz.css":    {Data: []byte(uiOnlyGzCSS)},
 		"assets/only-gz.css.gz": {Data: gzipBytes(uiOnlyGzCSS)},
 		"favicon.svg":           {Data: []byte("<svg/>")},
+		// The installable app's two unhashed files: neither is under the
+		// hashed directory, so both live or die by the no-cache rule.
+		"manifest.webmanifest": {Data: []byte(`{"name":"MD Notes"}`)},
+		"sw.js":                {Data: []byte("self.addEventListener('fetch', () => {})")},
 		// One of each kind the build can emit, so the Content-Type table is
 		// answering rather than the host's mime.types.
 		"assets/main.js.map":  {Data: []byte(`{"version":3}`)},
@@ -1029,10 +1033,33 @@ func TestUIContentTypes(t *testing.T) {
 		"/assets/font-x.woff2":  "font/woff2",
 		"/assets/data-x.json":   "application/json",
 		"/assets/blob-x.bin":    "application/octet-stream",
+		"/manifest.webmanifest": "application/manifest+json",
+		"/sw.js":                "text/javascript; charset=utf-8",
 		"/r/notes/some/note.md": "text/html; charset=utf-8",
 	} {
 		if got := uiGet(t, ts, "GET", path, "identity", nil).Header.Get("Content-Type"); got != want {
 			t.Errorf("%s: Content-Type %q, want %q", path, got, want)
+		}
+	}
+}
+
+// TestUIInstallableAssetsAreNotCachedBlind covers the two files the
+// installable app adds outside the hashed directory. Neither carries a
+// content hash, so neither may be given the immutable year: a browser that
+// kept the old worker would keep the old shell with it, and the M4 rule that
+// index.html always revalidates would hold for one file out of three.
+func TestUIInstallableAssetsAreNotCachedBlind(t *testing.T) {
+	ts, _ := newTestServer(t)
+	for _, path := range []string{"/manifest.webmanifest", "/sw.js"} {
+		resp := uiGet(t, ts, "GET", path, "identity", nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("%s: %d, want 200", path, resp.StatusCode)
+		}
+		if got := resp.Header.Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("%s: Cache-Control %q, want no-cache", path, got)
+		}
+		if resp.Header.Get("ETag") == "" {
+			t.Errorf("%s: no ETag, so revalidating costs the whole body", path)
 		}
 	}
 }

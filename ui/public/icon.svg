@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The app's mark: a note on the app's own ink. Drawn once here and rasterised
+  for the manifest, because Chrome's installability criteria want a PNG at
+  192 and at 512 and will not take an SVG for them.
+
+      rsvg-convert -w 192 -h 192 public/icon.svg > public/icon-192.png
+      rsvg-convert -w 512 -h 512 public/icon.svg > public/icon-512.png
+      rsvg-convert -w 512 -h 512 public/icon-maskable.svg > public/icon-maskable-512.png
+
+  The colours are the application's own: the page background and foreground
+  of the dark scheme in ui/src/style.css, so the mark sits on the same ink as
+  the app it opens.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="MD Notes">
+  <rect width="512" height="512" rx="112" fill="#1b1b1b"/>
+  <rect x="116" y="92" width="280" height="328" rx="28" fill="#fbfbfa"/>
+  <rect x="156" y="140" width="152" height="30" rx="15" fill="#1b1b1b"/>
+  <g fill="#c4c4bf">
+    <rect x="156" y="204" width="200" height="18" rx="9"/>
+    <rect x="156" y="248" width="168" height="18" rx="9"/>
+    <rect x="156" y="292" width="200" height="18" rx="9"/>
+    <rect x="156" y="336" width="120" height="18" rx="9"/>
+  </g>
+</svg>
