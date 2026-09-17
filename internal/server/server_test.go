@@ -82,10 +82,16 @@ func newTestServerWith(t *testing.T, opts ...Option) (*httptest.Server, string) 
 		"assets/only-gz.css":    {Data: []byte(uiOnlyGzCSS)},
 		"assets/only-gz.css.gz": {Data: gzipBytes(uiOnlyGzCSS)},
 		"favicon.svg":           {Data: []byte("<svg/>")},
-		// The installable app's two unhashed files: neither is under the
-		// hashed directory, so both live or die by the no-cache rule.
-		"manifest.webmanifest": {Data: []byte(`{"name":"MD Notes"}`)},
-		"sw.js":                {Data: []byte("self.addEventListener('fetch', () => {})")},
+		// The installable app's unhashed files: none is under the hashed
+		// directory, so all of them live or die by the no-cache rule, and
+		// all of them are behind the tailnet guard
+		// (TestTailnetGuardsTheInstallableAppsFiles).
+		"manifest.webmanifest":  {Data: []byte(`{"name":"MD Notes"}`)},
+		"sw.js":                 {Data: []byte("self.addEventListener('fetch', () => {})")},
+		"icon.svg":              {Data: []byte("<svg/>")},
+		"icon-192.png":          {Data: []byte("PNG")},
+		"icon-512.png":          {Data: []byte("PNG")},
+		"icon-maskable-512.png": {Data: []byte("PNG")},
 		// One of each kind the build can emit, so the Content-Type table is
 		// answering rather than the host's mime.types.
 		"assets/main.js.map":  {Data: []byte(`{"version":3}`)},

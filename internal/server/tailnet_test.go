@@ -428,17 +428,27 @@ func TestTailnetSessionServesTheUI(t *testing.T) {
 // and would conclude there is no manifest to install.
 func TestTailnetGuardsTheInstallableAppsFiles(t *testing.T) {
 	ts, base := newTailnetServer(t)
-	for _, p := range []string{"/manifest.webmanifest", "/sw.js"} {
+	// Every file the install needs, not only the two the app asks for by
+	// name: a browser downloads the icons itself, on a path of its own that
+	// no attribute in the page governs, and if the guard treated them
+	// differently from the manifest the install would be the one thing on
+	// this host reachable without a session.
+	files := map[string]string{
+		"/manifest.webmanifest":  "application/manifest+json",
+		"/sw.js":                 "text/javascript; charset=utf-8",
+		"/icon.svg":              "image/svg+xml",
+		"/icon-192.png":          "image/png",
+		"/icon-512.png":          "image/png",
+		"/icon-maskable-512.png": "image/png",
+	}
+	for p := range files {
 		anon := tdo(t, ts, "GET", p, "", navigation())
 		if anon.StatusCode != http.StatusUnauthorized {
 			t.Errorf("GET %s with no session: status %d, want 401", p, anon.StatusCode)
 		}
 	}
 	cookie := login(t, ts, base)
-	for p, want := range map[string]string{
-		"/manifest.webmanifest": "application/manifest+json",
-		"/sw.js":                "text/javascript; charset=utf-8",
-	} {
+	for p, want := range files {
 		resp := tdo(t, ts, "GET", p, "", map[string]string{"Cookie": cookie})
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("GET %s over the session: status %d", p, resp.StatusCode)
