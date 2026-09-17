@@ -185,9 +185,11 @@ file name. The conflict copy is an ordinary file from that moment on, and
 Syncthing propagates it to the other devices like any other.*
 
 **The navigator shows a conflict file as an ordinary note**, because that is
-what it is: a markdown file in a root the daemon serves. It sorts next to the
-note it came from, renders, is searchable, and can be opened in the editor and
-edited. Two versions of a note with the same `# Heading` show the same title in
+what it is: a markdown file in a root the daemon serves. In the navigator's
+alphanumeric order it sorts next to the note it came from, and under **Recent
+first** it arrives at the top of its folder, which is where a copy Syncthing has
+just written belongs; it renders, is searchable, and can be opened in the editor
+and edited. Two versions of a note with the same `# Heading` show the same title in
 the note pane, so the file name in the navigator is what tells them apart.
 
 ### Resolving one

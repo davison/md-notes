@@ -41,11 +41,13 @@ effect at once.
   that already does, the switch is belt and braces.
 
 Tap targets do not need a setting. The application's own controls — tree
-entries, tags and the clear link, search hits and the search box, the drawer's
+entries, the navigator's **Recent first** toggle, tags and the clear link,
+search hits and the search box, the drawer's
 tabs, the top bar's buttons including **New note**, the note bar's including
 **Delete**, the frontmatter disclosure, the conflict banner's buttons including
-**Recreate the note**, both dialogs' buttons and the create
-prompt's name box — are at least 40 pixels tall wherever the browser
+**Recreate the note**, both dialogs' buttons, the create
+prompt's name box and the home page's **Remove** control on a recent root — are
+at least 40 pixels tall wherever the browser
 reports a touch or stylus pointer, including the wide layout you get by zooming
 out. A mouse keeps the compact rows. Links *inside* a note are the exception,
 and have to be: their size is the line of prose they sit in, and a 40-pixel line
@@ -142,7 +144,8 @@ by the height of an on-screen keyboard.
 
 Since milestone five that is no longer a measurement taken once: the `ui/e2e`
 suite re-measures the light override, the suppressed flash and every named tap
-target — the create control and the dialogs' own controls included — on five
+target — the create control, the dialogs' own controls and the navigator's order
+toggle included — on five
 coarse-pointer profiles on every push, as a CI job of its own. [What holds these
 numbers](introduction.md#what-holds-these-numbers) says what it covers.
 
