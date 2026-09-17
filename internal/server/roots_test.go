@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -16,9 +18,10 @@ import (
 	"github.com/davison/md-notes/internal/token"
 )
 
-// Refusing a registration whose stated file is missing is about what ends
-// up on disk as much as about what comes back over HTTP, so every case
-// here reads the state file afterwards. M7-R1, adopting
+// The registry's two new answers — refusing a registration whose stated
+// file is missing, and unregistering a recent root — are about what ends
+// up on disk as much as what comes back over HTTP, so every case here
+// reads the state file afterwards. M7-R1 and M7-R2, adopting
 // [#50](https://github.com/davison/md-notes/issues/50).
 
 // newRootsServer is a daemon whose state file path the test knows, which
@@ -257,6 +260,198 @@ func TestAddRootVerifiesBeforeTheRegistry(t *testing.T) {
 	}
 }
 
+// Removing a recent root takes it out of the registry and the state file,
+// and takes nothing off disk. M7-R2.
+func TestDeleteRoot(t *testing.T) {
+	ts, base, statePath := newRootsServer(t)
+	proj := filepath.Join(base, "proj")
+	if err := os.Mkdir(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	note := filepath.Join(proj, "todo.md")
+	if err := os.WriteFile(note, []byte("# todo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	do(t, ts, "POST", "/api/roots", `{"path":"`+proj+`"}`, nil)
+	if rec := persisted(t, statePath); len(rec) != 1 {
+		t.Fatalf("before the delete the state file holds %v", rec)
+	}
+
+	resp := do(t, ts, "DELETE", "/api/roots/proj", "", nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status %d, want 204: %s", resp.StatusCode, readAll(t, resp.Body))
+	}
+	if body := readAll(t, resp.Body); body != "" {
+		t.Errorf("204 carried a body: %q", body)
+	}
+	if slugs := registeredSlugs(t, ts); len(slugs) != 1 || slugs[0] != "notes" {
+		t.Errorf("roots = %v, want the notes root alone", slugs)
+	}
+	if rec := persisted(t, statePath); len(rec) != 0 {
+		t.Errorf("state file still holds %v", rec)
+	}
+	// Unregistering is not deleting: the folder and its notes are there.
+	if _, err := os.Stat(note); err != nil {
+		t.Errorf("the note went with the root: %v", err)
+	}
+	// Its routes are gone with it.
+	if resp := do(t, ts, "GET", "/api/r/proj/tree", "", nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("tree of a removed root: status %d, want 404", resp.StatusCode)
+	}
+	// And it stays gone across a restart, which is the state file's job.
+	reg, err := roots.New(filepath.Join(base, "notes"), statePath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list := reg.List(); len(list) != 1 || list[0].Kind != roots.KindNotes {
+		t.Errorf("after a restart roots = %+v", list)
+	}
+}
+
+// The refusals, each leaving the registry and the state file as they were.
+func TestDeleteRootRefusals(t *testing.T) {
+	ts, base, statePath := newRootsServer(t)
+	proj := filepath.Join(base, "proj")
+	if err := os.Mkdir(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	do(t, ts, "POST", "/api/roots", `{"path":"`+proj+`"}`, nil)
+
+	for _, c := range []struct {
+		name, slug, code string
+		status           int
+	}{
+		// The notes root is the daemon's configuration — `--root`, or the
+		// config file — and not a registration to undo. Removing it would
+		// leave a daemon serving nothing, until the next restart put it
+		// straight back.
+		{"the notes root", "notes", "notes_root", http.StatusForbidden},
+		{"an unknown slug", "nope", "not_found", http.StatusNotFound},
+		{"a slug that is nearly one", "proj-2", "not_found", http.StatusNotFound},
+	} {
+		resp := do(t, ts, "DELETE", "/api/roots/"+c.slug, "", nil)
+		if resp.StatusCode != c.status {
+			t.Errorf("%s: status %d, want %d", c.name, resp.StatusCode, c.status)
+			continue
+		}
+		if code, msg := refusalOf(t, resp); code != c.code {
+			t.Errorf("%s: code %q (%s), want %q", c.name, code, msg, c.code)
+		}
+	}
+	if slugs := registeredSlugs(t, ts); len(slugs) != 2 {
+		t.Errorf("roots = %v, want both still registered", slugs)
+	}
+	if rec := persisted(t, statePath); len(rec) != 1 || rec[0].Slug != "proj" {
+		t.Errorf("state file holds %v, want the one recent root", rec)
+	}
+
+	// Removing the same root twice: the second is an unknown slug, not a
+	// second removal.
+	if resp := do(t, ts, "DELETE", "/api/roots/proj", "", nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("first delete: status %d", resp.StatusCode)
+	}
+	resp := do(t, ts, "DELETE", "/api/roots/proj", "", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("second delete: status %d, want 404", resp.StatusCode)
+	}
+	if code, _ := refusalOf(t, resp); code != "not_found" {
+		t.Errorf("second delete: code %q, want not_found", code)
+	}
+}
+
+// A tab open on a root that has just been removed has to find out. The
+// recorded route is the event stream: the daemon ends it when the root
+// goes, and the reconnect the browser makes meets the 404 every route
+// under a slug now gives, which is what sends the page home.
+func TestDeletedRootEndsItsEventStream(t *testing.T) {
+	ts, base, _ := newRootsServer(t)
+	proj := filepath.Join(base, "proj")
+	if err := os.Mkdir(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proj, "todo.md"), []byte("# x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	do(t, ts, "POST", "/api/roots", `{"path":"`+proj+`"}`, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/r/proj/events", nil)
+	req.Host = "localhost:7337"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	next := sseReader(t, resp.Body)
+	next(func(l string) bool { return l == ": connected" })
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := io.ReadAll(resp.Body)
+		done <- err
+	}()
+	if r := do(t, ts, "DELETE", "/api/roots/proj", "", nil); r.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete: status %d", r.StatusCode)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("reading the stream after the delete: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stream was still open five seconds after its root was removed")
+	}
+	// The reconnect a browser makes next meets the 404.
+	if r := do(t, ts, "GET", "/api/r/proj/events", "", nil); r.StatusCode != http.StatusNotFound {
+		t.Errorf("events after the delete: status %d, want 404", r.StatusCode)
+	}
+}
+
+// Unregistering is refused under the tailnet name exactly as registering
+// is, and by the same rule: the allow-list admits `GET /api/roots` and
+// nothing else under that path, so `DELETE /api/roots/{slug}` is refused
+// by the default rather than by anything added for it. M7-R2's "never
+// widens what a tailnet credential can do".
+func TestDeleteRootIsLoopbackOnly(t *testing.T) {
+	ts, base, statePath := newRootsServer(t, WithTailnetHost(tailnetName))
+	tok := daemonToken(t, base)
+	cookie := login(t, ts, base)
+	proj := filepath.Join(base, "proj")
+	if err := os.Mkdir(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	do(t, ts, "POST", "/api/roots", `{"path":"`+proj+`"}`, nil)
+
+	for _, c := range []struct {
+		name string
+		hdr  map[string]string
+	}{
+		{"with the token", bearerHeader(tok)},
+		{"with a browser session", map[string]string{"Cookie": cookie, "Origin": tailnetOrigin}},
+	} {
+		resp := tdo(t, ts, "DELETE", "/api/roots/proj", "", c.hdr)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status %d, want 403", c.name, resp.StatusCode)
+			continue
+		}
+		if code := guardCode(t, resp); code != "loopback_only" {
+			t.Errorf("%s: code %q, want loopback_only", c.name, code)
+		}
+	}
+	// Nothing moved, on either side of the name.
+	if slugs := registeredSlugs(t, ts); len(slugs) != 2 {
+		t.Errorf("roots = %v, want both still registered", slugs)
+	}
+	if rec := persisted(t, statePath); len(rec) != 1 || rec[0].Slug != "proj" {
+		t.Errorf("state file holds %v, want the root untouched", rec)
+	}
+	// The same call on loopback, which is where it belongs, works.
+	if resp := do(t, ts, "DELETE", "/api/roots/proj", "", nil); resp.StatusCode != http.StatusNoContent {
+		t.Errorf("delete on loopback: status %d, want 204", resp.StatusCode)
+	}
+}
+
 // Registering with a file is loopback-only too: the field changes what the
 // daemon checks before it registers, not who may ask it to.
 func TestAddRootWithAFileIsLoopbackOnly(t *testing.T) {
@@ -279,5 +474,25 @@ func TestAddRootWithAFileIsLoopbackOnly(t *testing.T) {
 	}
 	if slugs := registeredSlugs(t, ts); len(slugs) != 1 {
 		t.Errorf("roots = %v, want the notes root alone", slugs)
+	}
+}
+
+// The daemon's own words for the two new refusals, which the extension and
+// the home page both branch on rather than reading the sentence.
+func TestRootRefusalsCarryACode(t *testing.T) {
+	ts, base, _ := newRootsServer(t)
+	proj := filepath.Join(base, "proj")
+	if err := os.Mkdir(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resp := do(t, ts, "POST", "/api/roots", `{"path":"`+proj+`","file":"gone.md"}`, nil)
+	code, message := refusalOf(t, resp)
+	if code != "not_found" || !strings.Contains(message, "gone.md") {
+		t.Errorf("missing file: code %q, message %q — the message should name the file", code, message)
+	}
+	resp = do(t, ts, "DELETE", "/api/roots/notes", "", nil)
+	code, message = refusalOf(t, resp)
+	if code != "notes_root" || message == "" {
+		t.Errorf("the notes root: code %q, message %q", code, message)
 	}
 }

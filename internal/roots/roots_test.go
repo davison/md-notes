@@ -875,3 +875,88 @@ func TestAddForVerifiesTheFileFirst(t *testing.T) {
 		t.Fatalf("AddFor(empty dir, \"\") = %v", err)
 	}
 }
+
+// Remove takes a recent root out of the registry and the state file, and
+// refuses the two roots there is no sense in removing. M7-R2.
+func TestRemove(t *testing.T) {
+	r, notes, statePath := newTestRegistry(t)
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	note := filepath.Join(dir, "todo.md")
+	if err := os.WriteFile(note, []byte("# todo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	added, err := r.Add(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := r.Remove("nope"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Remove(unknown) err = %v, want os.ErrNotExist", err)
+	}
+	if _, err := r.Remove("my-notes"); !errors.Is(err, ErrNotesRoot) {
+		t.Errorf("Remove(notes root) err = %v, want ErrNotesRoot", err)
+	}
+	if got := r.List(); len(got) != 2 {
+		t.Fatalf("a refused Remove changed the registry: %+v", got)
+	}
+
+	gone, err := r.Remove(added.Slug)
+	if err != nil {
+		t.Fatalf("Remove(%q) = %v", added.Slug, err)
+	}
+	if gone.Path != dir {
+		t.Errorf("Remove returned %+v, want the root it removed", gone)
+	}
+	if got := r.List(); len(got) != 1 || got[0].Kind != KindNotes {
+		t.Fatalf("List() = %+v, want the notes root alone", got)
+	}
+	if _, ok := r.Get(added.Slug); ok {
+		t.Error("the removed root is still resolvable by slug")
+	}
+	// Unregistering is not deleting.
+	if _, err := os.Stat(note); err != nil {
+		t.Errorf("the note went with the root: %v", err)
+	}
+	// The state file is rewritten, so the root stays gone across a restart.
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), dir) {
+		t.Errorf("the removed root is still in the state file: %s", data)
+	}
+	again, err := New(notes, statePath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := again.List(); len(got) != 1 {
+		t.Fatalf("after a reload List() = %+v", got)
+	}
+	// Removing it twice is an unknown slug the second time.
+	if _, err := r.Remove(added.Slug); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("second Remove err = %v, want os.ErrNotExist", err)
+	}
+}
+
+// A slug freed by a removal is available again, and the root that takes it
+// is the one the state file names afterwards.
+func TestRemoveFreesTheSlug(t *testing.T) {
+	r, _, _ := newTestRegistry(t)
+	a := filepath.Join(t.TempDir(), "docs")
+	b := filepath.Join(t.TempDir(), "docs")
+	os.Mkdir(a, 0o755)
+	os.Mkdir(b, 0o755)
+	if _, err := r.Add(a); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Remove("docs"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.Add(b)
+	if err != nil || got.Slug != "docs" {
+		t.Fatalf("Add after Remove = %+v, %v; want the freed slug", got, err)
+	}
+}

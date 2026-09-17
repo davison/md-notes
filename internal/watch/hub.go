@@ -4,8 +4,9 @@ import "sync"
 
 // Hub fans one root's batches out to any number of subscribers.
 type Hub struct {
-	mu   sync.Mutex
-	subs map[chan Batch]*subscriber
+	mu     sync.Mutex
+	subs   map[chan Batch]*subscriber
+	closed bool
 }
 
 type subscriber struct {
@@ -18,20 +19,45 @@ func NewHub() *Hub { return &Hub{subs: map[chan Batch]*subscriber{}} }
 // Subscribe returns a channel of batches and a function that unsubscribes
 // and closes it. A subscriber that falls behind drops batches rather than
 // blocking the others; the next batch it does receive has empty Paths so
-// it refreshes everything.
+// it refreshes everything. On a hub that has been closed the channel comes
+// back already closed, so a subscriber that raced the close still ends.
+//
+// Membership in subs is what decides whether a channel is still to be
+// closed, and it is read and written under the mutex: the cancel below and
+// Close can both reach the same channel, and only the first of them may
+// close it.
 func (h *Hub) Subscribe() (<-chan Batch, func()) {
 	ch := make(chan Batch, 8)
 	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		close(ch)
+		return ch, func() {}
+	}
 	h.subs[ch] = &subscriber{}
 	h.mu.Unlock()
-	var once sync.Once
 	return ch, func() {
-		once.Do(func() {
-			h.mu.Lock()
-			delete(h.subs, ch)
-			h.mu.Unlock()
-			close(ch)
-		})
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if _, ok := h.subs[ch]; !ok {
+			return
+		}
+		delete(h.subs, ch)
+		close(ch)
+	}
+}
+
+// Close ends every subscription and refuses new ones. It is how a stream
+// on a root that has just been unregistered finds out: its channel closes,
+// the handler returns, and the browser's reconnect meets the 404 an
+// unknown slug now gives. Safe to call more than once.
+func (h *Hub) Close() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.closed = true
+	for ch := range h.subs {
+		delete(h.subs, ch)
+		close(ch)
 	}
 }
 

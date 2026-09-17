@@ -46,6 +46,12 @@ var ErrNotDir = errors.New("not a directory")
 // about the folder.
 var ErrNoNote = errors.New("no such file inside the directory")
 
+// ErrNotesRoot is returned by Remove for the configured notes root. That
+// root is the daemon's configuration — `--root`, or `notes_root` in the
+// config file — rather than a registration to undo, and the next start
+// would put it straight back.
+var ErrNotesRoot = errors.New("the notes root is configured, not registered")
+
 // ErrTooManyLinks is returned by the lexical walk below when a chain of
 // symlinks is longer than it will follow. It is deliberately not silence:
 // a walk that gave up and answered "does not leave the root" would hand
@@ -298,6 +304,37 @@ func (root Root) hasFile(file string) error {
 		return ErrNoNote
 	}
 	return nil
+}
+
+// Remove unregisters the recent root named by slug and rewrites the state
+// file without it. It removes nothing from disk: the folder and every file
+// in it are left exactly as they are, and a root removed by mistake is
+// registered again with `mdn open`.
+//
+// An unknown slug is os.ErrNotExist and the notes root is ErrNotesRoot;
+// neither changes the registry or the state file.
+func (r *Registry) Remove(slug string) (Root, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i, x := range r.roots {
+		if x.Slug != slug {
+			continue
+		}
+		if x.Kind != KindRecent {
+			return Root{}, ErrNotesRoot
+		}
+		kept := make([]Root, 0, len(r.roots)-1)
+		kept = append(kept, r.roots[:i]...)
+		kept = append(kept, r.roots[i+1:]...)
+		was := r.roots
+		r.roots = kept
+		if err := r.save(); err != nil {
+			r.roots = was
+			return Root{}, err
+		}
+		return x, nil
+	}
+	return Root{}, fmt.Errorf("unknown root %q: %w", slug, os.ErrNotExist)
 }
 
 // save writes the recent roots atomically. Caller holds mu.

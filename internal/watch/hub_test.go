@@ -63,3 +63,47 @@ func TestHubSlowSubscriberDropsThenRefreshes(t *testing.T) {
 		t.Fatalf("after recovery, got %v", got.Paths)
 	}
 }
+
+// Close ends every subscription at once, which is how a stream on a root
+// that has just been unregistered finds out (M7-R2): the reader sees its
+// channel close and stops, rather than sitting on keepalives for a root
+// the daemon no longer serves. Cancelling afterwards, and subscribing
+// afterwards, both have to be safe — the stream's own defer runs either
+// side of this.
+func TestHubCloseEndsEverySubscription(t *testing.T) {
+	h := NewHub()
+	a, cancelA := h.Subscribe()
+	b, _ := h.Subscribe()
+	h.Close()
+	for i, ch := range []<-chan Batch{a, b} {
+		select {
+		case _, ok := <-ch:
+			if ok {
+				t.Fatalf("subscriber %d received a batch after Close", i)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("subscriber %d was not closed", i)
+		}
+	}
+	if h.Len() != 0 {
+		t.Fatalf("Len = %d after Close, want 0", h.Len())
+	}
+	// The cancel the reader holds must not close an already closed channel.
+	cancelA()
+	// And nothing published after Close reaches anyone, or panics.
+	h.Publish(Batch{Paths: []string{"x.md"}})
+	h.Close()
+
+	// A subscription taken after Close is closed from the start, so a
+	// stream that raced the removal ends rather than waiting for ever.
+	c, cancelC := h.Subscribe()
+	select {
+	case _, ok := <-c:
+		if ok {
+			t.Fatal("a subscription taken after Close received a batch")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("a subscription taken after Close was not closed")
+	}
+	cancelC()
+}

@@ -303,7 +303,11 @@ func remoteAllowed(r *http.Request) bool {
 	switch {
 	case rest == "roots":
 		// Listing the roots, yes. Registering one, no: that is the path
-		// from this credential to any directory on the machine.
+		// from this credential to any directory on the machine. This case
+		// is the path `/api/roots` exactly; unregistering a root is
+		// `/api/roots/{slug}`, which no case names and the default below
+		// refuses, so M7-R2's DELETE is loopback-only without anything
+		// being added here.
 		return read
 	case rest == "clip":
 		// A clip writes one file into `clips_dir` inside the notes root,
