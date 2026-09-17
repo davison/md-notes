@@ -345,9 +345,18 @@ from the old one, which usually happens without your noticing.
 the app and its cache from the phone and nothing else — no note, no root, no
 setting on the daemon.
 
+**What has not been run on a real device.** All of the above was exercised in
+headless Chromium against the daemon — over loopback, and over a TLS stand-in
+for `tailscale serve` — and not on a phone. One step is beyond what that can
+reach: on Android, Chrome mints the installed app through a Google server (it
+builds a small APK for it), and that server cannot reach a `.ts.net` name.
+Chrome uploads the bytes of the icon it has already downloaded for exactly this
+case, so the install should still complete — but that is a claim about a server
+whose source is not public. If an install ever produces an app with a blank or
+default icon, this is where to look; the app itself would still work.
+
 On iOS the same page adds to the home screen from Safari's share sheet and
-opens full-screen. It has not been checked on an iPhone; the figures and
-behaviour above are from Android and from headless Chromium.
+opens full-screen. That has not been checked either.
 
 The two routes answer different questions, and this project uses both:
 

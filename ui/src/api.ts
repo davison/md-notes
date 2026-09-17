@@ -207,7 +207,10 @@ export interface CreatedNote {
  * back under the same name.
  *
  * Rejects with a SourceError carrying the daemon's code — "exists" for a
- * name already taken, "invalid_path", "not_markdown", "outside_root".
+ * name already taken, "invalid_path", "not_markdown", "outside_root" — or,
+ * when there was no answer to carry a code, with a plain Error holding
+ * UNREACHABLE. Callers read the message either way; session.ts files a
+ * non-SourceError under the code "network".
  */
 export async function createNote(slug: string, path: string, source?: string): Promise<CreatedNote> {
   const init: RequestInit = { method: "POST" };
@@ -220,7 +223,10 @@ export async function createNote(slug: string, path: string, source?: string): P
   return (await res.json()) as CreatedNote;
 }
 
-/** Deletes one markdown note. Rejects with a SourceError. */
+/**
+ * Deletes one markdown note. Rejects with a SourceError, or with a plain
+ * Error holding UNREACHABLE when the daemon did not answer at all.
+ */
 export async function deleteNote(slug: string, path: string): Promise<void> {
   const res = await send(sourceURL(slug, path), { method: "DELETE" });
   if (!res.ok) throw await sourceErrorFrom(res);
