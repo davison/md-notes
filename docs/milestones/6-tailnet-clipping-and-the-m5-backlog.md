@@ -1,13 +1,13 @@
 # M6 — Clipping over the tailnet, clipper conversion fixes, and the M5 backlog
 
-Tracking issue: [#96](https://github.com/davison/md-notes/issues/96). Four of its five
+Tracking issue: [#96](https://github.com/davison/md-notes/issues/96). Its five
 implementation tasks are merged on `main` at
-[`70f1986`](https://github.com/davison/md-notes/commit/70f1986).
+[`ed1d5f3`](https://github.com/davison/md-notes/commit/ed1d5f3).
 
-> **Draft — stage one.** [#101](https://github.com/davison/md-notes/issues/101) (M6-R5,
-> test hygiene) is in flight and independent QA has not reported. Every section below
-> that depends on either carries a marked placeholder, and this note goes when they are
-> filled.
+> **Draft.** Independent QA has not yet reported against
+> [#96](https://github.com/davison/md-notes/issues/96). The requirement outcomes table
+> and three other sections carry a marked placeholder for its verdicts, and this note
+> goes when they are filled.
 
 ## Goal and outcome
 
@@ -74,9 +74,20 @@ names **New note** as the way back and offers **Recreate the note**, which opens
 prompt with the lost note's path in the box and the orphaned draft as the body; one
 confirmation puts the file back and the editor carries straight on over it, clean.
 
-> **Placeholder — stage two.** The test-hygiene half (M6-R5,
-> [#101](https://github.com/davison/md-notes/issues/101)) is not yet merged and is not
-> described here.
+**The test suites own their own lifecycle, and two of their premises now trip a test.**
+The vitest teardown flake M5's review met — `ReferenceError: window is not defined` from
+a preact effect firing after jsdom is gone — was reproduced at 8 failures in 240
+whole-suite runs, its cause measured rather than guessed, and fixed by the file
+unmounting its last tree while the environment is still alive: `cleanup()` in `afterEach`
+rather than `beforeEach`. Afterwards, 240 whole-suite runs and 200 runs of the file
+alone, both at zero, and the reviewer's own 232 clean runs against 3 failures in 120 on
+`main`. `ui/e2e/harness.mjs` gained `drawerReady`, with `dialogReady` moved in beside it
+from the one `describe` block and the one hand-written copy it had lived in, and every
+drawer and dialog site in the three e2e files now waits through them. And the
+`stopPropagation` premise M5's record had to leave unowned — "no document-level handler
+sees Escape while a dialog is open" — is asserted in Chromium against the application as
+it ships: with `e.stopPropagation()` removed from `ui/src/dialog.tsx`, the suite is 38
+tests and 37 passing, and the one failure is that case.
 
 The system as it stands is described in [the introduction](../introduction.md);
 [What is reachable under that name](../introduction.md#what-is-reachable-under-that-name-and-what-is-not),
@@ -92,11 +103,11 @@ is the one it grew.
 | [#98](https://github.com/davison/md-notes/issues/98) Clipper: headerless tables and captions beside code blocks | M6-R2 | [#45](https://github.com/davison/md-notes/issues/45), [#47](https://github.com/davison/md-notes/issues/47) | [#105](https://github.com/davison/md-notes/pull/105) | [`e2b5a47`](https://github.com/davison/md-notes/commit/e2b5a47) |
 | [#99](https://github.com/davison/md-notes/issues/99) Refusal codes: too-long names and dangling links out of the root | M6-R3 | [#82](https://github.com/davison/md-notes/issues/82), [#88](https://github.com/davison/md-notes/issues/88) | [#104](https://github.com/davison/md-notes/pull/104) | [`915e715`](https://github.com/davison/md-notes/commit/915e715) |
 | [#100](https://github.com/davison/md-notes/issues/100) UI: a note bar that never scrolls, and a banner that recreates the note | M6-R4 | [#91](https://github.com/davison/md-notes/issues/91), [#92](https://github.com/davison/md-notes/issues/92) | [#106](https://github.com/davison/md-notes/pull/106) | [`70f1986`](https://github.com/davison/md-notes/commit/70f1986) |
-| [#101](https://github.com/davison/md-notes/issues/101) Test hygiene: the vitest teardown flake and two e2e harness edges | M6-R5 | [#87](https://github.com/davison/md-notes/issues/87), [#89](https://github.com/davison/md-notes/issues/89) | *stage two* | *stage two* |
+| [#101](https://github.com/davison/md-notes/issues/101) Test hygiene: the vitest teardown flake and two e2e harness edges | M6-R5 | [#87](https://github.com/davison/md-notes/issues/87), [#89](https://github.com/davison/md-notes/issues/89) | [#109](https://github.com/davison/md-notes/pull/109) | [`ed1d5f3`](https://github.com/davison/md-notes/commit/ed1d5f3) |
 | [#102](https://github.com/davison/md-notes/issues/102) Document M6 and synthesize its record | M6-R6 | — | this one | — |
 
-**The shape of the milestone is the review loop.** Three of the four merged tasks needed
-more than one round, and every extra round found a real defect **in the fix the previous
+**The shape of the milestone is the review loop.** Four of the five tasks needed more
+than one round, and three of those rounds found a real defect **in the fix the previous
 round asked for**, not in the original work. #104's first fix for a silently-abandoned
 symlink walk introduced a string match that put the very defects the task exists to close
 back for any path whose *name* contained the words `too many links`. #106's fix for a
@@ -106,7 +117,15 @@ being squashed into one cell took a single-column headerless table out of the
 requirement's own stated default. Each was caught by the re-review that existed to check
 the fix, which is the loop doing exactly what it is for — and it is also the strongest
 thing this record has to say about how much of the milestone's confidence rests on that
-one mechanism. See [What the reviews changed](#what-the-reviews-changed).
+one mechanism.
+
+The fifth is the mirror image and worth naming as such: **PR #109's review found nothing
+wrong with the code and two things wrong with the record**, and blocked on both — a count
+of affected files that was off by eight, and a measurement that would not reproduce on the
+reviewer's machine. Both were in comments already posted, so both were answered by
+`**Correction:**` comments rather than by edits, and one of them changed the *work*: with
+the correct count the reason for deferring a file evaporated, and the file was taken in the
+fix pass. See [What the reviews changed](#what-the-reviews-changed).
 
 **The scope decision was written before the work, not after it.** M5's record named its
 own absence as a gap; here the coordinator posted scope, sequencing and the standing
@@ -116,11 +135,11 @@ left that this milestone closed by doing rather than by writing down afterwards.
 
 ## Requirement outcomes
 
-> **Placeholder — stage two.** Independent QA has not reported against
+> **Placeholder — QA.** Independent QA has not reported against
 > [#96](https://github.com/davison/md-notes/issues/96). The Status column below records
 > what the merged work and its reviews establish; **no cell is a QA verdict**, and each
-> is replaced by one (with its citation) when QA posts. M6-R5 and M6-R6 additionally
-> await [#101](https://github.com/davison/md-notes/issues/101) and this task's own merge.
+> is replaced by one (with its citation) when QA posts. M6-R6 additionally awaits this
+> task's own merge.
 
 | ID | Requirement | Status |
 |----|-------------|--------|
@@ -128,7 +147,7 @@ left that this milestone closed by doing rather than by writing down afterwards.
 | M6-R2 | Clipper conversion: a headerless table as a GFM table with a synthesised header, `colspan` and nested tables degraded to readable markdown, content beside a code block kept and only chrome dropped, six fixtures each shown failing against the current converter | Delivered in [#105](https://github.com/davison/md-notes/pull/105), reviewed [request changes → approve](https://github.com/davison/md-notes/pull/105#issuecomment-5704840025). **QA verdict pending** |
 | M6-R3 | Refusal codes: a too-long basename `400 invalid_path` naming the limit on create and save; a dangling directory symlink and a dangling two-hop chain out of the root `403 outside_root` on create and delete; a row per case in the create and delete tables with the whole tree compared after every case; the introduction's caveat paragraph gone; the `true == false` literal gone | Delivered in [#104](https://github.com/davison/md-notes/pull/104), reviewed [request changes → request changes → approve](https://github.com/davison/md-notes/pull/104#issuecomment-5705028218). **QA verdict pending** |
 | M6-R4 | Note bar and banner: `scrollWidth == clientWidth` at 320 px and 1280 px under an unbreakable message of any length, the full text on hover or focus; the banner naming **New note** and offering a control that opens the create prompt pre-filled with the path and the draft; the stray `name` field gone from `browser.newContext` | Delivered in [#106](https://github.com/davison/md-notes/pull/106), reviewed [approve → request changes → approve](https://github.com/davison/md-notes/pull/106#issuecomment-5705241693). **QA verdict pending** |
-| M6-R5 | Test hygiene: the vitest teardown flake reproduced, named and fixed at 200 consecutive runs; `drawerReady` in `ui/e2e/harness.mjs` used by every drawer case; the `stopPropagation` premise asserted or pinned with the #78 citation | [#101](https://github.com/davison/md-notes/issues/101) **in flight** |
+| M6-R5 | Test hygiene: the vitest teardown flake reproduced, named and fixed at 200 consecutive runs; `drawerReady` in `ui/e2e/harness.mjs` used by every drawer case; the `stopPropagation` premise asserted or pinned with the #78 citation | Delivered in [#109](https://github.com/davison/md-notes/pull/109), reviewed [request changes → approve](https://github.com/davison/md-notes/pull/109#issuecomment-5706400250). **QA verdict pending** |
 | M6-R6 | Documentation and record: user documentation reflecting every delivered change including the extension page, the introduction's tailnet and refusal sections and the sync page where it mentions clipping; the roadmap row; this record; the sealed M4 record carrying its annotation | This task. The M4 annotation is [in place](4-polish-phone-e-ink-and-the-bundle.md#post-merge-annotation--2026-09-16), merged with [#103](https://github.com/davison/md-notes/pull/103) |
 
 ## Decisions
@@ -460,6 +479,86 @@ can be explained.
   incidental to `lineEnding("")`. If a later task decides the empty-draft case should have
   an answer of its own, that decision — and a case for it — is where it belongs.
 
+### The teardown flake is an effect flush that outlives the file, fixed in the file
+
+Reproduced before anything was changed, which is what M6-R5 asks for and what makes the
+cause a measurement rather than a guess: the file alone passed 200 runs, and the whole
+`ui` suite failed 8 times in 240 (3.3%), every one of them the error M5's reviewer met, to
+the character ([#101 (comment)](https://github.com/davison/md-notes/issues/101#issuecomment-5705629120)).
+
+`@testing-library/preact` installs its own `afterEach(cleanup)` only when vitest injects
+the test globals, and this project does not set `test.globals`, so the unmount is each
+file's to make — and this file made it in `beforeEach`, which unmounts the *previous*
+case's tree and leaves the last one mounted for the file's life. What is still queued
+against it is a `useEffect` flush: the fetch a `NoteView` starts from its mount effect
+resolves after the `act()` that rendered it returned, so its commit schedules through
+preact's own `requestAnimationFrame`-raced-with-100 ms path rather than into act's
+collector, and `act()` flushes only what its collector received. A probe on
+`options.requestAnimationFrame` counted **one flush still queued when the last case
+ends**. Normally it lands a frame later and does nothing; under eighteen jsdom
+environments it lands after vitest has torn the environment down.
+
+Moving `cleanup()` to `afterEach` makes that flush *harmless* rather than merely rarer —
+`flushAfterPaintEffects` skips a component whose `_parentDom` is null, and unmounting
+nulls it. The same hook restores `Element.prototype.scrollIntoView`, which two cases wrote
+over and left. After: 240 whole-suite runs at zero, and the reviewer reproduced both arms
+independently (3 failures in 120 on `main`, 232 clean runs across the two branch heads).
+
+- **Rejected:** fake timers — the 1.5 s flash timer is cleared by its own effect cleanup
+  and was never the leak, and the stack names the effect body, not the timer; reading
+  `window` defensively in `NoteView`, which would hide a late effect rather than stop one,
+  and would be a product change in a test-hygiene task; `--retry` on the vitest run, which
+  is "a flake with the evidence deleted".
+
+### `dialogReady` moves into the harness rather than `drawerReady` being written beside it
+
+#89 and M6-R5 both say "a `drawerReady` helper beside `dialogReady`", which reads as though
+`dialogReady` were already in the harness. It was not: it was a `const` inside one
+`describe` in `create-delete.test.mjs`, and `display.test.mjs` carried the same wait
+written out again with a nine-line comment. Adding only the new helper would have left the
+pair across three files, which is the arrangement that produced the duplicate
+([#101 (comment)](https://github.com/davison/md-notes/issues/101#issuecomment-5705889165)).
+
+- **Small deviation, declared:** `drawerReady` asks for one thing the old inline waits did
+  not — that `.panes` carries the `open` class as well as containing the active element.
+  The panes element exists at every width, so "contains the active element" alone is also
+  true of a wide window's navigator pane, and a caller asking `drawerReady` is asking about
+  the drawer. Nothing any case asserts changed.
+- **Noted with it:** two sites moved from Playwright's `waitForFunction` (30 s default) to
+  the harness `waitFor` (20 s) — less headroom on a slow machine, for one wait with one
+  explanation.
+
+### The `stopPropagation` premise gets the browser check, and the comment as well
+
+M6-R5 offered either. The check is the stronger, and M5's reason for retiring the old one
+does not block it. That decision
+([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5702378000)) refused to
+build a stacking a reader cannot reach, and all three of its observations still hold — but
+the premise #89 asks to own is not "some layer's handler is outranked", it is "**no
+document-level handler sees Escape while a dialog is open**", and the application already
+registers a document-level capture-phase `keydown` listener that is live under the prompt:
+the note pane's Ctrl+E toggle. It is not an Escape handler, but it is invoked for Escape
+exactly when propagation reaches the document, which is the question
+([#101 (comment)](https://github.com/davison/md-notes/issues/101#issuecomment-5705889343)).
+
+So an init script wraps every `keydown` listener the page registers on `window` or
+`document`, delegating and recording which target's listener ran: `["document"]` with no
+dialog open — the control, without which the assertion would pass against a probe that
+sees nothing — and `["window"]` with the prompt up. With `e.stopPropagation()` removed from
+`ui/src/dialog.tsx` and the binary rebuilt, the suite is 38 tests and 37 passing, and the
+sole failure is this case on `["window", "document"]`. The rule is now held in both
+environments — jsdom against a listener the test registers, Chromium against one the
+application registers — which is what #89 means by giving the standing condition an owner.
+
+- **Trade-off:** the check observes listener *invocation*, through a wrapper the page would
+  not otherwise have. It is one step away from pure black box — the price of asking a
+  question about propagation rather than about pixels.
+- **Rejected:** the comment-only option, which pins the reasoning but trips nothing; and
+  forcing a real stacking, which #78 already rejected and which nothing here needs.
+- **Taken with it, because it had become false:** the long comment in
+  `create-delete.test.mjs` saying that commenting out `e.stopPropagation()` "fails nothing
+  in this suite".
+
 ### Scope and sequencing, taken at the start
 
 The coordinator's decision of 2026-09-16
@@ -531,15 +630,17 @@ belonging ([#103](https://github.com/davison/md-notes/pull/103#issuecomment-5704
 
 Every task was reviewed by an independent model session under the reviewer contract, in a
 clean worktree, and every review ran the suites and drove the built artefacts rather than
-reading them. Three of the four requested changes; the fourth approved and then requested
+reading them. Four of the five requested changes; the fifth approved and then requested
 changes on the delta. **Every round after the first found a defect in the fix the previous
-round had asked for.**
+round had asked for** — except #109's, whose two blocking findings were both defects in
+the *record* of work whose code the reviewer could not fault.
 
 | PR | Verdict | What the review changed |
 |----|---------|-------------------------|
 | [#103](https://github.com/davison/md-notes/pull/103) | request changes, then approve | One blocking: the **"Not yet" box was half-deleted**, leaving two lines quoting the very decision the PR supersedes hanging off the end of a paragraph, on a page M6-R1 names explicitly — so the extension page told a reader, four paragraphs after telling them clipping works, that tailnet clipping is a future task nobody has decided. Three non-blocking: two test doc comments still asserting clipping is refused (the plan had grepped for *rows*, and comments are not rows), and a test computing the expected filename from its own clock, which could straddle midnight — fixed by taking the path from the daemon's own answer through one `clipPath` helper, which removed code rather than adding it. The reviewer exercised a scratch daemon under a made-up tailnet name across sixteen request shapes, including `POST /api/roots/../clip` and `POST /api/clip/../roots`, to confirm the guard's cleaner and the mux's agree |
 | [#105](https://github.com/davison/md-notes/pull/105) | request changes, then approve with three items, then one more commit | Two blocking. **Presentational tables were being squashed into a cell** — a manual laid out in one `<td>` became a single GFM cell holding a heading, two paragraphs and a flattened data table, and Pygments' line-number wrapper lost the code's line breaks irrecoverably, both reproduced through the built bundle in Chromium. And **an overrunning `rowspan` invented empty rows** — `<td rowspan="5">` on a two-row table produced five, with the `100` ceiling in `span()` making 99 junk rows reachable from one attribute. Six non-blocking, five taken: chrome one level down (a code header bar leaked `main.goCopy`), `rowsOf` section ordering (which carried a real new bug — a `thead` written after the `tbody` read as headerless and its header row written out as data), a zero-cell row producing a delimiter with no dashes that goldmark renders as a paragraph of pipes, alignment lost under a synthesised header, and a missing `role="button"` in the docs. The re-review of the fix then found that the new data-table rule had taken a single-column headerless table out of M6-R2's own default, and that a comment blaming a DOM quirk described a cause neither DOM has — both closed in `c3facc4` |
 | [#104](https://github.com/davison/md-notes/pull/104) | request changes, request changes, then approve | Round one blocking: **the refusal table's new row was false for a chain longer than 16 hops**, and the caveat paragraph that used to name such exceptions had been removed in the same commit titled "the refusal table is the whole account again" — a stated exception traded for an unstated one. Round two blocking, and the sharpest finding of the milestone: the fix's `strings.Contains(err.Error(), "too many links")` **fired on ordinary paths**, because every other error `EvalSymlinks` returns is an `*fs.PathError` that quotes the path — so a note or folder a reader named `too many links` answered `422` for every absent path, and, because `ErrTooManyLinks` is neither `os.ErrNotExist` nor `ErrOutside`, the new walk was skipped entirely and **#82's four wrong codes came back** on the exact shapes the task closes. With the phrase in the *root's* path, every absent path in that root answered `422` for every client. No test named such a path; ten rows now do. Five non-blocking, four taken |
+| [#109](https://github.com/davison/md-notes/pull/109) | request changes, then approve | **The only review in the milestone whose blocking findings were both about the record and neither about the code** — "no change to any shipped file is needed", in the reviewer's words, and the verdict was still request changes. One: a count of nine affected test files that was one, with the census to prove it, which mattered because the *reason given for deferring the work* rested on the wrong number. Two: a "teeth" measurement of 6 failures in 6 runs that gave 0 in 12 on the reviewer's machine, with a reading of the call site explaining why it cannot fail there. Five non-blocking, three of them on the Escape probe's listener wrapper — `this`, per-phase bookkeeping, and the unwrapped `handleEvent` form — all taken. The reviewer reproduced the flake in both arms (3 failures in 120 on `main`, 232 clean runs on the branch), read `@testing-library/preact`'s auto-cleanup gate and preact's `_parentDom` check at source rather than taking the narrative, and rebuilt the binary with `stopPropagation` removed to confirm the new case is the only one in `ui/e2e` that fails |
 | [#106](https://github.com/davison/md-notes/pull/106) | approve, then request changes on the delta, then approve | The first pass approved with four non-blocking, of which the useful one was that **the caret jumped to the top of the note after a successful recreate** — `recreated()` bumps `generation`, and the editor rebuilds its state on a generation change, which throws the selection and the scroll away for a draft the guard has just proved unchanged. The fix parked the editor state, which survived selection, scroll *and* undo — and introduced the blocking finding on the delta: **the parked state carried a line ending captured when it was built**, so a note whose file changed on disk in its endings only was silently rewritten whole on the next keystroke, with no conflict, no banner and no reader action, in an application whose notes root is expected to be under Syncthing. Fixed by removing the second copy rather than keeping two in step. The final re-review's one non-blocking finding is the empty-draft line-ending case, recorded as a decision after the merge |
 
 Each PR carries the operator's confirmation as a comment: "reviewed and accepted by
@@ -552,10 +653,11 @@ explicit: an approved PR merges without a per-PR wait.
 
 ## Corrections to the record itself
 
-Three times a claim on this milestone's record was wrong about the code, or about the
-page it named. The first two were corrected by a new comment rather than by editing the
-one they correct, so the claim and its answer both stay legible; the third is corrected
-here.
+Five times a claim on this milestone's record was wrong about the code, about a
+measurement, or about the page it named. Four were corrected by a new comment rather than
+by editing the one they correct, so the claim and its answer both stay legible; the fifth
+is corrected here. **Two of the five were found by a review that found nothing wrong with
+the code**, and one of them changed what the task did.
 
 - **The `CELL_BLOCK` comment blamed a DOM quirk that does not exist.** It said the
   node-name walk was needed because the DOM the tests run under answers a `querySelector`
@@ -589,6 +691,36 @@ here.
   [#107](https://github.com/davison/md-notes/issues/107) beside it; the comments are not
   edited.
 
+- **"Nine other `ui/src` test files share this shape" — the number was one.** The
+  teardown decision deferred a sweep on the ground that it would be "an unreviewed
+  ten-file diff inside a test-hygiene PR". The review of PR #109 counted the thirteen
+  `ui/src/*.test.tsx` files against the *hook* each `cleanup()` call sits in, rather than
+  against the call sites a grep returns, and found exactly one other file with the shape —
+  `navigator.test.tsx`, which was also the only file in `ui/src` with no `afterEach` hook
+  at all ([#109](https://github.com/davison/md-notes/pull/109#issuecomment-5706208251),
+  finding 1). The correction does not re-justify the deferral on other grounds: with the
+  number right, the stated reason does not survive, so **the deferral is withdrawn and the
+  file is fixed in the same PR**, and it says that no capture should be opened from the old
+  figure ([#101 (comment)](https://github.com/davison/md-notes/issues/101#issuecomment-5706269532)).
+  It also records how the wrong number was written, which is the half that stops it
+  recurring. The substantive claim beside it survived the recount and the reviewer checked
+  it independently: `note-view` was still the only file that *could* fail, `Navigator`
+  having no fetch and no effect that reaches a global.
+- **A measurement that does not travel is not evidence.** The `drawerReady` decision led
+  with 6 failures in 6 runs of the mutated harness under stated load; the reviewer got **0
+  in 12** on their machine and explained the mechanism — in `open()` the click is followed
+  by a round-trip and six assertions before any key is sent, which is far more than the
+  frame the effect needs
+  ([#109](https://github.com/davison/md-notes/pull/109#issuecomment-5706208251), finding 2).
+  The re-measurement, interleaved A/B, reproduced 6/6 locally — and the figure was retired
+  anyway, on the principle that a number another machine cannot get is not evidence
+  ([#101 (comment)](https://github.com/davison/md-notes/issues/101#issuecomment-5706271793)).
+  What replaces it is the reviewer's instrumentation, which does travel: counting the polls
+  each `drawerReady` call needs on a quiet machine, all five calls in `layout.test.mjs`
+  need a second 50 ms poll, on three consecutive runs, on both machines. The correction also
+  volunteers a second error the finding had not caught — the failures were not "every one
+  of them" the `closed()` timeout; a third of them were a focus assertion elsewhere.
+
 **A process incident, recorded on the PR at the time.** PR #104's description was briefly
 overwritten with another task's PR text at 21:23Z and restored a few minutes later: a
 sibling session writing to the same scratchpad path replaced the file passed to
@@ -611,11 +743,8 @@ Adopted and closed by this milestone:
 | [#88](https://github.com/davison/md-notes/issues/88) | [#99](https://github.com/davison/md-notes/issues/99) | A too-long note name answered `500 io_error` and logged as a server fault, on the save path as much as on create; from M5 QA |
 | [#91](https://github.com/davison/md-notes/issues/91) | [#100](https://github.com/davison/md-notes/issues/100) | The note bar still scrolling sideways under an unbreakable failure message — 479 px in a 320 px bar after M5's fix — and a stray `name` field passed to `browser.newContext` |
 | [#92](https://github.com/davison/md-notes/issues/92) | [#100](https://github.com/davison/md-notes/issues/100) | The deleted-on-disk banner still telling the reader to recreate the file with another tool, where **New note** could already do it |
-
-> **Placeholder — stage two.** [#87](https://github.com/davison/md-notes/issues/87) and
-> [#89](https://github.com/davison/md-notes/issues/89) are adopted by
-> [#101](https://github.com/davison/md-notes/issues/101), which has not merged; they are
-> added here when it does.
+| [#87](https://github.com/davison/md-notes/issues/87) | [#101](https://github.com/davison/md-notes/issues/101) | A vitest teardown flake in `ui/src/note-view.test.tsx` — a preact effect firing after jsdom is torn down, met once by M5's reviewer in a file that PR did not touch. The same shape #46 was for the Go side |
+| [#89](https://github.com/davison/md-notes/issues/89) | [#101](https://github.com/davison/md-notes/issues/101) | Two edges in `ui/e2e`: a `drawerReady` helper beside `dialogReady`, the drawer's `Escape` effect attaching a frame late being the same race `dialogReady` already blunts; and an owner for the standing condition the retired `Escape` decision left behind |
 
 Raised by this milestone's reviews, for a later task to adopt:
 
@@ -623,8 +752,9 @@ Raised by this milestone's reviews, for a later task to adopt:
 |---------|------|-----------|
 | [#107](https://github.com/davison/md-notes/issues/107) | the re-review of [#105](https://github.com/davison/md-notes/pull/105#issuecomment-5704840025) | A table using `th` cells as row labels with a `pre` in the value cell is classified a data table by the new rule — any `th` makes a grid — and its code is inlined into one GFM cell, losing the line breaks. The same shape *without* the `th` keeps the code. The trade-off is recorded on #98; this is the case it costs |
 | [#108](https://github.com/davison/md-notes/issues/108) | the review of [#106](https://github.com/davison/md-notes/pull/106#issuecomment-5704943849) | The clipped save-status message is unreachable on a touch screen: 34 px of message at 320 px and 104 px at 390 px against 2,839 px of text, with the whole of it in a `title` that a coarse pointer cannot raise. M6-R4 asked for "hover *or* focus" and is met; the decision weighed the keyboard reader and not the touch reader |
+| [#110](https://github.com/davison/md-notes/issues/110) | [#101](https://github.com/davison/md-notes/issues/101), reworded after the review of [#109](https://github.com/davison/md-notes/pull/109#issuecomment-5706208251) | Install the UI test cleanup once, in a vitest setup file, rather than per test file. Every file under `ui/src` now cleans up in an `afterEach`, but nothing stops the next one from getting it wrong and the fix lives in thirteen places. Written first from the "nine other files" figure and rewritten from the census once that was corrected — the capture the review said should *not* be opened from the old number, opened from the right one |
 
-> **Placeholder — stage two.** Captures QA raises are added here with their disposition.
+> **Placeholder — QA.** Captures QA raises are added here with their disposition.
 
 ## Known gaps at the boundary
 
@@ -642,9 +772,11 @@ will surprise someone who has not read this far:
 | The too-long message names 255 bytes, a limit the daemon has not verified for the filesystem in front of it. On a filesystem with a smaller `NAME_MAX` the number would be too generous while the refusal stayed correct | [#99](https://github.com/davison/md-notes/issues/99#issuecomment-5703933261), [#104](https://github.com/davison/md-notes/pull/104#issuecomment-5704545261) finding 5 |
 | One of the three "nothing can follow this chain" errors is recognised by the *text* of a stdlib error, gated on it wrapping no `*fs.PathError`. A Go release that rewords it drops that case back to a `500`; `TestSaveSourceUnfollowableChain` is the canary | [#99](https://github.com/davison/md-notes/issues/99#issuecomment-5704685999) |
 | **Renaming a note is still not in the application at all.** Untouched by this milestone, as by M5 | [the README](../../README.md), [#74](https://github.com/davison/md-notes/issues/74) |
+| Nothing installs the UI test cleanup for a file that forgets it. All thirteen `ui/src` test files now clean up in an `afterEach`, but each does it for itself, and `@testing-library/preact` will not install its own while this project injects no test globals | [#110](https://github.com/davison/md-notes/issues/110) |
+| The Escape propagation check observes listener *invocation*, through a wrapper the page would not otherwise have — one step away from a pure black-box assertion, and the price of asking a question about propagation rather than about pixels | [#101](https://github.com/davison/md-notes/issues/101#issuecomment-5705889343) |
 | Two pages carried a claim the merged tasks had made false until this record's own task swept them: the README's *Over the tailnet* paragraph and the introduction's *Confinement* list both still said `POST /api/clip` stays on the machine, three sections after the introduction's own tailnet table had been corrected to say the opposite | this task, [#102](https://github.com/davison/md-notes/issues/102) |
 
-> **Placeholder — stage two.** Gaps M6-R5 leaves, and gaps QA finds, are added here.
+> **Placeholder — QA.** Gaps QA finds are added here.
 
 ## Where the record is silent
 
@@ -659,12 +791,22 @@ will surprise someone who has not read this far:
 - **No `cc:needs-decision` gate was raised, and the milestone's one security widening went
   through without one.** #97's plan says so explicitly: "the security decision this task
   takes is the one #95 and M6-R1 exist to take, and M6-R1 states the outcome; it is
-  recorded as a decision, not raised as a gate". That is defensible — the operator asked
-  for the capability by name in [#95](https://github.com/davison/md-notes/issues/95), and
-  the requirement fixed the outcome before any task started. What it is not is a human
-  reading the reasoning: the comparison that justifies the widening, the rejection of the
-  session cookie, and the judgement that a clips folder filling up is an acceptable cost
-  were all struck between model sessions sharing one identity.
+  recorded as a decision, not raised as a gate". The coordinator recorded where the
+  authority came from after this record named the absence
+  ([#97 (comment)](https://github.com/davison/md-notes/issues/97#issuecomment-5705427981)):
+  the operator asked on 2026-09-16 whether there was a good reason not to permit clipping
+  over the tailnet or whether it had simply not been captured, #95 was written in that
+  exchange, and the operator opened the milestone with "start M6 with #95 and the M5
+  captures", to which M6-R1 was written. So the human decision preceded the requirement
+  rather than arising inside it, which is why no gate was raised.
+  **The gap stands anyway, in two halves.** The exchange lives in the coordinator's
+  session and not on GitHub, so the comment is a report of it after the fact — the same
+  shape as M5's late decisions, and the same thing this record says about them. And what
+  the operator authorised was the *capability*; the reasoning that bounds it — the
+  comparison with the create M5-R2 already admits, the rejection of the session cookie,
+  and the judgement that a clips folder filling up is an acceptable cost — was struck
+  entirely between model sessions sharing one identity, and no gate ever put any of it in
+  front of a person.
 - **The operator has not used any of this.** M5's shape was set by the operator opening the
   merged UI and finding two things no review and no test had. Nothing equivalent happened
   here: every trade-off in this milestone was judged by an implementer, a reviewer and
@@ -682,5 +824,5 @@ will surprise someone who has not read this far:
   pull request description.** It was caught, restored within minutes and recorded on the
   PR. Nothing says what else that arrangement can reach.
 
-> **Placeholder — stage two.** QA's findings, their disposition and anything QA's exercise
+> **Placeholder — QA.** QA's findings, their disposition and anything QA's exercise
 > says about the silences above are added here.

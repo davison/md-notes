@@ -313,7 +313,9 @@ invalid_path` instead of `500`, and a dangling symlink chain out of the root
 is answered `403 outside_root` on create and delete however long it is; and
 the note bar no longer scrolls sideways under a long failure message, with
 the deleted-on-disk banner offering to recreate the note from the draft in
-one step.
+one step. It also took the two test-suite sharp edges M5 left: the vitest
+teardown flake is gone at its cause, and a browser check now holds the rule
+that a dialog's `Escape` reaches nothing beneath it.
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
 today, [docs/extension.md](docs/extension.md) the extension,
 [docs/e-ink.md](docs/e-ink.md) the e-ink tablet, and the milestone
