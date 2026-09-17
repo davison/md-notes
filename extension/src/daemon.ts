@@ -16,6 +16,8 @@ export type FailureKind =
   | "loopback_only"
   /** The daemon does not answer to the name the request arrived under. */
   | "bad_host"
+  /** The daemon could not find the note a registration was to be verified against. */
+  | "not_found"
   | "refused"
   | "bad_response";
 
@@ -113,6 +115,11 @@ async function failureFor(res: Response, settings: Settings): Promise<DaemonErro
   // The tailnet allow-list, and a name the daemon does not answer to. Both
   // are refusals of the *endpoint* or the *address*, and reading either as a
   // token problem sends the user to fix something that is not broken.
+  // A registration refused because the note named with it is not there
+  // (M7-R1). It is not a refusal of the endpoint, the origin or the token,
+  // and the caller has to be able to say which it is: this is the one
+  // failure whose remedy is the file, not the setup.
+  if (code === "not_found") return new DaemonError("not_found", message, res.status, message);
   if (code === "loopback_only") return new DaemonError("loopback_only", message, res.status, message);
   if (code === "bad_host") return new DaemonError("bad_host", message, res.status, message);
   if (code === "cross_origin" || (res.status === 403 && code === "")) {
@@ -188,19 +195,32 @@ export async function listRoots(settings: Settings, options: CallOptions = {}): 
  * Registers an absolute directory as a root and returns it, or the existing
  * root when the daemon already serves that real path. The POST carries the
  * extension's Origin, so it needs the token.
+ *
+ * `file` is the note the registration is for — a path inside `dir`, which
+ * for this extension is a base name — and the daemon registers nothing
+ * unless it is there, answering `404 not_found` instead. That is what stops
+ * a `file:` URL for a note that does not exist from leaving its directory
+ * registered for ever
+ * ([#50](https://github.com/davison/md-notes/issues/50)); the check is the
+ * daemon's, so there is no window in which the root exists and this
+ * extension still has to undo it. An empty `file` sends no field at all and
+ * is the registration `mdn open` makes.
  */
 export async function registerRoot(
   settings: Settings,
   dir: string,
+  file: string,
   options: CallOptions = {},
 ): Promise<Root> {
+  const payload: { path: string; file?: string } = { path: dir };
+  if (file !== "") payload.file = file;
   const body = await call(
     settings,
     "/api/roots",
     {
       method: "POST",
       headers: headers(settings, true, true),
-      body: JSON.stringify({ path: dir }),
+      body: JSON.stringify(payload),
     },
     options.fetch ?? fetch,
   );

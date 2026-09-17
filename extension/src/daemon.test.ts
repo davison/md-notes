@@ -106,6 +106,7 @@ describe("listRoots", () => {
     const err = await registerRoot(
       { daemonUrl: "https://laptop.ts.net", token: "s3cret" },
       "/n",
+      "a.md",
       {
         fetch: r.fetcher(
           respond(403, {
@@ -128,17 +129,21 @@ describe("listRoots", () => {
 });
 
 describe("registerRoot", () => {
-  it("POSTs the absolute directory with the bearer token", async () => {
+  it("POSTs the absolute directory and the file, with the bearer token", async () => {
     const r = record();
     const root = await registerRoot(
       withToken,
       "/home/you/scratch",
+      "todo.md",
       { fetch: r.fetcher(respond(200, { slug: "scratch", path: "/home/you/scratch", kind: "recent" })) },
     );
     expect(root.slug).toBe("scratch");
     const call = r.calls[0];
     expect(call?.init?.method).toBe("POST");
-    expect(call?.init?.body).toBe('{"path":"/home/you/scratch"}');
+    // The file rides with the directory, so the daemon refuses the whole
+    // registration when the note is not there (M7-R1) rather than leaving
+    // this extension to undo one it has already made.
+    expect(call?.init?.body).toBe('{"path":"/home/you/scratch","file":"todo.md"}');
     expect(call?.init?.headers).toMatchObject({
       "Content-Type": "application/json",
       Authorization: "Bearer s3cret",
@@ -150,6 +155,7 @@ describe("registerRoot", () => {
     await registerRoot(
       settings,
       "/n",
+      "",
       { fetch: r.fetcher(respond(200, { slug: "n", path: "/n", kind: "recent" })) },
     );
     expect(r.calls[0]?.init?.headers).not.toHaveProperty("Authorization");
@@ -160,6 +166,7 @@ describe("registerRoot", () => {
     const err = await registerRoot(
       settings,
       "/n",
+      "",
       { fetch: r.fetcher(respond(403, { error: "cross-origin request refused" })) },
     ).catch((e: unknown) => e);
     expect((err as DaemonError).kind).toBe("origin_refused");
@@ -172,6 +179,7 @@ describe("registerRoot", () => {
     const err = await registerRoot(
       withToken,
       "/n",
+      "",
       { fetch: r.fetcher(respond(403, { error: "cross-origin request refused" })) },
     ).catch((e: unknown) => e);
     expect((err as DaemonError).message).toContain("even with a token");
@@ -182,9 +190,43 @@ describe("registerRoot", () => {
     const err = await registerRoot(
       withToken,
       "/n",
+      "",
       { fetch: r.fetcher(respond(401, { error: "invalid token" })) },
     ).catch((e: unknown) => e);
     expect((err as DaemonError).kind).toBe("token_rejected");
+  });
+
+  it("sends no file field when there is no file to verify", async () => {
+    // `mdn open DIR` registers a folder with no note in mind, and a body
+    // carrying an empty file would ask the daemon a question about
+    // nothing.
+    const r = record();
+    await registerRoot(
+      withToken,
+      "/home/you/scratch",
+      "",
+      { fetch: r.fetcher(respond(200, { slug: "scratch", path: "/home/you/scratch", kind: "recent" })) },
+    );
+    expect(r.calls[0]?.init?.body).toBe('{"path":"/home/you/scratch"}');
+  });
+
+  it("reads the daemon's refusal of a note it cannot find as its own kind", async () => {
+    // Not `refused`: the popup and the badge have to be able to say "no
+    // such note" rather than passing a bare sentence through beside the
+    // token complaints (M7-R1, #50).
+    const r = record();
+    const err = await registerRoot(
+      withToken,
+      "/home/you/scratch",
+      "gone.md",
+      {
+        fetch: r.fetcher(
+          respond(404, { code: "not_found", error: "no such note under that folder: gone.md" }),
+        ),
+      },
+    ).catch((e: unknown) => e);
+    expect((err as DaemonError).kind).toBe("not_found");
+    expect((err as DaemonError).detail).toBe("no such note under that folder: gone.md");
   });
 
   it("passes the daemon's own message through for other refusals", async () => {
@@ -192,6 +234,7 @@ describe("registerRoot", () => {
     const err = await registerRoot(
       withToken,
       "relative/dir",
+      "",
       { fetch: r.fetcher(respond(400, { error: "path must be absolute" })) },
     ).catch((e: unknown) => e);
     expect((err as DaemonError).kind).toBe("refused");

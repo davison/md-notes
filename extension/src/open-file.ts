@@ -4,7 +4,7 @@
  */
 
 import { DaemonError, listRoots, registerRoot, type FailureKind } from "./daemon";
-import { localMarkdownFile, noteUrl, relativeTo, rootContaining, type Root } from "./paths";
+import { localMarkdownFile, noteUrl, relativeTo, rootContaining, type LocalFile, type Root } from "./paths";
 import { badHostMessage, registerRefusedRemotely } from "./reach";
 import type { Settings } from "./settings";
 
@@ -17,12 +17,12 @@ export type OpenResult =
 /** The daemon calls the decision needs; injected so the tests need no network. */
 export interface RootsApi {
   listRoots(settings: Settings): Promise<Root[]>;
-  registerRoot(settings: Settings, dir: string): Promise<Root>;
+  registerRoot(settings: Settings, dir: string, file: string): Promise<Root>;
 }
 
 export const liveRootsApi: RootsApi = {
   listRoots: (settings) => listRoots(settings),
-  registerRoot: (settings, dir) => registerRoot(settings, dir),
+  registerRoot: (settings, dir, file) => registerRoot(settings, dir, file),
 };
 
 /**
@@ -32,6 +32,11 @@ export const liveRootsApi: RootsApi = {
  * file's directory is registered as a new root first — which is also how a
  * symlinked alias of an already registered directory finds its root, since the
  * daemon compares real paths and hands back the existing one.
+ *
+ * The registration names the file, and the daemon registers nothing unless
+ * the file is there. So a `file:` URL for a note that does not exist leaves
+ * the roots listing exactly as it was, and the tab is left where it is with
+ * the refusal on the badge (M7-R1, #50).
  */
 export async function resolveOpen(
   url: string,
@@ -49,7 +54,7 @@ export async function resolveOpen(
   try {
     roots = await api.listRoots(settings);
   } catch (err) {
-    return describeOpenFailure(err, settings, "list");
+    return describeOpenFailure(err, settings, "list", file);
   }
 
   const existing = rootContaining(roots, file.path);
@@ -64,7 +69,7 @@ export async function resolveOpen(
   }
 
   try {
-    const added = await api.registerRoot(settings, file.dir);
+    const added = await api.registerRoot(settings, file.dir, file.name);
     const note = relativeTo(added.path, file.path);
     return {
       status: "open",
@@ -73,7 +78,7 @@ export async function resolveOpen(
       note,
     };
   } catch (err) {
-    return describeOpenFailure(err, settings, "register");
+    return describeOpenFailure(err, settings, "register", file);
   }
 }
 
@@ -95,16 +100,28 @@ type Step = "list" | "register";
  * a folder is refused" about a *listing* that was refused would be the same
  * misattribution in a new coat, so the step decides the sentence and the
  * daemon's own words are what a refused listing gets.
+ *
+ * `not_found` is the third of the same family and the one #50 is about: the
+ * daemon looked for the note and it was not there, so nothing was
+ * registered. The sentence names the file, because the file is what the
+ * person can do something about.
  */
 function describeOpenFailure(
   err: unknown,
   settings: Settings,
   step: Step,
+  file: LocalFile,
 ): OpenResult & { status: "failed" } {
   if (!(err instanceof DaemonError)) {
     return { status: "failed", kind: "bad_response", message: String(err) };
   }
   switch (err.kind) {
+    case "not_found":
+      return {
+        status: "failed",
+        kind: err.kind,
+        message: missingNoteMessage(file, step, err.detail),
+      };
     case "loopback_only":
       return {
         status: "failed",
@@ -117,4 +134,19 @@ function describeOpenFailure(
     default:
       return { status: "failed", kind: err.kind, message: err.message };
   }
+}
+
+/**
+ * The refusal in the terms the person reading the badge is in: there is no
+ * such note, and nothing was added to md-notes because of it. Only a
+ * registration can earn this today — a listing has no file in it to be
+ * missing — but the step still decides the sentence, so the day something
+ * else answers `not_found` it is not described as this.
+ */
+function missingNoteMessage(file: LocalFile, step: Step, detail: string): string {
+  if (step !== "register") return detail;
+  return (
+    `No such note: the daemon cannot find ${file.path}, so ${file.dir} was not ` +
+    "registered as a root. Nothing was added to md-notes; create the file and reload."
+  );
 }
