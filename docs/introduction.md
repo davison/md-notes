@@ -869,9 +869,9 @@ mouse-driven window's density left alone, the light override applied with the
 application bundle blocked — so nothing but the inline boot script can have applied
 it — the flash suppressed by the setting and by `prefers-reduced-motion`, and a
 second page load that fetches no asset bytes — that last one twice, once on the
-machine as it is and once with the CPU slowed until the service worker is the one
-answering, because the bytes on the wire are the same either way and only the number
-of responses Chromium reports is not. The same suite drives creating and
+machine as it is and once with the CPU slowed until Chromium asks for the entry module
+twice, because the bytes on the wire are the same either way and only the number of
+responses is not. The same suite drives creating and
 deleting a note end to end, in the wide layout and in the drawer layout: a name typed
 into the prompt, a bare title landing in the open note's folder, a refusal corrected
 in place, the new note reaching a second tab through the events stream, the delete
