@@ -134,6 +134,16 @@ describe("the installable app", { skip: blocker ?? false }, () => {
   });
 
   it("caches the shell and the eager assets, and not the editor", async () => {
+    // One cache, not a pile of them: the name carries a hash of what is in
+    // it, and activate deletes every other mdn- cache. That the name *moves*
+    // when a build does is ui/e2e/sw-build.test.mjs; this is the half a
+    // browser can see.
+    const caches = await page.evaluate(() => caches.keys());
+    assert.deepEqual(
+      caches.filter((k) => k.startsWith("mdn-")).length,
+      1,
+      `one cache survives activation: ${caches.join(", ")}`,
+    );
     const urls = await cachedURLs(page);
     assert.ok(urls.includes("/index.html"), "the shell is cached");
     assert.ok(urls.includes("/manifest.webmanifest"), "the manifest is cached");
