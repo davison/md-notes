@@ -30,8 +30,9 @@ milestone six took up what five left behind: clipping works from another
 tailnet node, the clipper converts the tables and code blocks it used to
 mangle, the refusals say what is wrong, and the note bar and the
 deleted-on-disk banner do what they promise. Milestone seven closed the way a
-root could be registered by accident and left there, and gave the navigator a
-last-modified order beside its alphanumeric one. The inbox is still ahead.
+root could be registered by accident and left there, gave the navigator a
+last-modified order beside its alphanumeric one, and made the UI an app a phone can
+install from the tailnet name. The inbox is still ahead.
 
 - **Daemon.** One static Go binary. Serves the web UI, watches one or more
   root folders, renders markdown server-side, shells out to ripgrep for
@@ -45,8 +46,10 @@ last-modified order beside its alphanumeric one. The inbox is still ahead.
   bar behind a confirmation. The browser tab names the note you have open. The
   bundle is embedded in the binary, served compressed and cached, and does not
   carry the editor to a page that is only reading. The tree is alphanumeric or
-  most-recently-modified-first, at a toggle the browser remembers. A Playwright
-  suite under
+  most-recently-modified-first, at a toggle the browser remembers. A web app
+  manifest and a service worker make it installable from Android over the
+  tailnet, and the installed app opens with no daemon behind it and says so.
+  A Playwright suite under
   `ui/e2e` drives the built daemon in a real browser as a CI job of its own,
   so the layout, the display settings, the tap targets, the asset cache, the
   create and delete flows, the navigator's two orders and removing a root are
@@ -333,8 +336,13 @@ a `file:` URL for a markdown file that does not exist no longer registers its
 directory as a permanent root — the daemon looks for the note before it
 registers anything — and a root registered by accident is removed from the home
 page rather than by editing the state file, both of them refused under the
-tailnet name as registration always was; and the navigator's tree can be ordered
-by last modification, most recent first, at a toggle the browser remembers.
+tailnet name as registration always was; the navigator's tree can be ordered
+by last modification, most recent first, at a toggle the browser remembers; and the
+UI ships a web app manifest and a service worker, so Brave or Chrome on Android
+offers to install it over the tailnet, the installed app opens in its own window,
+and with the daemon unreachable it opens anyway and says so instead of showing the
+browser's error page — [docs/sync.md](docs/sync.md#installing-it-on-the-phone) has
+the steps.
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
 today, [docs/extension.md](docs/extension.md) the extension,
 [docs/e-ink.md](docs/e-ink.md) the e-ink tablet, and the milestone

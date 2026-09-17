@@ -10,8 +10,9 @@ from [milestone three](milestones/3-clipper-authentication-and-tailnet.md), the
 polish milestone four put on all three, the create and delete verbs milestone
 five added to them, the tailnet clipping and clipper repairs of
 [milestone six](milestones/6-tailnet-clipping-and-the-m5-backlog.md), and what
-milestone seven did to roots and the navigator. Notes are created, edited and deleted
-in the app; renaming one is still done with other tools.
+milestone seven did to roots, to the navigator and to installing the app on a phone.
+Notes are created, edited and deleted in the app; renaming one is still done with other
+tools.
 
 Milestone four is the one whose subject is how the rest of it is read rather than
 what it can do. The web UI works on a phone, where the note takes the whole viewport
@@ -45,9 +46,12 @@ file that did not exist used to register its directory as a permanent root with 
 way to remove it from the app; now a registration can name the note it is for and the
 daemon registers nothing when that note is not there, a recent root is removed from
 the home page, and both of those stay on the machine rather than crossing the tailnet
-name ([Roots](#roots)). And the navigator's tree, alphanumeric since milestone one,
-has a **Recent first** toggle that puts the most recently modified note at the top
-([The web UI](#the-web-ui)).
+name ([Roots](#roots)). The navigator's tree, alphanumeric since milestone one, has a
+**Recent first** toggle that puts the most recently modified note at the top
+([The web UI](#the-web-ui)). And the UI ships a web app manifest and a service worker, so
+a phone reaching the daemon over the tailnet offers to install it and the installed app
+opens in its own window — and opens with no daemon behind it, saying so rather than
+showing the browser's error page ([Installing the app](#installing-the-app)).
 
 The browser half is a Chromium extension that clips a readable page or a selection
 into the notes root as markdown, and opens a local markdown file in the app instead
@@ -206,7 +210,7 @@ the [tailnet section](#reaching-the-daemon-over-the-tailnet) says why.
 |----------|--------------|
 | `GET /api/roots` | `{roots: [{slug, path, kind}]}` |
 | `POST /api/roots` | Registers `{"path": "/absolute/dir"}` and returns the root. Relative paths are refused, and a path that is not a directory is `400` with the filesystem's own sentence. The optional `"file"` names a note inside that folder: with it the daemon registers only once it has found the note, and otherwise answers `404 {"code":"not_found"}` having written nothing. See [Roots](#roots) |
-| `DELETE /api/roots/{slug}` | Unregisters a recent root and returns `204 No Content`; the root leaves the registry and the state file, and no file leaves the disk. `403 {"code":"notes_root"}` for the configured notes root, `404 {"code":"not_found"}` for a slug that is not registered. See [Roots](#roots) |
+| `DELETE /api/roots/{slug}` | Unregisters a recent root and returns `204 No Content`; the root leaves the registry and the state file, and no file leaves the disk. `403 {"code":"notes_root"}` for the configured notes root, `404 {"code":"not_found"}` for a slug that is not registered, and `403 {"code":"loopback_only"}` under a configured `tailnet_host`. See [Roots](#roots) |
 | `GET /api/r/{slug}/tree` | The root's markdown tree as nested `{name, path, dir, children}`, each file node also carrying `modified`, its modification time in Unix milliseconds — absent on a directory, and on a file whose time the daemon could not read. See [the navigator's order](#the-web-ui) |
 | `GET /api/r/{slug}/note/{path...}` | A rendered note as `{path, title, frontmatter, html}`. Non-markdown paths are 404 here |
 | `GET /api/r/{slug}/source/{path...}` | Existing UTF-8 markdown as `{source, revision}`; see [conditional saves](#conditional-saves) |
@@ -877,7 +881,15 @@ surviving a reload, a note saved in the app and a note rewritten on disk each mo
 to the top with no reload — and the home page's **Remove** control: the confirmation
 naming the folder, a cancelled removal that removes nothing, the files still on disk
 afterwards, and a second tab landing on the home page when the root it was open on
-goes. The viewports are the suite's own literals rather than Playwright's
+goes. And it holds [the installable app](#installing-the-app) to Chrome's installability
+criteria item by item — the manifest read back both over HTTP and out of the browser's
+own parse, each icon measured from its own header, the worker activated at scope `/` —
+together with the rules that matter about it: that no request under `/api/` is ever
+answered from the worker's cache, that a rebuilt shell wins over the cached one while the
+daemon is answering and the cached one answers when it is not, that the worker's cache is
+named after its contents, and that the roots page and three `/r/` routes all say the
+daemon is unreachable rather than that the root does not exist.
+The viewports are the suite's own literals rather than Playwright's
 device registry, whose numbers move between releases
 ([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426)). It
 needs Chromium, which is a separate download; see the README's **Building** section.
