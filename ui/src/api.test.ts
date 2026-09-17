@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SourceError, createNote, deleteNote, fetchRaw, fetchSource, listRoots, saveSource } from "./api";
+import {
+  SourceError,
+  UNREACHABLE,
+  createNote,
+  deleteNote,
+  fetchRaw,
+  fetchSource,
+  listRoots,
+  saveSource,
+} from "./api";
 
 function mockFetch(status: number, body: unknown) {
   const res = {
@@ -139,5 +148,25 @@ describe("deleteNote", () => {
   it("rejects with the daemon's code", async () => {
     mockFetch(422, { code: "unsupported_source", error: "not a regular file" });
     await expect(deleteNote("n", "a.md")).rejects.toBeInstanceOf(SourceError);
+  });
+});
+
+describe("a daemon that is not there", () => {
+  // The service worker can open the app with nothing behind it, and the
+  // browser's own "Failed to fetch" is what the pages would otherwise show
+  // for it. Every call that can be made from a cold shell goes through the
+  // same wrapper.
+  it("reads as the daemon rather than as fetch", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))));
+    await expect(listRoots()).rejects.toThrow(UNREACHABLE);
+    await expect(fetchRaw("notes", "a.md")).rejects.toThrow(UNREACHABLE);
+    await expect(fetchSource("notes", "a.md")).rejects.toThrow(UNREACHABLE);
+    await expect(saveSource("notes", "a.md", "x", "rev")).rejects.toThrow(UNREACHABLE);
+    await expect(deleteNote("notes", "a.md")).rejects.toThrow(UNREACHABLE);
+  });
+
+  it("leaves a refusal the daemon did send alone", async () => {
+    mockFetch(403, { code: "cross_origin", error: "cross-origin request refused" });
+    await expect(listRoots()).rejects.toThrow("cross-origin request refused");
   });
 });
