@@ -813,6 +813,11 @@ code {
     line-height: 2.75rem;
   }
 
+  .nav-order {
+    min-height: 2.75rem;
+    padding: 0 0.75rem;
+  }
+
   .tag {
     min-height: 2.75rem;
     align-items: center;
@@ -911,6 +916,35 @@ code {
     transition-duration: 0s !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Navigator header: the order control, above the tree at every width. */
+.nav-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.4rem;
+}
+
+.nav-order {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+/* The order in force, said the same way the drawer's tabs say which tab is
+   showing: a border and the full-strength text colour, no animation to be
+   suppressed and no colour that the light override has to think about,
+   since both palettes define every token this rule uses. */
+.nav-order.on {
+  border-color: var(--accent);
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 500;
 }
 
 /* Navigator tree */
