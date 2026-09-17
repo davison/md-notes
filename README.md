@@ -252,12 +252,12 @@ What a caller reaches over the tailnet is narrower than on loopback: the
 UI's own API — the reads, creating, saving and deleting a note, the events
 stream, search and tags — and `POST /api/clip` to a caller presenting the
 token, but neither `POST /api/roots` nor `DELETE /api/roots/{slug}`.
-Registering a folder is the step from
-"read my notes" to "read any file on this machine", so it stays on the
-machine, and so does unregistering one: changing the set of roots is a thing
-that happens at the keyboard of the machine serving them. The clip does not: it writes one file into the notes root's clips
-directory, at a name the daemon chooses, which is narrower than the note
-save the tailnet already admits.
+Registering a folder is the step from "read my notes" to "read any file on
+this machine", so it stays on the machine, and so does unregistering one:
+changing the set of roots is a thing that happens at the keyboard of the
+machine serving them. The clip does not: it writes one file into the notes
+root's clips directory, at a name the daemon chooses, which is narrower than
+the note save the tailnet already admits.
 
 This is where the single-user premise stretches. On loopback the people
 who can reach the daemon are the processes running as you. Under
