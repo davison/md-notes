@@ -1246,3 +1246,74 @@ func TestUITypesCoverTheBundle(t *testing.T) {
 		t.Fatal("walked the bundle and found nothing")
 	}
 }
+
+// TestTreeCarriesModificationTimes holds the half of M7-R3 the navigator's
+// recency order is built on: every file node in the tree response states
+// when the file was last modified, in Unix milliseconds, and no directory
+// node does — the folder order is derived in the UI from the notes it can
+// actually see, which under a tag filter is not the set the daemon would
+// have aggregated over (davison/md-notes#116).
+func TestTreeCarriesModificationTimes(t *testing.T) {
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Skip("ripgrep not installed; CI installs it")
+	}
+	ts, base := newTestServer(t)
+	notes := filepath.Join(base, "notes")
+
+	// Two distinct, known times, far enough apart that no clock skew or
+	// filesystem timestamp granularity can put them in the wrong order.
+	hello := time.Date(2026, 3, 4, 5, 6, 7, 800*int(time.Millisecond), time.UTC)
+	linked := hello.Add(48 * time.Hour)
+	for file, when := range map[string]time.Time{
+		"hello.md":      hello,
+		"sub/linked.md": linked,
+	} {
+		if err := os.Chtimes(filepath.Join(notes, filepath.FromSlash(file)), when, when); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	resp := do(t, ts, "GET", "/api/r/notes/tree", "", nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d: %s", resp.StatusCode, readAll(t, resp.Body))
+	}
+	var root map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&root); err != nil {
+		t.Fatal(err)
+	}
+
+	// The response is walked as plain JSON rather than decoded into
+	// tree.Node, because "the directory node has no modified field" is a
+	// statement about the wire format that a typed decode cannot tell from
+	// "the field is there and zero".
+	byPath := map[string]map[string]any{}
+	var walk func(n map[string]any)
+	walk = func(n map[string]any) {
+		byPath[n["path"].(string)] = n
+		children, _ := n["children"].([]any)
+		for _, c := range children {
+			walk(c.(map[string]any))
+		}
+	}
+	walk(root)
+
+	for path, want := range map[string]time.Time{"hello.md": hello, "sub/linked.md": linked} {
+		node, ok := byPath[path]
+		if !ok {
+			t.Fatalf("%s is not in the tree: %v", path, byPath)
+		}
+		got, ok := node["modified"].(float64)
+		if !ok {
+			t.Errorf("%s has no modified time: %v", path, node)
+			continue
+		}
+		if int64(got) != want.UnixMilli() {
+			t.Errorf("%s modified = %d, want %d (%s)", path, int64(got), want.UnixMilli(), want)
+		}
+	}
+	for _, dir := range []string{"", "sub"} {
+		if _, ok := byPath[dir]["modified"]; ok {
+			t.Errorf("directory %q carries a modified time: %v", dir, byPath[dir])
+		}
+	}
+}

@@ -10,17 +10,18 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBuild(t *testing.T) {
-	got := Build([]string{
+	got := Build(listed(
 		"zeta.md",
 		"docs/b.md",
 		"docs/A.md",
 		"docs/deep/x/y.md",
 		"Alpha.md",
 		"code/README.md",
-	})
+	))
 	want := &Node{Dir: true, Children: []*Node{
 		{Name: "code", Path: "code", Dir: true, Children: []*Node{
 			{Name: "README.md", Path: "code/README.md"},
@@ -40,6 +41,16 @@ func TestBuild(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Build() =\n%s\nwant\n%s", dump(got, 0), dump(want, 0))
 	}
+}
+
+// listed is a listing a case cares about the shape of rather than the
+// times in.
+func listed(names ...string) []File {
+	out := make([]File, len(names))
+	for i, n := range names {
+		out[i] = File{Path: n}
+	}
+	return out
 }
 
 func TestBuildEmpty(t *testing.T) {
@@ -450,4 +461,155 @@ func TestListMissingRipgrep(t *testing.T) {
 	if _, err := List(context.Background(), t.TempDir(), nil); !errors.Is(err, ErrNoRipgrep) {
 		t.Fatalf("err = %v, want ErrNoRipgrep", err)
 	}
+}
+
+// The modification times the navigator's recency order is built on
+// (davison/md-notes#116). Stat answers for the files a listing named, Build
+// carries the answers onto the file nodes in Unix milliseconds, and a
+// directory node carries none.
+
+func TestStatFillsModificationTimes(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "docs"), 0o755)
+	want := map[string]time.Time{
+		"a.md":      time.Date(2024, 1, 2, 3, 4, 5, 600*int(time.Millisecond), time.UTC),
+		"docs/b.md": time.Date(2026, 9, 17, 8, 30, 0, 250*int(time.Millisecond), time.UTC),
+	}
+	for rel, when := range want {
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(filepath.Join(root, filepath.FromSlash(rel)), when, when); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := Stat(root, []string{"a.md", "docs/b.md"}, nil)
+	if len(got) != 2 {
+		t.Fatalf("Stat returned %d files, want 2: %+v", len(got), got)
+	}
+	for _, f := range got {
+		if !f.Modified.Equal(want[f.Path]) {
+			t.Errorf("%s modified = %s, want %s", f.Path, f.Modified, want[f.Path])
+		}
+	}
+}
+
+func TestStatLeavesAVanishedFileWithoutATime(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "here.md"), []byte("x"), 0o644)
+
+	// "gone.md" is what a note deleted between the listing and the stat
+	// looks like — a sync landing mid-request is the ordinary way to see
+	// it. The listing must survive it, and the file it could not read must
+	// still be in the answer, with no time.
+	var warnings []string
+	got := Stat(root, []string{"gone.md", "here.md"}, func(format string, args ...any) {
+		warnings = append(warnings, fmt.Sprintf(format, args...))
+	})
+	if len(got) != 2 || got[0].Path != "gone.md" || got[1].Path != "here.md" {
+		t.Fatalf("Stat = %+v, want both paths in order", got)
+	}
+	if !got[0].Modified.IsZero() {
+		t.Errorf("gone.md has a time: %s", got[0].Modified)
+	}
+	if got[1].Modified.IsZero() {
+		t.Error("here.md has no time")
+	}
+	// A file that is merely absent is not worth a log line; it is the
+	// commonest thing that can happen here.
+	if len(warnings) != 0 {
+		t.Errorf("warned about an absent file: %v", warnings)
+	}
+}
+
+func TestBuildCarriesModificationTimes(t *testing.T) {
+	when := time.Date(2026, 5, 6, 7, 8, 9, 100*int(time.Millisecond), time.UTC)
+	got := Build([]File{
+		{Path: "docs/b.md", Modified: when},
+		{Path: "a.md"},
+	})
+	if len(got.Children) != 2 {
+		t.Fatalf("tree = %s", dump(got, 0))
+	}
+	docs, a := got.Children[0], got.Children[1]
+	if docs.Modified != 0 {
+		t.Errorf("the directory node carries a time: %d", docs.Modified)
+	}
+	if b := docs.Children[0]; b.Modified != when.UnixMilli() {
+		t.Errorf("docs/b.md modified = %d, want %d", b.Modified, when.UnixMilli())
+	}
+	// A file Stat could not answer for keeps a zero, which `omitempty`
+	// keeps off the wire and the navigator reads as "oldest".
+	if a.Modified != 0 {
+		t.Errorf("a.md, with no time from Stat, carries %d", a.Modified)
+	}
+}
+
+// BenchmarkList and BenchmarkListStat are the two halves of what a tree
+// request costs, on the two root sizes davison/md-notes#116 asked for: the
+// ripgrep listing the endpoint has always paid for, and the per-file stat
+// the modification times add to it. Run them together:
+//
+//	go test ./internal/tree -run xxx -bench 'List' -benchtime 10x
+func BenchmarkList(b *testing.B) {
+	for _, n := range []int{300, 5000} {
+		root := benchRoot(b, n)
+		b.Run(fmt.Sprint(n), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				if _, err := List(context.Background(), root, nil); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkListStat(b *testing.B) {
+	for _, n := range []int{300, 5000} {
+		root := benchRoot(b, n)
+		b.Run(fmt.Sprint(n), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				files, err := List(context.Background(), root, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				Build(Stat(root, files, nil))
+			}
+		})
+	}
+}
+
+// BenchmarkStat is the added cost alone, with the listing hoisted out.
+func BenchmarkStat(b *testing.B) {
+	for _, n := range []int{300, 5000} {
+		root := benchRoot(b, n)
+		files, err := List(context.Background(), root, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.Run(fmt.Sprint(n), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				Stat(root, files, nil)
+			}
+		})
+	}
+}
+
+// benchRoot writes n notes over 25 directories, which is the shape of a
+// notes root rather than one flat directory of files.
+func benchRoot(b *testing.B, n int) string {
+	b.Helper()
+	if _, err := exec.LookPath("rg"); err != nil {
+		b.Skip("ripgrep not installed")
+	}
+	root := b.TempDir()
+	for i := 0; i < n; i++ {
+		dir := filepath.Join(root, fmt.Sprintf("d%02d", i%25))
+		os.MkdirAll(dir, 0o755)
+		body := fmt.Sprintf("# Note %d\n\nSome body text for note %d.\n", i, i)
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("note-%05d.md", i)), []byte(body), 0o644); err != nil {
+			b.Fatal(err)
+		}
+	}
+	return root
 }

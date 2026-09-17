@@ -15,16 +15,40 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Node is a directory or a markdown file. Path is relative to the root
 // with forward slashes; a directory's Children are directories first, then
 // files, each group sorted case-insensitively.
+//
+// Modified is the file's modification time in Unix milliseconds, and is
+// carried by file nodes only: it is absent from a directory, and absent
+// from a file whose modification time could not be read. Milliseconds
+// rather than seconds because two saves inside the same second are the
+// ordinary case in an editor that autosaves, and a second's resolution
+// would leave the navigator's recency order deciding them alphabetically.
+//
+// A directory carries no aggregate of the times beneath it on purpose. The
+// navigator orders a folder by the newest note *it can see*, and under a
+// tag filter that is not the set the daemon aggregated over, so the one
+// number the daemon could offer would be wrong exactly when the filter is
+// on (davison/md-notes#116).
 type Node struct {
 	Name     string  `json:"name"`
 	Path     string  `json:"path"`
 	Dir      bool    `json:"dir"`
+	Modified int64   `json:"modified,omitempty"`
 	Children []*Node `json:"children,omitempty"`
+}
+
+// File is a listed markdown file with what stat says about it. A zero
+// Modified means the file could not be stat'd — it was listed and then
+// deleted, or its directory refused the lookup — and the navigator sorts
+// such a note last under the recency order rather than dropping it.
+type File struct {
+	Path     string
+	Modified time.Time
 }
 
 // ErrNoRipgrep is returned when the rg binary cannot be found.
@@ -319,19 +343,65 @@ func splitNUL(data []byte, atEOF bool) (int, []byte, error) {
 	return 0, nil, nil
 }
 
-// Build arranges relative file paths into a tree whose root node has an
-// empty name and path. Directories appear only because a file lies
-// beneath them.
-func Build(files []string) *Node {
+// Stat pairs each listed path with its modification time, one stat per
+// file. A path that cannot be stat'd keeps a zero time rather than
+// failing the listing: between the listing and the stat a note can be
+// deleted or renamed, and a tree that 500s because one file went away
+// would be a navigator that empties itself whenever a sync lands.
+//
+// The stats are sequential. On the roots this application is for the cost
+// is a warm dentry lookup apiece — a 5,000-note root measured at well
+// under a millisecond of stat against ten of ripgrep — and a worker pool
+// would buy nothing but a race against the listing it depends on
+// (davison/md-notes#116).
+func Stat(root string, files []string, warnf func(string, ...any)) []File {
+	if warnf == nil {
+		warnf = func(string, ...any) {}
+	}
+	out := make([]File, 0, len(files))
+	for _, f := range files {
+		file := File{Path: f}
+		if fi, err := os.Stat(filepath.Join(root, filepath.FromSlash(f))); err == nil {
+			file.Modified = fi.ModTime()
+		} else if !errors.Is(err, os.ErrNotExist) {
+			// A file that has gone since the listing is ordinary and says
+			// nothing; anything else is worth a line in the log.
+			warnf("tree: stat %s: %v", f, err)
+		}
+		out = append(out, file)
+	}
+	return out
+}
+
+// Paths returns the paths of the listed files, for a caller that has a
+// tree to build and no times to put in it.
+func Paths(files []File) []string {
+	out := make([]string, len(files))
+	for i, f := range files {
+		out[i] = f.Path
+	}
+	return out
+}
+
+// Build arranges listed files into a tree whose root node has an empty
+// name and path. Directories appear only because a file lies beneath
+// them. The order is alphanumeric — directories first, then files, each
+// group case-insensitive — which is the navigator's own default and the
+// order every other order is derived from.
+func Build(files []File) *Node {
 	root := &Node{Dir: true}
 	index := map[string]*Node{"": root}
 	for _, f := range files {
-		dir := path.Dir(f)
+		dir := path.Dir(f.Path)
 		if dir == "." {
 			dir = ""
 		}
 		parent := ensureDir(index, dir)
-		parent.Children = append(parent.Children, &Node{Name: path.Base(f), Path: f})
+		node := &Node{Name: path.Base(f.Path), Path: f.Path}
+		if !f.Modified.IsZero() {
+			node.Modified = f.Modified.UnixMilli()
+		}
+		parent.Children = append(parent.Children, node)
 	}
 	sortTree(root)
 	return root

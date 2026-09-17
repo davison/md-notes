@@ -643,7 +643,7 @@ func (s *Server) treeHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not list files")
 		return
 	}
-	writeJSON(w, http.StatusOK, tree.Build(files))
+	writeJSON(w, http.StatusOK, tree.Build(tree.Stat(root.Path, files, s.log.Printf)))
 }
 
 // searchHandler runs a literal, case-insensitive search over a root.
