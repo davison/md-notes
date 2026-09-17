@@ -270,6 +270,68 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
     await page.close();
   });
 
+  it("registers nothing for a file URL naming a note that is not there", async () => {
+    // M7-R1, adopting #50: `file:///…/no-such-note.md` used to register its
+    // directory as a permanent root, redirect the tab there, and leave
+    // every markdown file under it readable and writable with no way to
+    // unregister it. The daemon now refuses the registration, and the badge
+    // says which refusal it is — not the token, which is the complaint this
+    // case earned before the file was ever sent.
+    const token = fs.readFileSync(path.join(tmp, "token"), "utf8").trim();
+    await worker.evaluate((t) => chrome.storage.local.set({ token: t }), token);
+    const before = await fetch(`${appOrigin}/api/roots`).then((r) => r.json());
+
+    const fileUrl = `file://${path.join(outsideDir, "no-such-note.md")}`;
+    const page = await context.newPage();
+    // Chromium's own "file not found" page is the navigation the extension
+    // sees; that it fails to load is the point.
+    await page.goto(fileUrl).catch(() => undefined);
+    const tabId = await waitFor(() => pageTabId(worker, fileUrl), "the tab to appear");
+    const status = await waitFor(() => tabStatus(worker, tabId), "the refusal to be recorded");
+
+    // Chromium's own error page is where the tab is; what matters is that
+    // the extension did not send it into the app.
+    assert.ok(!page.url().startsWith(appOrigin), `the tab was redirected to ${page.url()}`);
+    assert.equal(status.kind, "not_found");
+    assert.match(status.message, /no such note/i);
+    assert.doesNotMatch(status.message, /token/i);
+    assert.equal(await worker.evaluate((id) => chrome.action.getBadgeText({ tabId: id }), tabId), "!");
+
+    // The roots listing and the state file are exactly as they were.
+    const after = await fetch(`${appOrigin}/api/roots`).then((r) => r.json());
+    assert.deepEqual(after, before);
+    const statePath = path.join(tmp, "state.json");
+    const state = fs.existsSync(statePath) ? fs.readFileSync(statePath, "utf8") : "";
+    assert.ok(!state.includes(outsideDir), `the state file registered it: ${state}`);
+
+    // and the popup says the same thing over that tab.
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html?tab=${tabId}`);
+    await popup.waitForSelector("#status.error");
+    assert.match(await popup.textContent("#status"), /no such note/i);
+    await popup.close();
+    await page.close();
+  });
+
+  it("opens a file whose folder is registered on the strength of the file itself", async () => {
+    // The other side of the same check: a note that is there registers its
+    // folder and opens, which is what the intercept is for.
+    const fileUrl = `file://${path.join(outsideDir, "todo.md")}`;
+    const page = await context.newPage();
+    await page.goto(fileUrl);
+    await page.waitForURL(`${appOrigin}/r/outside/todo.md`, { timeout: 15000 });
+    await page.waitForSelector("text=Todo", { timeout: 15000 });
+    const state = fs.readFileSync(path.join(tmp, "state.json"), "utf8");
+    assert.ok(state.includes(outsideDir), `the state file did not record it: ${state}`);
+    await page.close();
+    // Registered roots are shared state for the cases below, so this one
+    // puts the daemon back the way it found it — which is also the new
+    // DELETE endpoint under test (M7-R2).
+    const removed = await fetch(`${appOrigin}/api/roots/outside`, { method: "DELETE" });
+    assert.equal(removed.status, 204);
+    assert.ok(fs.existsSync(path.join(outsideDir, "todo.md")), "removing a root removed a file");
+  });
+
   it("leaves the page alone and badges the tab when the daemon is down", async () => {
     await stopDaemon();
     const page = await context.newPage();

@@ -8,18 +8,47 @@ const settings: Settings = { daemonUrl: "http://localhost:7337", token: "s3cret"
 
 function api(roots: Root[], onRegister?: (dir: string) => Promise<Root>): RootsApi & {
   registered: string[];
+  verified: string[];
 } {
   const registered: string[] = [];
+  const verified: string[] = [];
   return {
     registered,
+    verified,
     async listRoots() {
       return roots;
     },
-    async registerRoot(_settings, dir) {
+    async registerRoot(_settings, dir, file) {
       registered.push(dir);
+      verified.push(file);
       if (onRegister !== undefined) return onRegister(dir);
       const slug = dir.slice(dir.lastIndexOf("/") + 1);
       return { slug, path: dir, kind: "recent" };
+    },
+  };
+}
+
+/**
+ * A daemon that verifies before it registers, which is what the one behind
+ * `POST /api/roots` does since M7-R1: the folder joins its roots only when
+ * the note named with it is one of `files`, and a registration refused
+ * leaves the listing exactly as it was.
+ */
+function verifyingDaemon(files: string[]): RootsApi & { roots: Root[] } {
+  const roots: Root[] = [notes];
+  return {
+    roots,
+    async listRoots() {
+      return [...roots];
+    },
+    async registerRoot(_settings, dir, file) {
+      if (!files.includes(`${dir}/${file}`)) {
+        const words = `no such note under that folder: ${file}`;
+        throw new DaemonError("not_found", words, 404, words);
+      }
+      const root: Root = { slug: dir.slice(dir.lastIndexOf("/") + 1), path: dir, kind: "recent" };
+      roots.push(root);
+      return root;
     },
   };
 }
@@ -190,6 +219,42 @@ describe("resolveOpen", () => {
       note: "deep/a.md",
     });
     expect(a.registered).toEqual([]);
+  });
+
+  it("names the note the daemon could not find, and blames nothing else", async () => {
+    // M7-R1: the file-URL intercept tells the daemon which note it is
+    // opening, and a note that is not there is refused before anything is
+    // registered. What the badge and the popup then say has to be the
+    // refusal it is — #50's own case, `file:///etc/no-such-note.md`, used
+    // to register /etc; before this it would have read as a token problem.
+    const daemon = verifyingDaemon(["/tmp/scratch/todo.md"]);
+    const result = await resolveOpen("file:///tmp/scratch/no-such-note.md", settings, daemon);
+    expect(result).toMatchObject({ status: "failed", kind: "not_found" });
+    const message = (result as { message: string }).message;
+    expect(message).toMatch(/no such note/i);
+    expect(message).toContain("/tmp/scratch/no-such-note.md");
+    expect(message).not.toMatch(/token/i);
+    expect(message).not.toMatch(/not reachable/i);
+    // and the roots listing is exactly what it was
+    expect(daemon.roots).toEqual([notes]);
+  });
+
+  it("registers the folder when the note it names is there", async () => {
+    const daemon = verifyingDaemon(["/tmp/scratch/todo.md"]);
+    expect(await resolveOpen("file:///tmp/scratch/todo.md", settings, daemon)).toEqual({
+      status: "open",
+      url: "http://localhost:7337/r/scratch/todo.md",
+      slug: "scratch",
+      note: "todo.md",
+    });
+    expect(daemon.roots).toHaveLength(2);
+  });
+
+  it("sends the file's own name beside the directory", async () => {
+    const a = api([notes]);
+    await resolveOpen("file:///tmp/scratch/my%20note.md", settings, a);
+    expect(a.registered).toEqual(["/tmp/scratch"]);
+    expect(a.verified).toEqual(["my note.md"]);
   });
 
   it("turns an unexpected error into a failure rather than rejecting", async () => {
