@@ -122,6 +122,33 @@ code {
   border-bottom: 1px solid var(--line);
 }
 
+/*
+ * The remove control on a recent root. It sits at the end of the row and
+ * is quiet until the row is under the pointer or the button has focus,
+ * because unregistering a folder is rare beside opening one — but it is
+ * drawn at every width and on every device, never a hover-only
+ * affordance: a touch screen has no hover to reveal it with.
+ */
+.root-remove {
+  margin-left: auto;
+  flex: none;
+  padding: 0.15rem 0.5rem;
+  font: inherit;
+  font-size: 0.85em;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.roots li:hover .root-remove,
+.root-remove:focus-visible,
+.root-remove:hover {
+  color: var(--fg);
+  border-color: var(--line);
+}
+
 .path {
   color: var(--muted);
   font-family: ui-monospace, Menlo, monospace;
@@ -864,8 +891,13 @@ code {
 
   .new-note,
   .modal button,
-  .modal-name {
+  .modal-name,
+  .root-remove {
     min-height: 2.75rem;
+  }
+
+  .root-remove {
+    padding: 0 0.75rem;
   }
 
   .note-bar {

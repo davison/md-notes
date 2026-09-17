@@ -29,6 +29,17 @@ export async function listRoots(): Promise<Root[]> {
   return body.roots;
 }
 
+/**
+ * Unregisters a recent root. The folder and its notes stay on disk; what
+ * goes is the daemon's serving of them (M7-R2). Rejects with a SourceError
+ * carrying the daemon's code — `notes_root` for the configured notes root,
+ * `not_found` for a slug the daemon does not have.
+ */
+export async function removeRoot(slug: string): Promise<void> {
+  const res = await fetch(`/api/roots/${encodeURIComponent(slug)}`, { method: "DELETE" });
+  if (!res.ok) throw await sourceErrorFrom(res);
+}
+
 export interface TreeNode {
   name: string;
   path: string;
