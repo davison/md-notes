@@ -4,11 +4,6 @@ Tracking issue: [#96](https://github.com/davison/md-notes/issues/96). Its five
 implementation tasks are merged on `main` at
 [`ed1d5f3`](https://github.com/davison/md-notes/commit/ed1d5f3).
 
-> **Draft.** Independent QA has not yet reported against
-> [#96](https://github.com/davison/md-notes/issues/96). The requirement outcomes table
-> and three other sections carry a marked placeholder for its verdicts, and this note
-> goes when they are filled.
-
 ## Goal and outcome
 
 The milestone's goal, as stated on [#96](https://github.com/davison/md-notes/issues/96),
@@ -27,10 +22,11 @@ sharp edges ([#87](https://github.com/davison/md-notes/issues/87),
 [#89](https://github.com/davison/md-notes/issues/89)). The inbox clipper stayed later
 work, as it has since M3.
 
-So this is the first milestone whose subject is its predecessor's leavings. Six of the
-seven captures it adopts were raised by M5's own reviews and QA, and the seventh is a
-question the operator asked the day M5 closed. Nothing here is a new noun: one line of
-allow-list, one converter, four refusal codes, one stylesheet rule and one button.
+So this is the first milestone whose subject is its predecessor's leavings. Of the nine
+captures it adopts, six were raised by M5's own reviews and QA and two by M3's; the ninth
+is a question the operator asked the day M5 closed. Nothing here is a new noun: one line
+of allow-list, one converter, four refusal codes, one stylesheet rule, one button and two
+test files that now own their own lifecycle.
 
 What shipped, in the order it merged:
 
@@ -135,20 +131,92 @@ left that this milestone closed by doing rather than by writing down afterwards.
 
 ## Requirement outcomes
 
-> **Placeholder — QA.** Independent QA has not reported against
-> [#96](https://github.com/davison/md-notes/issues/96). The Status column below records
-> what the merged work and its reviews establish; **no cell is a QA verdict**, and each
-> is replaced by one (with its citation) when QA posts. M6-R6 additionally awaits this
-> task's own merge.
+The verdicts below are drawn from the independent QA comment on the milestone issue
+([#96](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141)), run
+against a clean worktree of merged `main` at
+[`ed1d5f3`](https://github.com/davison/md-notes/commit/ed1d5f3) — never the operator's
+checkout — in a throwaway root with its own token file, state file and port, leaving the
+daemon on 7337 and `~/.local/state/mdn` untouched. The floor first, which QA is explicit
+is the floor and not the evidence: `make check` green (14 Go packages, `ui` 249/249,
+`extension` 205/205), `go test -race -count=5 ./internal/...` exit 0, `make e2e` 38/38
+three consecutive times, `pnpm --dir extension e2e` 27/27, the whole `ui` vitest suite
+60/60, and all five merge commits green on both CI jobs. QA raised two findings and four
+observations, none blocking; the coordinator's disposition of them is at
+[#96](https://github.com/davison/md-notes/issues/96#issuecomment-5706613081).
 
 | ID | Requirement | Status |
 |----|-------------|--------|
-| M6-R1 | Clipping over the tailnet: the clip admitted and saved exactly as on loopback, `POST /api/roots` still refused `loopback_only` with its message unchanged, a handler test proving both, the extension no longer naming clipping as refused, and the introduction, the extension page and a dated annotation on the sealed M4 record saying what changed | Delivered in [#103](https://github.com/davison/md-notes/pull/103), reviewed [request changes → approve](https://github.com/davison/md-notes/pull/103#issuecomment-5704625803). **QA verdict pending** |
-| M6-R2 | Clipper conversion: a headerless table as a GFM table with a synthesised header, `colspan` and nested tables degraded to readable markdown, content beside a code block kept and only chrome dropped, six fixtures each shown failing against the current converter | Delivered in [#105](https://github.com/davison/md-notes/pull/105), reviewed [request changes → approve](https://github.com/davison/md-notes/pull/105#issuecomment-5704840025). **QA verdict pending** |
-| M6-R3 | Refusal codes: a too-long basename `400 invalid_path` naming the limit on create and save; a dangling directory symlink and a dangling two-hop chain out of the root `403 outside_root` on create and delete; a row per case in the create and delete tables with the whole tree compared after every case; the introduction's caveat paragraph gone; the `true == false` literal gone | Delivered in [#104](https://github.com/davison/md-notes/pull/104), reviewed [request changes → request changes → approve](https://github.com/davison/md-notes/pull/104#issuecomment-5705028218). **QA verdict pending** |
-| M6-R4 | Note bar and banner: `scrollWidth == clientWidth` at 320 px and 1280 px under an unbreakable message of any length, the full text on hover or focus; the banner naming **New note** and offering a control that opens the create prompt pre-filled with the path and the draft; the stray `name` field gone from `browser.newContext` | Delivered in [#106](https://github.com/davison/md-notes/pull/106), reviewed [approve → request changes → approve](https://github.com/davison/md-notes/pull/106#issuecomment-5705241693). **QA verdict pending** |
-| M6-R5 | Test hygiene: the vitest teardown flake reproduced, named and fixed at 200 consecutive runs; `drawerReady` in `ui/e2e/harness.mjs` used by every drawer case; the `stopPropagation` premise asserted or pinned with the #78 citation | Delivered in [#109](https://github.com/davison/md-notes/pull/109), reviewed [request changes → approve](https://github.com/davison/md-notes/pull/109#issuecomment-5706400250). **QA verdict pending** |
-| M6-R6 | Documentation and record: user documentation reflecting every delivered change including the extension page, the introduction's tailnet and refusal sections and the sync page where it mentions clipping; the roadmap row; this record; the sealed M4 record carrying its annotation | This task. The M4 annotation is [in place](4-polish-phone-e-ink-and-the-bundle.md#post-merge-annotation--2026-09-16), merged with [#103](https://github.com/davison/md-notes/pull/103) |
+| M6-R1 | Clipping over the tailnet: the clip admitted and saved exactly as on loopback, `POST /api/roots` still refused `loopback_only` with its message unchanged, a handler test proving both, the extension no longer naming clipping as refused, and the introduction, the extension page and a dated annotation on the sealed M4 record saying what changed | [Satisfied](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141) — QA read the allow-list diff as well as exercising it, and confirmed the milestone's gate holds by both. One documentation finding, on two pages neither M6-R1 nor #97's file list named: [#97](https://github.com/davison/md-notes/issues/97#issuecomment-5706541449). Delivered in [#103](https://github.com/davison/md-notes/pull/103) |
+| M6-R2 | Clipper conversion: a headerless table as a GFM table with a synthesised header, `colspan` and nested tables degraded to readable markdown, content beside a code block kept and only chrome dropped, six fixtures each shown failing against the current converter | [Satisfied](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141) — twelve fixture shapes driven through the **real built extension** in Chromium against the built daemon, not the unit converter, and the flattened cells fed back through the daemon's own renderer. No finding. Delivered in [#105](https://github.com/davison/md-notes/pull/105) |
+| M6-R3 | Refusal codes: a too-long basename `400 invalid_path` naming the limit on create and save; a dangling directory symlink and a dangling two-hop chain out of the root `403 outside_root` on create and delete; a row per case in the create and delete tables with the whole tree compared after every case; the introduction's caveat paragraph gone; the `true == false` literal gone | [Satisfied](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141) — every row exercised on the exact byte and hop boundaries, with the tree inside *and* outside the root compared after every case. One observation, the 256-link create split, captured as [#111](https://github.com/davison/md-notes/issues/111). Delivered in [#104](https://github.com/davison/md-notes/pull/104) |
+| M6-R4 | Note bar and banner: `scrollWidth == clientWidth` at 320 px and 1280 px under an unbreakable message of any length, the full text on hover or focus; the banner naming **New note** and offering a control that opens the create prompt pre-filled with the path and the draft; the stray `name` field gone from `browser.newContext` | [Satisfied](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141) — twenty width-and-message combinations the shipped case does not use, and the recreated file compared byte for byte against the draft mirror. One finding, the vim mode after a recreate, captured as [#112](https://github.com/davison/md-notes/issues/112). Delivered in [#106](https://github.com/davison/md-notes/pull/106) |
+| M6-R5 | Test hygiene: the vitest teardown flake reproduced, named and fixed at 200 consecutive runs; `drawerReady` in `ui/e2e/harness.mjs` used by every drawer case; the `stopPropagation` premise asserted or pinned with the #78 citation | [Satisfied](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141) — both halves proved by mutation rather than by the green run: the flake reproduced once in 40 with the hook moved back, and the Escape probe discriminating with `stopPropagation` removed and the binary rebuilt. No finding. Delivered in [#109](https://github.com/davison/md-notes/pull/109) |
+| M6-R6 | Documentation and record: user documentation reflecting every delivered change including the extension page, the introduction's tailnet and refusal sections and the sync page where it mentions clipping; the roadmap row; this record; the sealed M4 record carrying its annotation | [Untestable at the verdict](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141), this task not having merged — "a superseding verdict is owed once #102 merges". The one clause already on `main`, the dated annotation on the sealed M4 record, QA found [in place and correct](4-polish-phone-e-ink-and-the-bundle.md#post-merge-annotation--2026-09-16) |
+
+M6-R6 is the one row no verdict yet settles, and for the same reason M2-R6, M3-R7, M4-R8
+and M5-R5 were not settled: QA graded it against `main` as it stood before this task, and
+what it graded as missing — the documentation sweep, the roadmap row and this record — is
+the list this document's pull request delivers. The closure gate on
+[#96](https://github.com/davison/md-notes/issues/96) requires both that every requirement
+verdict is satisfied *and* that the milestone document is merged, so this PR's merge is a
+precondition of closure rather than the verdict itself.
+
+**What QA did beyond the requirement text** is where the confidence in this milestone
+actually comes from, because in four of the five requirements the shipped tests were
+already green and QA went looking for the shapes they do not cover.
+
+On the tailnet: seven path-normalisation shapes — `/api/clip/../roots`,
+`/api/roots/../clip`, `/api//clip`, `/api/./clip`, `/api/clip/`, `/api/clip/%2e%2e/roots`
+and `/api/%63lip` — reach root registration in none of them, with the roots listing
+unchanged after all seven; and seven crafted clip *titles*, including `../../../etc/passwd`,
+`/absolute/escape`, `..%2f..%2fout`, whitespace only, a script with no ASCII, and one of
+500 characters, every one landing inside `clips/` at a name the daemon chose with nothing
+created elsewhere in the root. A demonstrably live login session — `200` on
+`GET /api/roots` with the same cookie — is refused `401` on the clip, which is the
+widening [the decision](https://github.com/davison/md-notes/issues/97#issuecomment-5703912268)
+explicitly declined.
+
+On the clipper: twelve fixture shapes through the real built extension, and then the
+flattened cells back through the daemon's own renderer, so the escaped pipe, the
+double-backtick span and the synthesised empty header are shown *legible* and not merely
+written. Seven of the twelve are QA's own, and two of them pin the recorded decisions from
+the outside — `rowspan="0"` reading as one and `rowspan="99"` clamped to the table, and a
+one-column headerless table of inline values staying a table, which is the amendment's own
+claim.
+
+On the refusals: the boundaries by the byte and by the hop rather than near them — 255
+bytes creates `201` and 256 is `400`; chains of 17 and 255 links out of the root are `403`
+on both verbs and 256 is answered by the resolver at `422`, which is exactly what the
+`maxLinkHops = 255` decision predicts. Both spoofing shapes the second re-review's fix
+exists for are clean: a note literally named `too many links.md` is `403 outside_root`, and
+a root whose *directory path* carries the phrase registers, reads and deletes like any
+other. Nothing was created, removed or modified by any refusal, and the daemon logged no
+`io_error`.
+
+On the UI: twenty combinations the shipped case does not use — four messages (10,000
+unbreakable characters, a sixty-segment path, 600 combining marks, a bidi override) across
+five viewports — all with `scrollWidth` equal to `clientWidth`, the bar's height unchanged
+and the delete button's box identical. The recreated file compared as strings against the
+`mdn:draft:` mirror rather than by regex; one undo still reaching back across the recreate;
+and the line-ending fix pinned in the browser in both directions.
+
+On the tests: both halves proved by **mutation**. Moving `cleanup()` back into `beforeEach`
+reproduced the flake once in 40 whole-suite runs under load — the same order as the 8-in-240
+the task measured, which is what shows the hook and not the load is what stops it. Removing
+`e.stopPropagation()` and rebuilding the binary left one e2e failure, and it is the new
+case and nothing else.
+
+QA's two findings and four observations, and what was done with each
+([#96](https://github.com/davison/md-notes/issues/96#issuecomment-5706613081)):
+
+| Finding or observation | Disposition |
+|---------|-------------|
+| **Finding, M6-R1.** The README's *Over the tailnet* paragraph and the introduction's **Confinement** list both still denied tailnet clipping on `main` at `ed1d5f3` — the second contradicting, eighty lines below it, the table in the same file that #103 had corrected ([#97](https://github.com/davison/md-notes/issues/97#issuecomment-5706541449)) | Not raised as a not-satisfied verdict: M6-R1's own documentation clauses are met, and both lines were already named in this task's plan and corrected on its branch by the stage-one sweep. QA filed it so that the M6-R6 verdict has something to be measured against, and **so that the record says the sweep was owned by the record task rather than by the task that made the claims false** — which is what the gaps table below records |
+| **Finding, M6-R4.** A confirmed **Recreate the note** returns the reader to the editor in vim *normal* mode, where cancelling the same prompt keeps insert mode; the difference is the remount the adopted revision causes, not the dialog ([#100](https://github.com/davison/md-notes/issues/100#issuecomment-5706548457)) | Captured as [#112](https://github.com/davison/md-notes/issues/112). Not a breach: neither M6-R4 nor the plan promises the editing mode, and everything they do promise — byte identity, the caret's line and column, undo across the recreate, focus back in `.cm-content` — QA measured and found holding. It is reported *because* the task went to the trouble of keeping the caret and nothing says whether the mode was considered with it |
+| **Observation 1, M6-R3.** A dangling chain past the resolver's budget answers create `409 exists` where delete, read and save all answer `422` — a second verb split, at the budget boundary, written down nowhere | Captured as [#111](https://github.com/davison/md-notes/issues/111). Confinement is unaffected; every answer is a refusal and the tree is unchanged |
+| **Observation 2.** `docs/sync.md` still said clipping is "from a desktop browser only" | Folded into this task's sweep. The sentence now says that the browser need not be on the daemon's own machine |
+| **Observation 3.** A `th`-labelled table flattens a code block | Already captured as [#107](https://github.com/davison/md-notes/issues/107), by the re-review that established the trade-off |
+| **Observation 4.** A `title` is not keyboard-reachable either | Folded into [#108](https://github.com/davison/md-notes/issues/108), retitled to cover touch **and** keyboard. This is the half the decision on #100 believed it had covered; see [the decision below](#the-note-bars-failure-message-is-clipped-with-an-ellipsis-not-wrapped) |
 
 ## Decisions
 
@@ -411,9 +479,12 @@ One line, clipped, is the only shape that satisfies both halves
   never the thing that gets cut off and stays reachable by keyboard and by tap at every
   width. The failure is also readable in full in the daemon's log, and the DOM text is the
   complete message, so a screen reader reads all of it. What the decision weighs is the
-  keyboard reader; the reviewer pointed out that it does not weigh the **touch** reader,
-  who at 320 px is left with 34 px of message and no way to raise a `title`. Captured as
-  [#108](https://github.com/davison/md-notes/issues/108).
+  keyboard reader — and **it turns out not to have served that reader either**. The
+  reviewer found the touch reader has no route to the `title` at 320 px, where 34 px of
+  message is on screen; QA then found a keyboard-only reader has none, a `title` not being
+  focusable. So the one affordance the trade-off rests on reaches neither, and the control
+  the decision correctly kept reachable, **Retry**, is not the text. Captured as
+  [#108](https://github.com/davison/md-notes/issues/108), retitled for both.
 - **Rejected:** putting `overflow: hidden` on `.save-status` itself, which holds the Retry
   button as well as the message and would clip the button at exactly the widths where the
   message is long enough to matter; expanding the message in place on focus, which is the
@@ -751,20 +822,26 @@ Raised by this milestone's reviews, for a later task to adopt:
 | Capture | From | What it is |
 |---------|------|-----------|
 | [#107](https://github.com/davison/md-notes/issues/107) | the re-review of [#105](https://github.com/davison/md-notes/pull/105#issuecomment-5704840025) | A table using `th` cells as row labels with a `pre` in the value cell is classified a data table by the new rule — any `th` makes a grid — and its code is inlined into one GFM cell, losing the line breaks. The same shape *without* the `th` keeps the code. The trade-off is recorded on #98; this is the case it costs |
-| [#108](https://github.com/davison/md-notes/issues/108) | the review of [#106](https://github.com/davison/md-notes/pull/106#issuecomment-5704943849) | The clipped save-status message is unreachable on a touch screen: 34 px of message at 320 px and 104 px at 390 px against 2,839 px of text, with the whole of it in a `title` that a coarse pointer cannot raise. M6-R4 asked for "hover *or* focus" and is met; the decision weighed the keyboard reader and not the touch reader |
+| [#108](https://github.com/davison/md-notes/issues/108) | the review of [#106](https://github.com/davison/md-notes/pull/106#issuecomment-5704943849), widened by [M6 QA](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141) | The clipped save-status message is unreachable by touch **or** keyboard: 34 px of message at 320 px and 104 px at 390 px against 2,839 px of text, with the whole of it in a `title` a coarse pointer cannot raise and a keyboard cannot focus. M6-R4 asked for "hover *or* focus" and is met as written; between them the review and QA close both halves of the affordance the trade-off rested on |
+| [#111](https://github.com/davison/md-notes/issues/111) | [M6 QA](https://github.com/davison/md-notes/issues/96#issuecomment-5706600141), observation 1 | A dangling chain past `filepath.EvalSymlinks`'s budget answers create `409 exists` where delete, read and save answer `422 unsupported_source` — a second verb split, at the budget boundary rather than at the dangling-escape shape the #99 decision records, and written down nowhere |
+| [#112](https://github.com/davison/md-notes/issues/112) | [M6 QA](https://github.com/davison/md-notes/issues/100#issuecomment-5706548457) | A confirmed **Recreate the note** returns the editor in vim normal mode where cancelling the same prompt keeps insert mode. The reader was typing when the note vanished and is typing again when it returns; the remount the adopted revision causes is what changes it |
 | [#110](https://github.com/davison/md-notes/issues/110) | [#101](https://github.com/davison/md-notes/issues/101), reworded after the review of [#109](https://github.com/davison/md-notes/pull/109#issuecomment-5706208251) | Install the UI test cleanup once, in a vitest setup file, rather than per test file. Every file under `ui/src` now cleans up in an `afterEach`, but nothing stops the next one from getting it wrong and the fix lives in thirteen places. Written first from the "nine other files" figure and rewritten from the census once that was corrected — the capture the review said should *not* be opened from the old number, opened from the right one |
 
-> **Placeholder — QA.** Captures QA raises are added here with their disposition.
+All six are dispositioned at
+[#96](https://github.com/davison/md-notes/issues/96#issuecomment-5706613081): none blocks
+a requirement, and each is small and either already in hand or a rider on a later task.
 
 ## Known gaps at the boundary
 
-All seven captures this milestone's merged tasks adopted are closed. What remains true and
-will surprise someone who has not read this far:
+All nine captures this milestone's tasks adopted are closed, and QA found no requirement
+unsatisfied. What remains true and will surprise someone who has not read this far:
 
 | Gap | Where it is recorded |
 |-----|----------------------|
 | A data table with `th` row labels and a code block in the value cell still has that code flattened onto one line. It is the deliberate residual of the data-table rule, not an oversight | [#107](https://github.com/davison/md-notes/issues/107), [#98](https://github.com/davison/md-notes/issues/98#issuecomment-5704683965) |
-| On a phone the note bar's failure message is an ellipsis and nothing else, and the `title` holding the rest cannot be raised by a coarse pointer | [#108](https://github.com/davison/md-notes/issues/108) |
+| The note bar's failure message is clipped to an ellipsis at phone widths, and the `title` holding the rest can be raised by neither a coarse pointer nor a keyboard. **Retry** is reachable by both, and the reason is not | [#108](https://github.com/davison/md-notes/issues/108) |
+| A dangling chain past the resolver's budget answers create `409 exists` where the other three verbs answer `422`. The `403`/`404` split above is recorded; this one is at the budget boundary and was not | [#111](https://github.com/davison/md-notes/issues/111) |
+| A confirmed **Recreate the note** returns the reader to the editor in vim normal mode, where cancelling the same prompt keeps insert mode | [#112](https://github.com/davison/md-notes/issues/112) |
 | A second `<pre>` inside one highlight container loses the wrapper's language and is fenced unlabelled. Left with the reviewer's own assessment that it is rare: the only fix that keeps the container's language reachable is to synthesise a highlight class onto the throwaway element so the rule re-matches | [#105](https://github.com/davison/md-notes/pull/105#issuecomment-5704592150) finding 7, [#98](https://github.com/davison/md-notes/issues/98#issuecomment-5704683965) |
 | A `rowspan` is clamped to the rows the *table* has, not the rows its *section* has, so it still carries into a second `<tbody>` where a browser would not. Rare, and left rather than changed unreviewed at the end of the loop | [#105](https://github.com/davison/md-notes/pull/105#issuecomment-5704840025), [#105](https://github.com/davison/md-notes/pull/105#issuecomment-5704940724) |
 | A note erased whole and then retyped comes back LF whatever ending it had, and **no test pins it**. Deliberately recorded rather than pinned, because pinning would make a rule out of what is incidental to `lineEnding("")` | [#100](https://github.com/davison/md-notes/issues/100#issuecomment-5705261754) |
@@ -774,9 +851,10 @@ will surprise someone who has not read this far:
 | **Renaming a note is still not in the application at all.** Untouched by this milestone, as by M5 | [the README](../../README.md), [#74](https://github.com/davison/md-notes/issues/74) |
 | Nothing installs the UI test cleanup for a file that forgets it. All thirteen `ui/src` test files now clean up in an `afterEach`, but each does it for itself, and `@testing-library/preact` will not install its own while this project injects no test globals | [#110](https://github.com/davison/md-notes/issues/110) |
 | The Escape propagation check observes listener *invocation*, through a wrapper the page would not otherwise have — one step away from a pure black-box assertion, and the price of asking a question about propagation rather than about pixels | [#101](https://github.com/davison/md-notes/issues/101#issuecomment-5705889343) |
-| Two pages carried a claim the merged tasks had made false until this record's own task swept them: the README's *Over the tailnet* paragraph and the introduction's *Confinement* list both still said `POST /api/clip` stays on the machine, three sections after the introduction's own tailnet table had been corrected to say the opposite | this task, [#102](https://github.com/davison/md-notes/issues/102) |
+| Two pages carried a claim the merged tasks had made false, and were still carrying it on `main` when QA ran: the README's *Over the tailnet* paragraph and the introduction's *Confinement* list both said `POST /api/clip` stays on the machine, the second eighty lines below the table in its own file that says the opposite. Corrected by this task's sweep, not by the task whose merge made them false — whose plan had undertaken to re-check every other page at the end | [#97](https://github.com/davison/md-notes/issues/97#issuecomment-5706541449), this task's [#102](https://github.com/davison/md-notes/issues/102) |
 
-> **Placeholder — QA.** Gaps QA finds are added here.
+QA found no gap beyond the two findings and four observations above, and no requirement
+unsatisfied.
 
 ## Where the record is silent
 
@@ -809,11 +887,13 @@ will surprise someone who has not read this far:
   front of a person.
 - **The operator has not used any of this.** M5's shape was set by the operator opening the
   merged UI and finding two things no review and no test had. Nothing equivalent happened
-  here: every trade-off in this milestone was judged by an implementer, a reviewer and
-  (pending) a QA session, all model sessions under one identity, and the four merged tasks
-  were exercised in a browser and against scratch daemons by those sessions alone. The
-  note bar at 320 px, the recreate control on a phone and a clip taken over a real tailnet
-  are all measured and none is *used*.
+  here: every trade-off in this milestone was judged by an implementer, a reviewer and a
+  QA session, all model sessions under one identity, and the five tasks were exercised in a
+  browser and against scratch daemons by those sessions alone. The note bar at 320 px, the
+  recreate control on a phone and a clip taken over a real tailnet are all measured and
+  none is *used* — and the one finding that reads most like a person's is QA's, that a
+  reader returned to their note by **Recreate the note** has to press `i` before they can
+  carry on typing.
 - **Nothing weighs what the milestone cost the bundles.** `dist/clip-inject.js` grew 3,801
   bytes raw and about 1.24 kB gzipped (50,523 → 54,324 B) for the converter, and the eager
   reading-page bundle grew 332 bytes brotli and 24 bytes of CSS for the note bar and the
@@ -824,5 +904,19 @@ will surprise someone who has not read this far:
   pull request description.** It was caught, restored within minutes and recorded on the
   PR. Nothing says what else that arrangement can reach.
 
-> **Placeholder — QA.** QA's findings, their disposition and anything QA's exercise
-> says about the silences above are added here.
+- **Four of QA's six items are about what nothing promised.** The vim mode after a
+  recreate, the create verb's answer at the resolver's budget, the `title` a keyboard
+  cannot reach, and a code block inside a `th`-labelled cell are each a place where the
+  requirement, the plan and the decisions are all silent and the code had to answer
+  anyway. None is a breach and each is now captured — but taken together they are the
+  measure of how much this milestone decided implicitly, in work whose explicit decisions
+  were unusually well recorded.
+- **And the documentation sweep found nothing until the task whose job it was ran it.**
+  #97's plan promised a grep over every other page "so this does not repeat M5's
+  `sync.md` failure"; the grep would have found the README line, and the introduction was
+  not re-read as a whole after one of its sections was rewritten. Both survived a model
+  review that checked the changed pages, a merge, and three more merges, and were still on
+  `main` when QA ran the promised grep itself
+  ([#97](https://github.com/davison/md-notes/issues/97#issuecomment-5706541449)). M5's
+  lesson was that a requirement's first clause is wider than its file list; M6's is that
+  writing the sweep into a plan is not the same as running it.

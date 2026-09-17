@@ -283,11 +283,12 @@ its browser UI stay on the machines.
 **Clipping from the phone is not built yet.** The plan is an inbox file of
 URLs, shared to from the phone's share sheet, which the daemon turns into
 proper clips when the folder next syncs to a machine running it. That is a
-later milestone; today clipping is the browser extension's, in a desktop
-browser ([The browser extension](extension.md)). That browser no longer has to
-be on the daemon's own machine: with the extension's daemon URL set to the
-`tailnet_host` name, a clip taken on another tailnet node lands in the notes
-root's `clips/` and syncs on from there like any other file.
+later milestone; today clipping is the browser extension's job, and the
+extension runs in a desktop browser ([The browser extension](extension.md)).
+That browser need not be on the daemon's own machine: point the extension's
+daemon URL at the `tailnet_host` name and a clip taken on another tailnet node
+lands in the notes root's `clips/`, and syncs on from there like any other
+file.
 
 ## The tailnet, and when to use it instead
 
