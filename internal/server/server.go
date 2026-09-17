@@ -594,9 +594,24 @@ func (s *Server) listRoots(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"roots": s.reg.List()})
 }
 
+// addRoot registers a folder. The optional `file` names a note inside it —
+// relative to the folder, or absolute and under it — and the folder is
+// registered only if that note is there: otherwise `404 not_found`, with
+// nothing added to the registry and nothing written to the state file.
+//
+// That field is what stops a `file:` URL for a note that does not exist
+// from registering its directory for ever
+// ([#50](https://github.com/davison/md-notes/issues/50)). The daemon does
+// the checking rather than the extension registering and undoing, because
+// a rollback has a window in which the root is registered and persisted,
+// and a client that dies in that window leaves the very root the check
+// exists to prevent (M7-R1).
+//
+// A request with no `file` is what `mdn open` sends and is unchanged.
 func (s *Server) addRoot(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Path string `json:"path"`
+		File string `json:"file"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -610,8 +625,18 @@ func (s *Server) addRoot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "path must be absolute")
 		return
 	}
-	root, err := s.reg.Add(body.Path)
+	// What counts as a note is decided here, beside every other handler
+	// that asks it of a request path; the registry answers for whether the
+	// file is there and inside the folder.
+	if body.File != "" && !tree.IsMarkdown(body.File) {
+		noSuchNote(w, body.File)
+		return
+	}
+	root, err := s.reg.AddFor(body.Path, body.File)
 	switch {
+	case errors.Is(err, roots.ErrNoNote):
+		noSuchNote(w, body.File)
+		return
 	case errors.Is(err, roots.ErrNotDir), errors.Is(err, os.ErrNotExist):
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -622,6 +647,18 @@ func (s *Server) addRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	s.watchRoot(root)
 	writeJSON(w, http.StatusOK, root)
+}
+
+// noSuchNote is the one refusal every way of failing the check earns, in
+// the `{code, error}` envelope the source and clip endpoints answer in so
+// a client branches on the code rather than on the sentence. It names the
+// file the caller sent and nothing else: the caller is on loopback and
+// holds that path already, and which of "missing", "not markdown" and
+// "not under the folder" it was says more about what is outside the folder
+// than about the folder.
+func noSuchNote(w http.ResponseWriter, file string) {
+	writeSourceError(w, http.StatusNotFound, "not_found",
+		"no such note under that folder: "+file)
 }
 
 // treeHandler returns the markdown files of a root as a directory tree.

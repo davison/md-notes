@@ -803,3 +803,75 @@ func TestEscapesIsLexical(t *testing.T) {
 		}
 	}
 }
+
+// AddFor is Add with something to check first: the folder is registered
+// only when the file named inside it is there. Nothing is appended to the
+// registry and nothing is written to the state file otherwise, which is
+// what makes a refusal leave no trace — the defect in
+// [#50](https://github.com/davison/md-notes/issues/50) was a root that
+// outlived the file it was registered for. Whether the name is one the
+// daemon serves as a note is the server's question, not this one's.
+func TestAddForVerifiesTheFileFirst(t *testing.T) {
+	r, _, statePath := newTestRegistry(t)
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"todo.md", filepath.Join("sub", "deep.md")} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outside := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.Mkdir(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "secret.md"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "secret.md"), filepath.Join(dir, "escape.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "todo.md"), filepath.Join(dir, "inside.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, file := range []string{
+		"gone.md",
+		"sub/gone.md",
+		"../elsewhere/secret.md",
+		filepath.Join(outside, "secret.md"),
+		"escape.md",
+		"sub",
+		".",
+	} {
+		if _, err := r.AddFor(dir, file); !errors.Is(err, ErrNoNote) {
+			t.Errorf("AddFor(dir, %q) err = %v, want ErrNoNote", file, err)
+		}
+		if got := r.List(); len(got) != 1 {
+			t.Fatalf("AddFor(dir, %q) registered %+v", file, got)
+		}
+		if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+			t.Fatalf("AddFor(dir, %q) wrote the state file", file)
+		}
+	}
+
+	// A file that is there, named four ways, registers the folder once.
+	for _, file := range []string{"todo.md", "./todo.md", "sub/deep.md", "inside.md"} {
+		got, err := r.AddFor(dir, file)
+		if err != nil || got.Path != dir || got.Kind != KindRecent {
+			t.Fatalf("AddFor(dir, %q) = %+v, %v", file, got, err)
+		}
+	}
+	if got := r.List(); len(got) != 2 {
+		t.Fatalf("List() = %+v, want the notes root and one more", got)
+	}
+	// And an empty file is Add's own behaviour: nothing to check.
+	other := filepath.Join(t.TempDir(), "empty")
+	if err := os.Mkdir(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.AddFor(other, ""); err != nil {
+		t.Fatalf("AddFor(empty dir, \"\") = %v", err)
+	}
+}
