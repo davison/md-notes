@@ -33,6 +33,12 @@ export interface TreeNode {
   name: string;
   path: string;
   dir: boolean;
+  /**
+   * When the file was last modified, in Unix milliseconds. File nodes
+   * only, and absent from a file whose modification time the daemon could
+   * not read; see `tree.Node` for why a directory carries none.
+   */
+  modified?: number;
   children?: TreeNode[];
 }
 

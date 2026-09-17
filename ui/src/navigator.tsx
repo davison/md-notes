@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { noteURL, type TreeNode } from "./api";
+import { readOrder, sortTree, writeOrder, type Order } from "./order";
 
 interface Props {
   slug: string;
@@ -55,9 +56,23 @@ export function ancestors(path: string): string[] {
  * The navigator pane: a collapsible tree of the root's markdown files.
  * Expanded directories are remembered per root, and the current note's
  * ancestors are opened so it is always visible.
+ *
+ * Its header carries the order control, which switches the tree between
+ * the daemon's alphanumeric order and last-modified with the most recent
+ * note on top (M7-R3). The control lives here rather than in the root view
+ * so that the wide layout's pane and the drawer's Notes tab get it from
+ * one place: the drawer is the same element at a different width.
+ *
+ * The order is applied after the tag filter, so a filtered tree is ordered
+ * by the notes it is actually showing — which is the whole reason the
+ * daemon sends times for notes and no aggregate for folders.
  */
 export function Navigator({ slug, tree: fullTree, current, only = null, query = "" }: Props) {
-  const tree = useMemo(() => (only ? filterTree(fullTree, only) : fullTree), [fullTree, only]);
+  const [order, setOrder] = useState<Order>(readOrder);
+  const tree = useMemo(
+    () => sortTree(only ? filterTree(fullTree, only) : fullTree, order),
+    [fullTree, only, order],
+  );
   const [expanded, setExpanded] = useState<Set<string>>(() => loadExpanded(slug));
 
   useEffect(() => {
@@ -96,18 +111,57 @@ export function Navigator({ slug, tree: fullTree, current, only = null, query = 
 
   const empty = useMemo(() => !tree.children || tree.children.length === 0, [tree]);
 
-  if (empty) return <p class="muted">{only ? "No notes match the filter." : "No markdown files here."}</p>;
   // Plain list semantics rather than an ARIA tree: nested lists of links
   // and buttons are keyboard-reachable as they are, while a proper tree
   // widget would need roving focus to be an improvement.
   return (
     <nav aria-label="Notes">
-      <ul class="tree">
-        {tree.children!.map((n) => (
-          <Entry key={n.path} node={n} slug={slug} current={current} expanded={expanded} toggle={toggle} query={query} />
-        ))}
-      </ul>
+      <div class="nav-head">
+        <OrderToggle
+          order={order}
+          onChange={(next) => {
+            setOrder(next);
+            writeOrder(next);
+          }}
+        />
+      </div>
+      {empty ? (
+        <p class="muted">{only ? "No notes match the filter." : "No markdown files here."}</p>
+      ) : (
+        <ul class="tree">
+          {tree.children!.map((n) => (
+            <Entry key={n.path} node={n} slug={slug} current={current} expanded={expanded} toggle={toggle} query={query} />
+          ))}
+        </ul>
+      )}
     </nav>
+  );
+}
+
+/**
+ * The order control: one toggle, labelled for the order it selects and
+ * pressed when that order is on.
+ *
+ * The accessible name is the visible text and never changes, so a reader
+ * who has moved to it is not told the control became a different control
+ * when they used it; `aria-pressed` is what states the order in force,
+ * which is the same thing the highlight states to a reader who can see it.
+ * A name that swapped between "Recent first" and "A to Z" would say what
+ * the button does next while the pressed state said what is on now, and
+ * the two would be read out together.
+ */
+function OrderToggle({ order, onChange }: { order: Order; onChange: (next: Order) => void }) {
+  const on = order === "recent";
+  return (
+    <button
+      type="button"
+      class={on ? "nav-order on" : "nav-order"}
+      aria-pressed={on}
+      title="Order the notes by when they were last modified, newest first"
+      onClick={() => onChange(on ? "name" : "recent")}
+    >
+      Recent first
+    </button>
   );
 }
 
