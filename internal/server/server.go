@@ -63,6 +63,10 @@ type Server struct {
 	// watchBudget caps the directories watched per root. Zero is no
 	// budget; the daemon's default lives with the configuration.
 	watchBudget int
+	// listDirs is the directory listing a watcher setup starts from. It is
+	// tree.Dirs; a test replaces it to hold one setup open while the
+	// registry changes under it.
+	listDirs func(ctx context.Context, root string, warnf func(string, ...any)) ([]tree.Dir, error)
 
 	wmu      sync.Mutex
 	hubs     map[string]*watch.Hub
@@ -127,6 +131,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 		reg: reg, port: port, ui: ui, mux: http.NewServeMux(), log: logger, md: render.New(),
 		source:    source.New(reg),
 		clipsDir:  config.DefaultClipsDir,
+		listDirs:  tree.Dirs,
 		sessions:  session.New(session.DefaultTTL),
 		logins:    newThrottle(),
 		keepalive: 30 * time.Second,
@@ -271,7 +276,7 @@ func (s *Server) watchRoot(root roots.Root) {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		dirs, err := tree.Dirs(ctx, root.Path, s.log.Printf)
+		dirs, err := s.listDirs(ctx, root.Path, s.log.Printf)
 		if err != nil {
 			s.log.Printf("watch %s: %v; watching every non-hidden directory", root.Slug, err)
 			dirs = watch.Walk(root.Path)
@@ -289,13 +294,30 @@ func (s *Server) watchRoot(root roots.Root) {
 			return
 		default:
 		}
-		// The root can be unregistered while its watcher is being set up.
+		// The root can be unregistered while its watcher is being set up,
+		// and the slug it freed can come back for a different folder. So
+		// the question here is not whether *something* holds the slug but
+		// whether this setup's own root still does: a watcher installed
+		// under a slug that now means somewhere else would stream the
+		// wrong folder's changes to every page under it.
+		//
 		// The registry is read inside the same critical section the
 		// watcher is installed in, so a removal either sees the watcher
 		// and stops it or is seen here and the watcher is never installed.
-		if _, ok := s.reg.Get(root.Slug); !ok {
+		cur, held := s.reg.Get(root.Slug)
+		if !held || cur.Path != root.Path {
 			s.wmu.Unlock()
 			w.Close()
+			// The folder that took the slug found `starting` occupied by
+			// this setup and started nothing of its own, so it is watched
+			// here — once this setup's entry is gone, which the ready
+			// channel says.
+			if held {
+				go func() {
+					<-ready
+					s.watchRoot(cur)
+				}()
+			}
 			return
 		}
 		hub := watch.NewHub()
