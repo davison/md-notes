@@ -764,7 +764,7 @@ that device end to end, including the two ways to reach your notes from one.
 ### What holds these numbers
 
 The figures in the two sections above are not only documented, they are measured on
-every push. `make e2e` runs a suite of 35 checks under `ui/e2e` in headless Chromium
+every push. `make e2e` runs a suite of 54 checks under `ui/e2e` in headless Chromium
 against the built daemon on a temporary root, and CI runs it as a job of its own: the
 pane rectangles at four phone profiles and a desktop control, the 960-pixel
 breakpoint walked at 959, 960 and 961, the drawer's geometry and all four of its
@@ -772,7 +772,10 @@ close paths, the tag chip, the 40-pixel targets under a coarse pointer with the
 mouse-driven window's density left alone, the light override applied with the
 application bundle blocked — so nothing but the inline boot script can have applied
 it — the flash suppressed by the setting and by `prefers-reduced-motion`, and a
-second page load that fetches no asset bytes. The same suite drives creating and
+second page load that fetches no asset bytes — that last one twice, once on the
+machine as it is and once with the CPU slowed until the service worker is the one
+answering, because the bytes on the wire are the same either way and only the number
+of responses Chromium reports is not. The same suite drives creating and
 deleting a note end to end, in the wide layout and in the drawer layout: a name typed
 into the prompt, a bare title landing in the open note's folder, a refusal corrected
 in place, the new note reaching a second tab through the events stream, the delete
