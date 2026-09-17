@@ -37,6 +37,15 @@ var ErrOutside = errors.New("path is outside the root")
 // ErrNotDir is returned when a registered path is not a directory.
 var ErrNotDir = errors.New("not a directory")
 
+// ErrNoNote is returned by AddFor when the file a registration was to be
+// verified against is not there to find: missing, not a regular file, or
+// resolving outside the directory being registered. One error for the
+// three, because the answer to all of them is the same and the caller is
+// on loopback asking about a path it already holds — telling the three
+// apart would say more about what is outside the folder than it says
+// about the folder.
+var ErrNoNote = errors.New("no such file inside the directory")
+
 // ErrTooManyLinks is returned by the lexical walk below when a chain of
 // symlinks is longer than it will follow. It is deliberately not silence:
 // a walk that gave up and answered "does not leave the root" would hand
@@ -218,11 +227,40 @@ func (r *Registry) Notes() (Root, bool) {
 // Add registers path as a recent root and persists the registry. Adding a
 // path that is already registered returns the existing root unchanged.
 func (r *Registry) Add(path string) (Root, error) {
+	return r.AddFor(path, "")
+}
+
+// AddFor is Add with something to confirm first: file names a path inside
+// dir — relative to it, or absolute and under it — and the folder is
+// registered only if that path resolves inside the folder and is a regular
+// file that exists. Otherwise nothing is appended to the registry and
+// nothing is written to the state file, and the error is ErrNoNote.
+//
+// Verification comes before the registry is even consulted, so a folder
+// that is already a root is not a way past it, and before the first write,
+// so a refusal leaves no trace to undo. That is the difference from
+// registering and rolling back:
+// [#50](https://github.com/davison/md-notes/issues/50) is a root that
+// outlived the file it was registered for, and a rollback has a window in
+// which the same thing happens again.
+//
+// Whether the name is one the daemon serves as a note is not decided here:
+// the `.md`/`.markdown` rule is the server's, beside every other place
+// that asks that question of a request path.
+//
+// An empty file is Add: a caller with no particular file in mind, which is
+// what `mdn open` is.
+func (r *Registry) AddFor(dir, file string) (Root, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	root, err := newRoot(path, KindRecent)
+	root, err := newRoot(dir, KindRecent)
 	if err != nil {
 		return Root{}, err
+	}
+	if file != "" {
+		if err := root.hasFile(file); err != nil {
+			return Root{}, err
+		}
 	}
 	if existing, ok := r.byPath(root); ok {
 		return existing, nil
@@ -234,6 +272,32 @@ func (r *Registry) Add(path string) (Root, error) {
 		return Root{}, err
 	}
 	return root, nil
+}
+
+// hasFile reports whether file is a regular file inside root, through the
+// same confinement every request path goes through: cleaned lexically,
+// then resolved with symlinks evaluated and checked against the root's
+// real path, so a link out of the folder is not a file inside it. An
+// absolute path is accepted when it lies under the root and is refused
+// otherwise, because a caller holding the file's own path should not have
+// to take it apart to ask about it.
+func (root Root) hasFile(file string) error {
+	if filepath.IsAbs(file) {
+		rel, err := filepath.Rel(root.Path, filepath.Clean(file))
+		if err != nil {
+			return ErrNoNote
+		}
+		file = rel
+	}
+	real, err := root.Resolve(file)
+	if err != nil {
+		return ErrNoNote
+	}
+	info, err := os.Stat(real)
+	if err != nil || !info.Mode().IsRegular() {
+		return ErrNoNote
+	}
+	return nil
 }
 
 // save writes the recent roots atomically. Caller holds mu.
