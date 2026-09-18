@@ -18,7 +18,11 @@ import (
 )
 
 type workflow struct {
-	Name string `yaml:"name"`
+	Name        string `yaml:"name"`
+	Concurrency struct {
+		Group            string `yaml:"group"`
+		CancelInProgress bool   `yaml:"cancel-in-progress"`
+	} `yaml:"concurrency"`
 	Jobs map[string]struct {
 		Steps []struct {
 			Name string `yaml:"name"`
@@ -69,5 +73,19 @@ func TestOnlyATagPushPublishes(t *testing.T) {
 	}
 	if publishes != 1 {
 		t.Fatalf("found %d steps creating a Release, want exactly 1", publishes)
+	}
+}
+
+// TestReleasesDoNotOverlap keeps two tags pushed together, or a tag re-run
+// while its first run is still going, from building the same release twice at
+// once — and keeps the remedy from being cancellation, which would abandon a
+// release part-published.
+func TestReleasesDoNotOverlap(t *testing.T) {
+	parsed := release(t)
+	if parsed.Concurrency.Group == "" {
+		t.Error("release.yml declares no concurrency group")
+	}
+	if parsed.Concurrency.CancelInProgress {
+		t.Error("release.yml cancels a release in progress; a queued release is better than a half-finished one")
 	}
 }

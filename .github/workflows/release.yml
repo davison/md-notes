@@ -25,6 +25,14 @@ on:
 permissions:
   contents: read
 
+# One release at a time per ref, and never cancelled: two tags pushed together
+# would otherwise run two full releases, CI included, side by side, and a
+# re-run of a tag would overlap its own first run. Cancelling is the wrong
+# remedy here — a half-finished release is worse than a queued one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # The commit is checked the way every other commit is checked, by calling CI
   # rather than restating it: both of its jobs, `check` and `e2e`, gate the
