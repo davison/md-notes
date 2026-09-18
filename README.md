@@ -85,7 +85,12 @@ make extension  # builds the browser extension to extension/dist and a zip
 make check      # vet, typecheck, tests, build
 make e2e        # browser checks for the UI, in headless Chromium
 make install    # copies ./mdn to ~/.local/bin/mdn (PREFIX=... to change)
+make release    # everything a release publishes, into dist/ (VERSION=v0.1.0)
 ```
+
+[docs/releasing.md](docs/releasing.md) covers `make release` and the rest of
+it: where the version comes from, how a release is cut, and what publishes
+after the tag.
 
 `make e2e` drives the built daemon through a real browser — the phone
 layout, the drawer, the display settings, the tap targets, the asset cache,
