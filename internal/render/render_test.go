@@ -580,3 +580,45 @@ func TestScrubReachesInlineHTMLAndNotCodeBlocks(t *testing.T) {
 	wantContains(t, n.HTML, `<span>inline</span>`, `&lt;p data-line=&#34;9&#34;&gt;shown, not applied`)
 	wantMissing(t, n.HTML, `<span class="line-anchor"`, `<p data-line="9">shown`)
 }
+
+// An entity in an attribute value is decoded by the tokeniser, and by the
+// sanitiser after it, so anything that decides what to scrub by scanning
+// for literal bytes can be walked straight past: `class="line&#45;anchor"`
+// reaches the page as the class the app styles. Found in review of
+// davison/md-notes#144, finding 1.
+func TestScrubRawSeesThroughEntities(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`<div class="line&#45;anchor">x</div>`, `<div>x</div>`},
+		{`<div class="line&#x2D;anchor">x</div>`, `<div>x</div>`},
+		{`<div class="&#x6c;ine-anchor">x</div>`, `<div>x</div>`},
+		{`<div class="foot&#110;otes">x</div>`, `<div>x</div>`},
+		{`<a class="outside&#45;root" href="x.md">a</a>`, `<a href="x.md">a</a>`},
+		// A named entity that decodes to whitespace is a class separator,
+		// so it hides a name in the middle of an attribute as well as at
+		// its edges. The note keeps the class either side of it.
+		{`<div class="keep&Tab;line-anchor">x</div>`, `<div class="keep">x</div>`},
+		{`<div class="line-anchor&NewLine;keep">x</div>`, `<div class="keep">x</div>`},
+		// An attribute name is not entity-decoded, so this one is not the
+		// marker and is left where it is; the sanitiser drops it as an
+		// attribute nothing allows.
+		{`<p data&#45;line="5">x</p>`, `<p data&#45;line="5">x</p>`},
+		// What is written back out is re-escaped, so a value the note
+		// wrote as an entity is still one after a sibling is removed.
+		{`<p title="a &amp; b" data-line="5">x</p>`, `<p title="a &amp; b">x</p>`},
+	} {
+		if got := string(scrubRaw([]byte(c.src))); got != c.want {
+			t.Errorf("scrubRaw(%q) = %q, want %q", c.src, got, c.want)
+		}
+	}
+}
+
+// End to end, because the sanitiser decodes the entity back into the class
+// the stylesheet selects on (ui/src/style.css:1180, :1190): a note must not
+// reach the page wearing one.
+func TestEntityEncodedClassesDoNotReachThePage(t *testing.T) {
+	n := render(t, "x.md", "para\n\n"+
+		`<a class="outside&#45;root" href="x.md">entity borrowed</a>`+"\n\n"+
+		`<div class="foot&#110;otes">also borrowed</div>`+"\n")
+	wantContains(t, n.HTML, "entity borrowed", "also borrowed")
+	wantMissing(t, n.HTML, `class="outside-root"`, `class="footnotes"`, "&#45;", "&#110;")
+}
