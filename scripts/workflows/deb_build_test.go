@@ -456,7 +456,9 @@ func TestTheStagedDocumentsCarryTheVersion(t *testing.T) {
 		t.Errorf("the manual page has no `mdn \\- summary` NAME entry, which is what apropos(1) reads")
 	}
 
-	// The copyright is the licence itself, not a description of it.
+	// The copyright file is the licence itself, not a description of it, under
+	// the one line Policy 12.5 asks for that the licence text does not give:
+	// where the sources it covers came from.
 	licence, err := os.ReadFile(filepath.Join(repoRoot, "LICENSE"))
 	if err != nil {
 		t.Fatal(err)
@@ -465,8 +467,15 @@ func TestTheStagedDocumentsCarryTheVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(licence, copyright) {
-		t.Error("/usr/share/doc/md-notes/copyright is not LICENSE verbatim")
+	if !bytes.Contains(copyright, licence) {
+		t.Errorf("/usr/share/doc/md-notes/copyright does not carry LICENSE verbatim:\n%s", copyright)
+	}
+	source, _, _ := bytes.Cut(copyright, []byte("\n"))
+	if !bytes.HasPrefix(source, []byte("Source: https://")) {
+		t.Errorf("the copyright file opens with %q, want a Source: line naming where the sources came from", source)
+	}
+	if homepage := packageConfig(t).Homepage; !bytes.Contains(source, []byte(homepage)) {
+		t.Errorf("the copyright names %q and the control file's Homepage is %q; they are the same place", source, homepage)
 	}
 }
 
