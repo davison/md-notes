@@ -221,6 +221,14 @@ async function main() {
   if (playwright === null) refuse("playwright is not installed (set PLAYWRIGHT_ROOT)");
   if (!fs.existsSync(path.join(dist, "manifest.json"))) refuse("extension/dist is not built (make extension)");
   if (!fs.existsSync(mdnBin)) refuse(`no mdn binary at ${mdnBin} (make build, or set MDN_BIN)`);
+  if (!(await portIsFree(DAEMON_PORT))) {
+    refuse(
+      `port ${DAEMON_PORT} is in use. It is the daemon's default, and the shots render the ` +
+        "address the extension is configured with, so they are taken on it or not at all. " +
+        "Stop whatever is listening — most likely your own `mdn serve` — or run this in a " +
+        "network namespace of its own; extension/store/README.md has the command.",
+    );
+  }
 
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mdn-store-shots-")));
 
@@ -231,6 +239,11 @@ async function main() {
   // was wrong twice over — a run that died left the directory behind, and
   // every run after it then rendered a different random path into two of the
   // four shots. Deterministic or not at all, the same rule as the port.
+  //
+  // Every refusal above this line happens before anything is created, which is
+  // the point of them being up there: a run that refused for a busy 7337 after
+  // making this directory would leave it behind, and the README's own
+  // `unshare` recovery would then refuse on the directory instead.
   const notesDir = path.join(fs.realpathSync(os.tmpdir()), "notes");
   if (fs.existsSync(notesDir)) {
     refuse(
@@ -282,14 +295,6 @@ async function main() {
   const tokenFile = path.join(tmp, "token");
   const token = execFileSync(mdnBin, ["token", "--token-file", tokenFile], { encoding: "utf8" }).trim();
 
-  if (!(await portIsFree(DAEMON_PORT))) {
-    refuse(
-      `port ${DAEMON_PORT} is in use. It is the daemon's default, and the shots render the ` +
-        "address the extension is configured with, so they are taken on it or not at all. " +
-        "Stop whatever is listening — most likely your own `mdn serve` — or run this in a " +
-        "network namespace of its own; extension/store/README.md has the command.",
-    );
-  }
   const appOrigin = `http://localhost:${DAEMON_PORT}`;
   const daemon = spawn(
     mdnBin,

@@ -329,8 +329,33 @@ describe("an upload the store did not accept", () => {
   });
 
   it("publishes when the version is the one expected", async () => {
-    const { submitted } = await run({ expectVersion: "0.1.0" });
+    const { submitted, versionConfirmed } = await run({ expectVersion: "0.1.0" });
     expect(submitted.state).toBe("PENDING_REVIEW");
+    expect(versionConfirmed).toBe(true);
+  });
+
+  it("publishes but says so when the store reports no version at all", async () => {
+    // `crxVersion` is documented as unset while an upload is in progress, and
+    // a settled upload reports it somewhere else that may also be empty. The
+    // check is corroboration — the workflow has already compared the zip's own
+    // manifest to the tag — so a missing version must not block a release. It
+    // must not pass silently either: a skipped check that looks like a passed
+    // one is how this was first written.
+    for (const answer of [
+      { name: NAME, itemId: ITEM, uploadState: "SUCCEEDED" },
+      { name: NAME, itemId: ITEM, crxVersion: "", uploadState: "SUCCEEDED" },
+    ]) {
+      seen = [];
+      answers[`POST /upload/v2/${NAME}:upload`] = { json: answer };
+      const { submitted, versionConfirmed } = await run({ expectVersion: "0.1.0" });
+      expect(submitted.state).toBe("PENDING_REVIEW");
+      expect(versionConfirmed).toBe(false);
+    }
+  });
+
+  it("leaves the version unjudged when none was expected", async () => {
+    const { versionConfirmed } = await run();
+    expect(versionConfirmed).toBe(null);
   });
 });
 
@@ -446,6 +471,8 @@ describe("the run summary", () => {
       publisherId: PUBLISHER,
       itemId: ITEM,
       uploaded: { uploadState: "SUCCEEDED", crxVersion: "0.1.0" },
+      versionConfirmed: true,
+      expectVersion: "0.1.0",
       submitted: {
         state: "PENDING_REVIEW",
         warningInfo: { warnings: [{ reason: "A_WARNING", description: "worth reading" }] },
@@ -460,5 +487,21 @@ describe("the run summary", () => {
     expect(text).toContain("A_WARNING — worth reading");
     expect(text).toContain("reviewed before it reaches anyone");
     expect(text).toContain(`https://chromewebstore.google.com/detail/${ITEM}`);
+    expect(text).not.toContain("could not confirm");
+  });
+
+  it("says when the store confirmed no version, rather than staying quiet", () => {
+    const text = report({
+      publisherId: PUBLISHER,
+      itemId: ITEM,
+      uploaded: { uploadState: "SUCCEEDED" },
+      versionConfirmed: false,
+      expectVersion: "0.1.0",
+      submitted: { state: "PENDING_REVIEW" },
+    }).join("\n");
+    expect(text).toContain("reported no version");
+    expect(text).toContain("0.1.0");
+    // and does not claim a version it was never given
+    expect(text).not.toContain("version undefined");
   });
 });

@@ -119,14 +119,19 @@ jobs:
         env:
           ASSET: ${{ steps.release.outputs.asset }}
         run: |
-          checked=$(sha256sum --ignore-missing --check SHA256SUMS)
+          # `|| true` because a `run:` step is `bash -e`: a failing sha256sum
+          # would otherwise kill the step at this assignment, before the
+          # message below could say which file was not verified. Its own
+          # warnings still reach the log on stderr, and the assertion that
+          # follows is the one that decides.
+          checked=$(sha256sum --ignore-missing --check SHA256SUMS) || true
           echo "$checked"
           # --check is happy having verified nothing at all, so the asset's own
           # OK line is what is asserted, not the exit status.
-          grep -qxF "$ASSET: OK" <<<"$checked" || {
-            echo "SHA256SUMS did not verify $ASSET" >&2
+          if ! grep -qxF "$ASSET: OK" <<<"$checked"; then
+            echo "SHA256SUMS did not verify $ASSET: either the asset this job downloaded is not the one the release was built from, or SHA256SUMS does not cover it at all" >&2
             exit 1
-          }
+          fi
 
       # The version inside the package, compared rather than printed. The store
       # refuses a package whose version is not higher than the published one,

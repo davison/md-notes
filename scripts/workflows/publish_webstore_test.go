@@ -11,6 +11,8 @@
 package workflows
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -308,6 +310,94 @@ func TestWebStoreVerifiesWhatItSends(t *testing.T) {
 	}
 	if !strings.Contains(version, "exit 1") {
 		t.Errorf("the version step cannot fail:\n%s", version)
+	}
+}
+
+// TestTheChecksumStepSaysWhatFailed runs the checksum step as written, because
+// asserting on its text cannot tell whether its message is reachable.
+//
+// It was not. A `run:` step is `bash -e`, so `checked=$(sha256sum …)` on a
+// failing sum killed the step at the assignment and the crafted message — the
+// one naming the file that was not verified — never printed. The step failed
+// for the right reason with the wrong words, which is the kind of thing only a
+// person reading a real failing run would ever notice.
+func TestTheChecksumStepSaysWhatFailed(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is the shell a `run:` step gets on the runner")
+	}
+	if _, err := exec.LookPath("sha256sum"); err != nil {
+		t.Skip("sha256sum is coreutils, which the runner has")
+	}
+
+	script := webstoreStep(t, "Check the zip against the release's checksums").Run
+	if strings.Contains(script, "${{") {
+		t.Fatal("the checksum step now interpolates a workflow expression, so it cannot be run as written: keep its inputs in `env:`")
+	}
+
+	const asset = "mdn-extension-v0.1.0.zip"
+	// Runs the step over a directory holding `asset` and a SHA256SUMS built
+	// from `sums`, and hands back everything it said.
+	check := func(t *testing.T, contents string, sums func(realDigest string) string) (string, error) {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, asset), []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		digest := fmt.Sprintf("%x", sha256.Sum256([]byte(contents)))
+		if err := os.WriteFile(filepath.Join(dir, "SHA256SUMS"), []byte(sums(digest)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "check.sh")
+		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(bash, "-e", "-o", "pipefail", path)
+		cmd.Dir = dir
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "ASSET=" + asset}
+		said, err := cmd.CombinedOutput()
+		return string(said), err
+	}
+
+	t.Run("passes the release's own asset", func(t *testing.T) {
+		said, err := check(t, "the package", func(d string) string {
+			return d + "  " + asset + "\nffff  mdn-v0.1.0-linux-amd64\n"
+		})
+		if err != nil {
+			t.Errorf("the release's own asset was refused: %v\n%s", err, said)
+		}
+		if !strings.Contains(said, asset+": OK") {
+			t.Errorf("the step did not report the asset verified:\n%s", said)
+		}
+	})
+
+	for _, tc := range []struct {
+		name string
+		sums func(string) string
+	}{
+		{
+			// The case that killed the step at the assignment.
+			name: "an asset that is not the one the release was built from",
+			sums: func(string) string {
+				return strings.Repeat("0", 64) + "  " + asset + "\n"
+			},
+		},
+		{
+			// --check exits 0 here having verified nothing at all, so only the
+			// OK-line assertion catches it.
+			name: "an asset the checksums do not cover",
+			sums: func(string) string { return "ffff  mdn-v0.1.0-linux-amd64\n" },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			said, err := check(t, "the package", tc.sums)
+			if err == nil {
+				t.Errorf("the step passed:\n%s", said)
+			}
+			if !strings.Contains(said, "SHA256SUMS did not verify "+asset) {
+				t.Errorf("the step failed without naming what was not verified, so its message is unreachable:\n%s", said)
+			}
+		})
 	}
 }
 

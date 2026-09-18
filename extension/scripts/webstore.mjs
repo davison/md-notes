@@ -335,11 +335,27 @@ export async function uploadAndSubmit({
       uploaded,
     );
   }
-  if (expectVersion !== null && typeof version === "string" && version !== expectVersion) {
-    throw new WebStoreError(
-      `the store read version ${version} out of the package, but this release is ${expectVersion}: the wrong zip was uploaded, and nothing has been submitted`,
-      uploaded,
-    );
+  // The store reads the version out of the manifest and hands it back, so this
+  // is the authoritative check that the right package arrived. It is not
+  // always available: `crxVersion` is documented as unset while an upload is
+  // still in progress, and a settled upload reports it through a different
+  // field that may not be there either. A missing version is therefore not a
+  // failure — the workflow has already compared the zip's own manifest to the
+  // tag before sending it, so refusing here would block a release over a field
+  // the store chose not to fill — but it is not silence either: the run says
+  // the version went unconfirmed rather than implying it was checked.
+  let versionConfirmed = null;
+  if (expectVersion !== null) {
+    if (typeof version !== "string" || version === "") {
+      versionConfirmed = false;
+    } else if (version !== expectVersion) {
+      throw new WebStoreError(
+        `the store read version ${version} out of the package, but this release is ${expectVersion}: the wrong zip was uploaded, and nothing has been submitted`,
+        uploaded,
+      );
+    } else {
+      versionConfirmed = true;
+    }
   }
 
   const submitted = await publish({ publisherId, itemId, token, root, fetch });
@@ -352,7 +368,7 @@ export async function uploadAndSubmit({
       submitted,
     );
   }
-  return { uploaded: { ...uploaded, uploadState: state, crxVersion: version }, submitted };
+  return { uploaded: { ...uploaded, uploadState: state, crxVersion: version }, submitted, versionConfirmed };
 }
 
 /** " — what the enum says it means", or nothing for a value we do not know. */
@@ -372,13 +388,20 @@ function warnings(submitted) {
 }
 
 /** What the store said, as the lines a run summary wants. */
-export function report({ publisherId, itemId, uploaded, submitted }) {
+export function report({ publisherId, itemId, uploaded, submitted, versionConfirmed = null, expectVersion = null }) {
   const state = submitted.state ?? "no state";
   const list = submitted?.warningInfo?.warnings ?? [];
+  const version =
+    typeof uploaded.crxVersion === "string" && uploaded.crxVersion !== ""
+      ? `, version ${uploaded.crxVersion}`
+      : "";
   return [
-    `Uploaded to \`${itemName(publisherId, itemId)}\`: ${uploaded.uploadState}${
-      uploaded.crxVersion === undefined ? "" : `, version ${uploaded.crxVersion}`
-    }.`,
+    `Uploaded to \`${itemName(publisherId, itemId)}\`: ${uploaded.uploadState}${version}.`,
+    ...(versionConfirmed === false
+      ? [
+          `The store reported no version for the package, so it could not confirm this is ${expectVersion ?? "this release"}. The zip was checked against the release's own version and its checksum before it was sent.`,
+        ]
+      : []),
     `Submitted for review: **${state}**${meaning(ITEM_STATES, state)}.`,
     ...list.map((w) => `- warning: ${[w.reason, w.description].filter(Boolean).join(" — ")}`),
     "",
@@ -430,15 +453,23 @@ export async function main(argv, env = process.env, options = {}) {
   }
   const zip = fs.readFileSync(args.zip);
   if (zip.length === 0) throw new WebStoreError(`${args.zip} is empty`);
-  const { uploaded, submitted } = await uploadAndSubmit({
+  const expectVersion = args["expect-version"] ?? null;
+  const { uploaded, submitted, versionConfirmed } = await uploadAndSubmit({
     publisherId: args["publisher-id"],
     itemId: args["item-id"],
     zip,
-    expectVersion: args["expect-version"] ?? null,
+    expectVersion,
     credentials: credentialsFrom(env),
     ...options,
   });
-  return report({ publisherId: args["publisher-id"], itemId: args["item-id"], uploaded, submitted });
+  return report({
+    publisherId: args["publisher-id"],
+    itemId: args["item-id"],
+    uploaded,
+    submitted,
+    versionConfirmed,
+    expectVersion,
+  });
 }
 
 // Run only when this file is the program, so the tests can import it.
