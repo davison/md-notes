@@ -2,6 +2,7 @@ package workflows
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -227,4 +228,96 @@ func mapValues(m map[string]string) []string {
 		values = append(values, v)
 	}
 	return values
+}
+
+// TestNothingButARealRenderingGetsPastTheGuard runs the guard step's script,
+// as written, against four renderings.
+//
+// The step is the second line of defence — aurgen refuses a SKIP rendering and
+// a placeholder maintainer itself, and those refusals are tested where they
+// live — but it is the one that does not depend on the renderer being right,
+// and the review of PR #152 measured that deleting it left every test in this
+// package green (finding 4). It also holds the empty-secret refusal, which
+// otherwise fails a release inside `git clone` with an ssh error a long way
+// from anyone who could read it.
+func TestNothingButARealRenderingGetsPastTheGuard(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is the shell a `run:` step gets on the runner")
+	}
+
+	var script string
+	steps := theJob(t)
+	guard, verifies, pushes := -1, -1, -1
+	for i, step := range steps {
+		switch {
+		case strings.Contains(step.Run, "'SKIP'"):
+			guard, script = i, step.Run
+		case strings.Contains(step.Run, "archlinux:latest"):
+			verifies = i
+		case strings.Contains(step.Run, "git push"):
+			pushes = i
+		}
+	}
+	if script == "" {
+		t.Fatal("no step refuses a PKGBUILD still carrying SKIP checksums")
+	}
+	if strings.Contains(script, "${{") {
+		t.Fatal("the step now interpolates a workflow expression, so it cannot be run as written: keep its inputs in `env:`")
+	}
+	// Before the build as well as before the push: the plan on
+	// davison/md-notes#136 put it there, and a condition known at render time
+	// should not cost a container build to discover.
+	if !(guard < verifies && verifies < pushes) {
+		t.Errorf("the steps run guard=%d, build=%d, push=%d; want the guard first and the push last", guard, verifies, pushes)
+	}
+
+	// The committed PKGBUILD is the placeholder rendering: real metadata, real
+	// maintainer line, and SKIP where a real release's checksums go. A release
+	// renders the same file with those filled in.
+	committed := string(readRepoFile(t, filepath.Join("..", "..", "packaging", "aur", "PKGBUILD")))
+	released := strings.ReplaceAll(committed, "'SKIP'", "'"+strings.Repeat("a", 64)+"'")
+	// And the state the gate on davison/md-notes#136 left behind until the
+	// operator answered it: aurgen's placeholder marker, in the line the AUR
+	// reads first. It is spelled out here rather than imported because aurgen
+	// is a main package; if the marker changes there, this test says so by
+	// letting the rendering through.
+	unanswered := regexp.MustCompile(`(?m)^# Maintainer: .*$`).
+		ReplaceAllString(released, "# Maintainer: Someone <maintainer at example dot invalid>")
+	if unanswered == released {
+		t.Fatal("the rendered PKGBUILD has no # Maintainer: line to replace")
+	}
+
+	for _, tc := range []struct {
+		name     string
+		pkgbuild string
+		secret   string
+		accepted bool
+	}{
+		{name: "a real release, with the key", pkgbuild: released, secret: "a private key", accepted: true},
+		{name: "the committed template", pkgbuild: committed, secret: "a private key"},
+		{name: "the maintainer gate still unanswered", pkgbuild: unanswered, secret: "a private key"},
+		{name: "no deploy key in the secret", pkgbuild: released, secret: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "packaging", "aur", "PKGBUILD")
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(tc.pkgbuild), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(bash, "-e", "-o", "pipefail", "-c", script)
+			cmd.Dir = dir
+			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "AUR_SSH_PRIVATE_KEY=" + tc.secret}
+			out, err := cmd.CombinedOutput()
+			if tc.accepted && err != nil {
+				t.Errorf("refused a rendering that should have gone through: %v: %s", err, out)
+			}
+			if !tc.accepted && err == nil {
+				t.Errorf("let this reach the AUR, want it refused: %s", out)
+			}
+		})
+	}
 }
