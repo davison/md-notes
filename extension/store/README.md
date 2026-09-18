@@ -86,9 +86,15 @@ impersonates nothing. Nothing is drawn by hand, so a screenshot that no longer
 matches the product is one that fails to regenerate rather than one that quietly
 misleads a stranger.
 
-Two consecutive runs produce byte-identical files. The one thing that does move
-is the date: the daemon names a clip for the day it was taken, and that name is
-in the app's sidebar in one of the shots.
+Consecutive runs produce the same screenshots, and almost always the same
+bytes — nothing in them is a port, a temporary path or a random name any more.
+Two things can still move them. The date: the daemon names a clip for the day it
+was taken, and that name is in the app's sidebar in one of the shots. And a
+handful of antialiased pixels: one run here came back four rows and seven pixels
+different from the one before it, along a border, with the content identical.
+So compare what changed before committing a regenerated shot, rather than
+assuming a diff means the UI moved — and do not treat a byte-identical result
+as something the script guarantees.
 
 They are committed because the store needs the files and because a listing
 nobody can rebuild is a listing that decays. Rerun the script when the UI moves,
