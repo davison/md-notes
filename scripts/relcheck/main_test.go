@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -123,6 +124,57 @@ func TestManifestVersionOf(t *testing.T) {
 	}
 	if _, err := manifestVersionOf(filepath.Join(dir, "absent.json")); err == nil {
 		t.Fatal("manifestVersionOf() on a missing file = nil, want an error")
+	}
+}
+
+func TestManifestVersionOfAZip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mdn-extension-v0.1.0.zip")
+	pack(t, path, map[string]string{
+		"background.js": "// not the manifest",
+		"manifest.json": `{"name":"md-notes","version":"0.1.0"}`,
+	})
+	got, err := manifestVersionOf(path)
+	if err != nil || got != "0.1.0" {
+		t.Fatalf("manifestVersionOf(zip) = %q, %v, want %q, nil", got, err, "0.1.0")
+	}
+
+	// A zip built by a packer that lost the manifest, or pointed at the wrong
+	// directory, must fail rather than be read as agreement.
+	empty := filepath.Join(dir, "empty.zip")
+	pack(t, empty, map[string]string{"background.js": "// alone"})
+	if _, err := manifestVersionOf(empty); err == nil {
+		t.Fatal("manifestVersionOf() on a zip with no manifest = nil, want an error")
+	}
+
+	notAZip := filepath.Join(dir, "broken.zip")
+	if err := os.WriteFile(notAZip, []byte("this is not a zip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manifestVersionOf(notAZip); err == nil {
+		t.Fatal("manifestVersionOf() on a file that is not a zip = nil, want an error")
+	}
+}
+
+func pack(t *testing.T, path string, files map[string]string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	w := zip.NewWriter(f)
+	for name, body := range files {
+		entry, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

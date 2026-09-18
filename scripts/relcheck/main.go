@@ -13,10 +13,11 @@
 //
 //	go run ./scripts/relcheck -version v0.1.0 \
 //	    -binary dist/mdn-v0.1.0-linux-amd64 \
-//	    -manifest extension/dist/manifest.json
+//	    -manifest dist/mdn-extension-v0.1.0.zip
 package main
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -38,7 +39,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	version := flags.String("version", "", "the version being released, as the Makefile's VERSION holds it")
 	binary := flags.String("binary", "", "path to a built mdn binary, asked for its version")
-	manifest := flags.String("manifest", "", "path to the built extension manifest.json")
+	manifest := flags.String("manifest", "", "the built extension: either the release zip or a manifest.json")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -98,9 +99,21 @@ func binaryVersion(path string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// manifestVersionOf is the version key of a built extension manifest.
+// manifestVersionOf is the version key of a built extension manifest, read
+// from the release zip itself when it is given one.
+//
+// The zip is the thing that ships. Checking the manifest staged in
+// extension/dist/ instead would be checking a file that happens to agree with
+// the asset today, because the zip is packed from it two lines earlier in the
+// release target — an ordering nothing here enforces and a later edit could
+// quietly break, which is the same silent staleness this command exists to
+// catch.
 func manifestVersionOf(path string) (string, error) {
-	raw, err := os.ReadFile(path)
+	read := os.ReadFile
+	if strings.HasSuffix(path, ".zip") {
+		read = manifestInZip
+	}
+	raw, err := read(path)
 	if err != nil {
 		return "", fmt.Errorf("the extension manifest could not be read: %w", err)
 	}
@@ -114,6 +127,21 @@ func manifestVersionOf(path string) (string, error) {
 		return "", fmt.Errorf("%s carries no version: this is the built manifest, so the build's stamping step did not run", path)
 	}
 	return *manifest.Version, nil
+}
+
+// manifestInZip is the manifest.json entry of a packed extension.
+func manifestInZip(path string) ([]byte, error) {
+	archive, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, err
+	}
+	defer archive.Close()
+	entry, err := archive.Open("manifest.json")
+	if err != nil {
+		return nil, fmt.Errorf("%s holds no manifest.json: %w", path, err)
+	}
+	defer entry.Close()
+	return io.ReadAll(entry)
 }
 
 // release matches one to four dot-separated integers with no leading zeros,
