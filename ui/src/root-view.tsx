@@ -264,12 +264,31 @@ function TagChip({ slug, current, active }: { slug: string; current: string; act
   );
 }
 
+/** The remedy for directories the filesystem refused, which no limit covers. */
+function refusedFix(n: number, reason?: string) {
+  const what = n === 1 ? "directory" : "directories";
+  return `give the daemon access to the ${n.toLocaleString()} ${what} it could not watch${
+    reason ? ` (${reason})` : ""
+  }`;
+}
+
+/** Joins remedies as prose: "a", "a and b", "a, b and c". */
+function remedies(fix: string[]) {
+  if (fix.length < 3) return fix.join(" and ");
+  return `${fix.slice(0, -1).join(", ")} and ${fix[fix.length - 1]}`;
+}
+
 /**
  * Says so when live update covers only part of the root — the watch budget
- * is spent, or the kernel refused watches — or none of it, when the daemon
- * has no watcher for the root at all. Changes in an unwatched directory
- * still arrive when a watched one reports them or the daemon restarts, so
- * a limited coverage is a caveat rather than an error.
+ * is spent, the kernel is out of watches, or the filesystem refused a
+ * directory — or none of it, when the daemon has no watcher for the root at
+ * all. Changes in an unwatched directory still arrive when a watched one
+ * reports them or the daemon restarts, so a limited coverage is a caveat
+ * rather than an error.
+ *
+ * Each cause carries its own remedy: a directory the daemon may not read is
+ * not the kernel's watch pool running dry, and raising
+ * fs.inotify.max_user_watches would never cover it (M8-R7).
  */
 function LiveUpdateNotice({ live }: { live: LiveUpdate | null }) {
   if (!live) return null;
@@ -285,6 +304,7 @@ function LiveUpdateNotice({ live }: { live: LiveUpdate | null }) {
   const fix = [
     live.overBudget ? `raise max_watches above ${live.budget.toLocaleString()}` : "",
     live.failed > 0 ? "raise fs.inotify.max_user_watches" : "",
+    live.refused > 0 ? refusedFix(live.refused, live.reason) : "",
   ].filter(Boolean);
   return (
     <p class="notice">
@@ -292,7 +312,7 @@ function LiveUpdateNotice({ live }: { live: LiveUpdate | null }) {
       {(live.watched + live.unwatched).toLocaleString()} directories in this root. A
       change in one of the other {live.unwatched.toLocaleString()} shows up when a
       watched directory reports it or the daemon restarts
-      {fix.length > 0 ? ` — to cover them all, ${fix.join(", and ")}` : ""}.
+      {fix.length > 0 ? ` — to cover them all, ${remedies(fix)}` : ""}.
     </p>
   );
 }

@@ -248,8 +248,8 @@ describe("RootView tag filter", () => {
 });
 
 describe("watch coverage", () => {
-  const complete = { watched: 4, unwatched: 0, budget: 8192, overBudget: false, failed: 0, limited: false };
-  const limited = { watched: 8192, unwatched: 4498, budget: 8192, overBudget: true, failed: 0, limited: true };
+  const complete = { watched: 4, unwatched: 0, budget: 8192, overBudget: false, failed: 0, refused: 0, limited: false };
+  const limited = { watched: 8192, unwatched: 4498, budget: 8192, overBudget: true, failed: 0, refused: 0, limited: true };
 
   it("says nothing while the whole root is watched", async () => {
     render(
@@ -273,6 +273,31 @@ describe("watch coverage", () => {
     const notice = (await screen.findAllByText(/Live update covers/))[0];
     expect(notice.textContent).toContain("raise max_watches above 8,192");
     expect(notice.textContent).toContain("fs.inotify.max_user_watches");
+  });
+
+  it("names the cause, and no limit to raise, when the filesystem refused a directory", async () => {
+    render(
+      <LocationProvider>
+        <RootView slug="n" />
+      </LocationProvider>,
+    );
+    await screen.findByText("docs");
+    // A subdirectory at mode 000: nothing to do with the budget or the
+    // kernel's watch pool, and no sysctl covers it (M8-R7).
+    FakeEventSource.last!.emitStatus({
+      ...limited,
+      watched: 2,
+      unwatched: 1,
+      overBudget: false,
+      refused: 1,
+      reason: "permission denied",
+    });
+    const notice = (await screen.findAllByText(/Live update covers/))[0];
+    expect(notice.textContent).toContain(
+      "give the daemon access to the 1 directory it could not watch (permission denied)",
+    );
+    expect(notice.textContent).not.toContain("fs.inotify.max_user_watches");
+    expect(notice.textContent).not.toContain("max_watches");
   });
 
   it("puts the notice in the navigator and above the note, one for each width", async () => {
