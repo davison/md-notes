@@ -8,7 +8,8 @@ pkgbase = md-notes-bin
 	arch = aarch64
 	license = MIT
 	depends = ripgrep
-	provides = md-notes
+	optdepends = xdg-utils: mdn open launches a browser
+	provides = md-notes=0.0.0
 	conflicts = md-notes
 	options = !strip
 	options = !debug

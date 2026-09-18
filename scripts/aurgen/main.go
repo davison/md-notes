@@ -83,7 +83,7 @@ func run(args []string, stderr io.Writer) error {
 			return fmt.Errorf("-sums is required: the release's SHA256SUMS carries the binaries' checksums")
 		}
 		if strings.Contains(in.Maintainer, placeholderMarker) {
-			return fmt.Errorf("the maintainer line in %s is still the placeholder (%q): the operator's answer on davison/md-notes#136 edits that file", *maintainer, in.Maintainer)
+			return fmt.Errorf("the maintainer line in %s is still the placeholder (%q): it is the first line the AUR shows, and it is answered on davison/md-notes#136", *maintainer, in.Maintainer)
 		}
 		in.Version = *version
 		if in.SumAMD64, in.SumARM64, err = releaseSums(*sums, in.Version); err != nil {
@@ -122,8 +122,11 @@ const (
 	// names no release anyone could have.
 	placeholderVersion = "v0.0.0"
 
-	// placeholderMarker is what an unanswered maintainer gate leaves in
-	// packaging/aur/MAINTAINER. A real address does not contain it.
+	// placeholderMarker is what an unanswered maintainer gate left in
+	// packaging/aur/MAINTAINER before the operator answered it on
+	// davison/md-notes#136 (plain name and address, not obfuscated). The
+	// refusal outlives the answer: the file can be emptied or reset, and what
+	// it holds is the first line the AUR shows.
 	placeholderMarker = "example dot invalid"
 
 	pkgname = "md-notes-bin"
@@ -191,9 +194,9 @@ func render(in inputs) (pkgbuild, srcinfo string, err error) {
 }
 
 // maintainerLine reads the one line the AUR sees first. Keeping it in a file
-// of its own means the gate's answer — the name, the address, whether the
-// address is obfuscated — is a one-line edit rather than a change to the
-// renderer.
+// of its own meant the gate's answer — the name, the address, whether the
+// address is obfuscated — was a one-line edit rather than a change to the
+// renderer, and it still is if the operator ever changes it.
 func maintainerLine(path string) (string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -281,7 +284,8 @@ arch=('x86_64' 'aarch64')
 url='https://github.com/davison/md-notes'
 license=('MIT')
 depends=('ripgrep')
-provides=('md-notes')
+optdepends=('xdg-utils: mdn open launches a browser')
+provides=("md-notes=$pkgver")
 conflicts=('md-notes')
 # The binary is the release's own, already stripped at link time (-s -w): left
 # alone it is byte-identical to the asset SHA256SUMS covers, and there is no
@@ -299,11 +303,19 @@ sha256sums_aarch64=('{{.SumARM64}}')
 
 package() {
 	install -Dm755 "$srcdir/md-notes-$pkgver-mdn" "$pkgdir/usr/bin/mdn"
-	# The unit in the source tree starts the binary from ~/.local/bin, where
-	# ` + "`make install`" + ` puts it. The packaged one is on PATH at /usr/bin.
-	sed 's|^ExecStart=%h/\.local/bin/mdn |ExecStart=/usr/bin/mdn |' \
-		"$srcdir/md-notes-$pkgver-mdn.service" |
-		install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/mdn.service"
+	# The unit in the source tree is written for ` + "`make install`" + `: it starts the
+	# binary from ~/.local/bin and its header says to copy the file there by
+	# hand. Both are wrong for a package, so the ExecStart is rewritten and the
+	# header replaced — the comments are the first thing
+	# ` + "`systemctl --user cat mdn`" + ` shows.
+	{
+		printf '# Installed by the md-notes-bin package.\n'
+		printf '#   systemctl --user enable --now mdn\n'
+		printf '# The daemon reads ~/.config/mdn/config.yml and needs a notes_root in it.\n'
+		sed -e '/^#/d' -e '/./,$!d' \
+			-e 's|^ExecStart=%h/\.local/bin/mdn |ExecStart=/usr/bin/mdn |' \
+			"$srcdir/md-notes-$pkgver-mdn.service"
+	} | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/mdn.service"
 	install -Dm644 "$srcdir/md-notes-$pkgver-LICENSE" \
 		"$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
@@ -324,7 +336,8 @@ var srcinfoTemplate = template.Must(template.New(".SRCINFO").Parse(
 	arch = aarch64
 	license = MIT
 	depends = ripgrep
-	provides = md-notes
+	optdepends = xdg-utils: mdn open launches a browser
+	provides = md-notes={{.PkgVer}}
 	conflicts = md-notes
 	options = !strip
 	options = !debug

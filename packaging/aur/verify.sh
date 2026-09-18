@@ -6,10 +6,12 @@
 #   podman run --rm -v "$PWD:/work:ro,Z" -w /work archlinux:latest \
 #       packaging/aur/verify.sh v0.1.0
 #
-# (docker run, identically, without the :Z). It wants a PKGBUILD rendered for a
-# release that exists, because makepkg downloads that release's binaries and
-# checks them against the checksums in it:
+# (docker run, identically, without the :Z). Render first: it wants a PKGBUILD
+# for a release that exists, because makepkg downloads that release's binaries
+# and checks them against the checksums in it, so the committed 0.0.0/SKIP
+# template fails with a 404.
 #
+#   gh release download v0.1.0 --pattern SHA256SUMS
 #   go run ./scripts/aurgen -version v0.1.0 -sums SHA256SUMS
 #
 # What it proves, in order: that .SRCINFO is the one makepkg would write from
@@ -82,8 +84,20 @@ echo "mdn version: $installed"
 unit=/usr/lib/systemd/user/mdn.service
 grep -q '^ExecStart=/usr/bin/mdn serve$' "$unit" ||
 	{ echo "$unit does not start the packaged binary:" >&2; cat "$unit" >&2; exit 1; }
+# The source tree's unit is written for `make install` and its header says to
+# copy the file into ~/.config and put the binary in ~/.local/bin. That header
+# is the first thing `systemctl --user cat mdn` shows, so the package replaces
+# it; this is the check that it did.
+if grep -q 'local/bin' "$unit"; then
+	echo "$unit still tells the reader to install the binary by hand:" >&2
+	cat "$unit" >&2
+	exit 1
+fi
 test -s /usr/share/licenses/md-notes-bin/LICENSE
-pacman -Qi md-notes-bin | grep -E '^(Name|Version|Depends On|Provides|Conflicts With)'
+# Not `systemd-analyze --user verify`: it wants a session manager and a runtime
+# directory, and fails in a container for want of them rather than for anything
+# to do with the unit.
+pacman -Qi md-notes-bin | grep -E '^(Name|Version|Depends On|Optional Deps|Provides|Conflicts With)'
 
 echo "== pacman -Rns =="
 pacman -Rns --noconfirm md-notes-bin

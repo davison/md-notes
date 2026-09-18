@@ -9,7 +9,8 @@ arch=('x86_64' 'aarch64')
 url='https://github.com/davison/md-notes'
 license=('MIT')
 depends=('ripgrep')
-provides=('md-notes')
+optdepends=('xdg-utils: mdn open launches a browser')
+provides=("md-notes=$pkgver")
 conflicts=('md-notes')
 # The binary is the release's own, already stripped at link time (-s -w): left
 # alone it is byte-identical to the asset SHA256SUMS covers, and there is no
@@ -27,11 +28,19 @@ sha256sums_aarch64=('SKIP')
 
 package() {
 	install -Dm755 "$srcdir/md-notes-$pkgver-mdn" "$pkgdir/usr/bin/mdn"
-	# The unit in the source tree starts the binary from ~/.local/bin, where
-	# `make install` puts it. The packaged one is on PATH at /usr/bin.
-	sed 's|^ExecStart=%h/\.local/bin/mdn |ExecStart=/usr/bin/mdn |' \
-		"$srcdir/md-notes-$pkgver-mdn.service" |
-		install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/mdn.service"
+	# The unit in the source tree is written for `make install`: it starts the
+	# binary from ~/.local/bin and its header says to copy the file there by
+	# hand. Both are wrong for a package, so the ExecStart is rewritten and the
+	# header replaced — the comments are the first thing
+	# `systemctl --user cat mdn` shows.
+	{
+		printf '# Installed by the md-notes-bin package.\n'
+		printf '#   systemctl --user enable --now mdn\n'
+		printf '# The daemon reads ~/.config/mdn/config.yml and needs a notes_root in it.\n'
+		sed -e '/^#/d' -e '/./,$!d' \
+			-e 's|^ExecStart=%h/\.local/bin/mdn |ExecStart=/usr/bin/mdn |' \
+			"$srcdir/md-notes-$pkgver-mdn.service"
+	} | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/mdn.service"
 	install -Dm644 "$srcdir/md-notes-$pkgver-LICENSE" \
 		"$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

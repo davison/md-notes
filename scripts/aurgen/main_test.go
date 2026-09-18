@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -187,8 +190,8 @@ func TestARealRenderingRefusesWhatWouldReachTheAURWrong(t *testing.T) {
 			want: "mdn-1.2.3-linux-amd64",
 		},
 		{
-			name: "the maintainer gate still unanswered",
-			args: []string{"-version", "v1.2.3", "-sums", sums, "-license", license, "-unit", license, "-maintainer", maintainerFile},
+			name: "a maintainer line still holding the gate's placeholder",
+			args: []string{"-version", "v1.2.3", "-sums", sums, "-license", license, "-unit", license, "-maintainer", placeholderMaintainerFile(t, dir)},
 			want: "placeholder",
 		},
 		{
@@ -264,6 +267,17 @@ func TestTheSRCINFOIsWhatMakepkgPrints(t *testing.T) {
 	}
 }
 
+// placeholderMaintainerFile writes the maintainer file as the gate on
+// davison/md-notes#136 left it before the operator answered: a line nobody
+// should ever push to the AUR. The refusal outlives the answer, because the
+// file can be emptied or reset by anyone.
+func placeholderMaintainerFile(t *testing.T, dir string) string {
+	t.Helper()
+	path := filepath.Join(dir, "MAINTAINER.placeholder")
+	write(t, path, "Someone <maintainer "+placeholderMarker+">\n")
+	return path
+}
+
 // maintainerFileWithout writes a maintainer file that has been through the
 // gate: a real line, with none of the placeholder in it.
 func maintainerFileWithout(t *testing.T, dir, marker string) string {
@@ -303,4 +317,88 @@ func sha256Of(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return sum
+}
+
+// TestThePackageStillDescribesTheProgramItPackages is the check the AUR
+// submission guidelines ask a maintainer for and that no automation here
+// otherwise does: "projects can change license, add or remove dependencies,
+// and other notable changes even for 'minor' releases".
+//
+// `license` and `depends` are literals in the template. The operator's publish
+// click reads the release notes, not the PKGBUILD, and namcap cannot see a
+// relicensing or a new subprocess — a Go binary's dependencies on other
+// programs are invisible to it, which is why it calls ripgrep redundant. So
+// the drift is caught here, against the tree the package packages: the
+// licence, and every program the code runs.
+//
+// It reads literals, so a subprocess launched through a variable would slip
+// past. Both of the ones here are literal, and a test that catches the common
+// case beats the one nobody writes.
+func TestThePackageStillDescribesTheProgramItPackages(t *testing.T) {
+	pkgbuild := read(t, filepath.Join(packaging, "PKGBUILD"))
+
+	license := read(t, filepath.Join("..", "..", "LICENSE"))
+	if first, _, _ := strings.Cut(license, "\n"); first != "MIT License" {
+		t.Errorf("the repository's LICENSE now begins %q; the PKGBUILD's license=() field is the upstream licence in SPDX form and must follow it", first)
+	}
+	if !strings.Contains(pkgbuild, "license=('MIT')") {
+		t.Error("the PKGBUILD does not declare license=('MIT')")
+	}
+
+	// Every program the daemon and the client run, and what the package has to
+	// say so that it is there. A dependency is `depends` when the package does
+	// not work without it and `optdepends` when one command does not.
+	declares := map[string]string{
+		"rg":       "depends=('ripgrep')",
+		"xdg-open": "optdepends=('xdg-utils:",
+	}
+	found := executables(t, filepath.Join("..", "..", "cmd"), filepath.Join("..", "..", "internal"))
+	for _, program := range found {
+		declared, known := declares[program]
+		if !known {
+			t.Errorf("the code now runs %q and the PKGBUILD says nothing about it: add the package providing it to depends or optdepends, and name it here", program)
+			continue
+		}
+		if !strings.Contains(pkgbuild, declared) {
+			t.Errorf("the code runs %q but the PKGBUILD has no %s", program, declared)
+		}
+	}
+	for program, declared := range declares {
+		if !slices.Contains(found, program) {
+			t.Errorf("nothing in cmd/ or internal/ runs %q any more, but the PKGBUILD still carries %s", program, declared)
+		}
+	}
+}
+
+// executables collects the programs named as literals in exec.Command,
+// exec.CommandContext, exec.LookPath and this repository's lookPath
+// indirection, under the given directories, ignoring test files.
+func executables(t *testing.T, dirs ...string) []string {
+	t.Helper()
+	call := regexp.MustCompile(`(?:exec\.Command|exec\.CommandContext|exec\.LookPath|lookPath)\(\s*(?:[A-Za-z_][A-Za-z0-9_.]*,\s*)?"([^"]+)"`)
+	var found []string
+	for _, dir := range dirs {
+		err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			for _, match := range call.FindAllStringSubmatch(read(t, path), -1) {
+				if !slices.Contains(found, match[1]) {
+					found = append(found, match[1])
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(found) == 0 {
+		t.Fatal("found no subprocess at all in cmd/ or internal/: the scan is broken, not the code")
+	}
+	slices.Sort(found)
+	return found
 }
