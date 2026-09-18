@@ -1,0 +1,78 @@
+.\" Manual page for the mdn daemon, shipped in the md-notes Debian package
+.\" (davison/md-notes#137). packaging/deb/build.sh substitutes @VERSION@ and
+.\" @DATE@ at packaging time, so the footer names the release it shipped with.
+.\"
+.\" It exists because Debian Policy 12.1 asks every program in /usr/bin for
+.\" one, and lintian says so; the alternative was a lintian override
+.\" justifying its absence, and for a command with four subcommands the page
+.\" is smaller than the justification.
+.TH MDN 1 "@DATE@" "md-notes @VERSION@" "User Commands"
+.SH NAME
+mdn \- local markdown notes served to a browser
+.SH SYNOPSIS
+.B mdn
+.I command
+.RI [ flags ]
+.SH DESCRIPTION
+.B mdn
+is a small local service that turns folders of markdown files into a notes
+application in the browser, and doubles as a markdown viewer for any folder on
+disk.
+It renders notes server\-side, watches the configured roots for changes made by
+other tools, searches them with
+.BR rg (1),
+and pushes changes to the open page over Server\-Sent Events.
+.PP
+It binds to localhost by default.
+Notes stay plain markdown files in a folder hierarchy, editable with any tool
+and synced by anything that syncs files.
+.SH COMMANDS
+.TP
+.B serve
+Run the daemon against the configured notes root.
+This is what the systemd user unit starts.
+.TP
+.BI "open " DIR
+Register
+.I DIR
+with the running daemon and open it in the browser.
+With
+.B \-\-no\-browser
+the URL is printed instead of opened.
+.TP
+.B token
+Print the daemon's bearer token, which the browser extension needs.
+.B \-\-rotate
+replaces it with a new one.
+.TP
+.B version
+Print the version and exit.
+.SH FILES
+.TP
+.I ~/.config/mdn/config.yml
+The daemon's configuration: the notes roots, the address to bind and the port.
+.TP
+.I /usr/lib/systemd/user/mdn.service
+The systemd user unit this package installs.
+Start it with
+.RS
+.PP
+.nf
+systemctl \-\-user enable \-\-now mdn
+.fi
+.RE
+.SH DEPENDENCIES
+The daemon shells out to
+.BR rg (1)
+to list and to search a root.
+Without ripgrep the navigator is empty and search returns nothing, which is why
+this package depends on it.
+.SH SEE ALSO
+.BR rg (1),
+.BR systemctl (1)
+.PP
+The full documentation is at
+.UR https://github.com/davison/md-notes
+.UE .
+.SH AUTHOR
+Darren Davison

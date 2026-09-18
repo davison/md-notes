@@ -1,0 +1,16 @@
+# Lintian overrides for md-notes, installed at
+# /usr/share/lintian/overrides/md-notes (davison/md-notes#137).
+#
+# One tag, and it is not a defect to fix: the daemon is a single static Go
+# binary, built with CGO_ENABLED=0 for linux/amd64 and linux/arm64, and that
+# is the whole distribution story of this project — the same binary is what
+# the GitHub Release carries, what the AUR package installs and what this
+# package installs. Building it dynamically would mean giving up the property
+# every other channel relies on, to satisfy a check aimed at packages in the
+# Debian archive, where the shared-library policy exists so that a security
+# update to a library reaches every package that links it. This package is not
+# in the archive and is rebuilt from source on every release, which is the
+# same remedy by another road.
+#
+# Recorded on davison/md-notes#137 with the lintian output either way.
+md-notes: statically-linked-binary [usr/bin/mdn]
