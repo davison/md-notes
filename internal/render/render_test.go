@@ -206,8 +206,12 @@ func TestIDsAndClassesAreScoped(t *testing.T) {
 
 <a class="footnote-ref" href="#fn:1">f</a>
 `)
-	wantContains(t, n.HTML, `<h2 id="app">x</h2>`, `<span class="mdn-kd">w</span>`, `class="footnote-ref"`)
-	wantMissing(t, n.HTML, `javascript:alert`, `class="side pane note-title"`)
+	wantContains(t, n.HTML, `<h2 id="app">x</h2>`, `<span class="mdn-kd">w</span>`, `<a href="#fn:1">f</a>`)
+	// The structural classes are the renderer's to emit, and scrubRaw
+	// takes them off anything the note wrote itself, so the note's own
+	// footnote-ref is gone while a real footnote keeps it — see
+	// TestFootnotes (davison/md-notes#31).
+	wantMissing(t, n.HTML, `javascript:alert`, `class="side pane note-title"`, `class="footnote-ref"`)
 }
 
 // TestNoteCannotBorrowAppClasses renders a note that tries to dress
@@ -518,4 +522,61 @@ func TestNoteContentCannotForgeAScrollTarget(t *testing.T) {
 	// The decoys keep their text and lose only what the app reads off them.
 	wantContains(t, n.HTML, "decoy without a class", "<div></div>")
 	wantMissing(t, n.HTML, `data-line="5">decoy`, `class="line-anchor" data-line="5"`)
+}
+
+// scrubRaw is the only thing standing between note-written HTML and the
+// attributes the application reads, so what it leaves alone matters as
+// much as what it takes: everything that is not a marker comes through
+// byte for byte, including near-misses.
+func TestScrubRawLeavesEverythingElseAlone(t *testing.T) {
+	for _, src := range []string{
+		`<div class="wrap">`,
+		`<p title="a note about data-line">hi</p>`,
+		`<!-- data-line="5" is discussed here -->`,
+		// A class that merely contains a structural name is not one.
+		`<div class="note-line-anchor-list outside-rootish">`,
+		`<p>the data-line attribute, written as text</p>`,
+		// An unbalanced tag spanning a block keeps its shape: nothing is
+		// closed or reordered on the way through.
+		"<div class=\"panel\">\n",
+		// Case and spacing are the author's when nothing is removed.
+		`<DIV  CLASS = "wrap" >`,
+		`<img src="x.png" alt="data-line">`,
+	} {
+		if got := string(scrubRaw([]byte(src))); got != src {
+			t.Errorf("scrubRaw(%q) = %q, want it unchanged", src, got)
+		}
+	}
+}
+
+func TestScrubRawTakesTheMarkersOff(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{`<p data-line="5">x</p>`, `<p>x</p>`},
+		{`<div class="line-anchor" data-line="5"></div>`, `<div></div>`},
+		{`<a class="outside-root" href="x.md">a</a>`, `<a href="x.md">a</a>`},
+		// Only the structural names go; the note keeps its own classes.
+		{`<span class="keep line-anchor mdn-kd">s</span>`, `<span class="keep mdn-kd">s</span>`},
+		// Attribute names are not case-sensitive in HTML, and neither is
+		// the strip.
+		{`<p DATA-LINE="5">x</p>`, `<p>x</p>`},
+		// An unbalanced tag is rewritten, not closed.
+		{"<div class=\"line-anchor\">\n", "<div>\n"},
+		{`<p title="keep" data-line="5">x</p>`, `<p title="keep">x</p>`},
+		// A marker inside text or a comment is text, not markup.
+		{`<p>data-line="5"</p>`, `<p>data-line="5"</p>`},
+	} {
+		if got := string(scrubRaw([]byte(c.src))); got != c.want {
+			t.Errorf("scrubRaw(%q) = %q, want %q", c.src, got, c.want)
+		}
+	}
+}
+
+// Inline raw HTML is the other way a note writes its own markup, and a
+// fenced block that talks about the attribute is displaying source rather
+// than writing markup: it keeps its text.
+func TestScrubReachesInlineHTMLAndNotCodeBlocks(t *testing.T) {
+	n := render(t, "x.md", "para <span class=\"line-anchor\" data-line=\"3\">inline</span> on\n\n"+
+		"```\n<p data-line=\"9\">shown, not applied</p>\n```\n")
+	wantContains(t, n.HTML, `<span>inline</span>`, `&lt;p data-line=&#34;9&#34;&gt;shown, not applied`)
+	wantMissing(t, n.HTML, `<span class="line-anchor"`, `<p data-line="9">shown`)
 }

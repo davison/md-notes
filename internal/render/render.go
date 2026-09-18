@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
+	xhtml "golang.org/x/net/html"
 	"gopkg.in/yaml.v3"
 
 	"github.com/davison/md-notes/internal/tree"
@@ -67,8 +69,13 @@ func New() *Renderer {
 			),
 		),
 		goldmark.WithRendererOptions(
+			// A note's own HTML is written through, less the markers the
+			// application reads off rendered markup: see rawHTMLRenderer.
 			html.WithUnsafe(),
-			renderer.WithNodeRenderers(util.Prioritized(lineAnchorRenderer{}, 500)),
+			renderer.WithNodeRenderers(
+				util.Prioritized(lineAnchorRenderer{}, 500),
+				util.Prioritized(rawHTMLRenderer{}, 500),
+			),
 		),
 	)
 	return &Renderer{md: md, policy: newPolicy()}
@@ -393,6 +400,147 @@ func (lineAnchorRenderer) render(w util.BufWriter, _ []byte, n ast.Node, enterin
 	return ast.WalkContinue, nil
 }
 
+// Raw HTML from the note -------------------------------------------------
+
+// rawHTMLRenderer writes the HTML a note wrote itself. goldmark runs with
+// WithUnsafe, so it would otherwise reach the output verbatim, and its
+// KindHTMLBlock and KindRawHTML nodes are the only way it can: no
+// attribute syntax is enabled in the parser, so nothing else a note writes
+// carries attributes of its choosing.
+type rawHTMLRenderer struct{}
+
+func (r rawHTMLRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
+	reg.Register(ast.KindHTMLBlock, r.renderBlock)
+	reg.Register(ast.KindRawHTML, r.renderInline)
+}
+
+func (rawHTMLRenderer) renderBlock(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	n := node.(*ast.HTMLBlock)
+	var raw []byte
+	if entering {
+		// Scrubbed as one block rather than line by line: a tag may be
+		// written across several lines of it.
+		lines := n.Lines()
+		for i := range lines.Len() {
+			line := lines.At(i)
+			raw = append(raw, line.Value(source)...)
+		}
+	} else {
+		if !n.HasClosure() {
+			return ast.WalkContinue, nil
+		}
+		raw = n.ClosureLine.Value(source)
+	}
+	html.DefaultWriter.SecureWrite(w, scrubRaw(raw))
+	return ast.WalkContinue, nil
+}
+
+func (rawHTMLRenderer) renderInline(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	if !entering {
+		return ast.WalkSkipChildren, nil
+	}
+	n := node.(*ast.RawHTML)
+	var raw []byte
+	for i := range n.Segments.Len() {
+		seg := n.Segments.At(i)
+		raw = append(raw, seg.Value(source)...)
+	}
+	_, _ = w.Write(scrubRaw(raw))
+	return ast.WalkSkipChildren, nil
+}
+
+// scrubRaw takes off HTML the note wrote the two things the application
+// reads back off rendered markup: the data-line attribute the note view
+// scrolls a search hit by, and the structural class names the renderer
+// emits. Without it a note can plant a decoy scroll target, because one
+// sanitiser pass runs over the whole rendered document and no pattern in
+// it can tell the renderer's markup from the note's (davison/md-notes#31).
+// This runs before that pass, where the two are still distinguishable.
+//
+// What it does not touch it does not rewrite: a tag is re-emitted only
+// when something was actually removed from it, and every other token is
+// copied byte for byte, so unbalanced tags spanning a block, comments,
+// entities and text come through as they were written.
+func scrubRaw(src []byte) []byte {
+	if !carriesMarker(src) {
+		return src
+	}
+	z := xhtml.NewTokenizer(bytes.NewReader(src))
+	var out bytes.Buffer
+	for {
+		tt := z.Next()
+		if tt != xhtml.StartTagToken && tt != xhtml.SelfClosingTagToken {
+			out.Write(z.Raw())
+			if tt == xhtml.ErrorToken {
+				return out.Bytes()
+			}
+			continue
+		}
+		// Raw is only valid until the token is parsed, and it is what an
+		// untouched tag is written from.
+		raw := append([]byte(nil), z.Raw()...)
+		tok := z.Token()
+		kept, stripped := tok.Attr[:0], false
+		for _, a := range tok.Attr {
+			switch a.Key {
+			case lineAttr:
+				stripped = true
+				continue
+			case "class":
+				if v := withoutStructural(a.Val); v != a.Val {
+					stripped = true
+					if v == "" {
+						continue
+					}
+					a.Val = v
+				}
+			}
+			kept = append(kept, a)
+		}
+		if !stripped {
+			out.Write(raw)
+			continue
+		}
+		tok.Attr = kept
+		out.WriteString(tok.String())
+	}
+}
+
+// carriesMarker reports whether src is worth tokenising at all. Raw HTML
+// in a note is usually an inline tag or two, and almost none of it names
+// anything the application reads.
+func carriesMarker(src []byte) bool {
+	// Lowered because an attribute name is not case-sensitive in HTML,
+	// and erring towards tokenising: a class name that survives this and
+	// then does not match exactly is a different class, which is the
+	// tokenised path's answer anyway.
+	lower := bytes.ToLower(src)
+	if bytes.Contains(lower, []byte(lineAttr)) {
+		return true
+	}
+	for _, c := range structuralClasses {
+		if bytes.Contains(lower, []byte(c)) {
+			return true
+		}
+	}
+	return false
+}
+
+// withoutStructural drops the renderer's own class names from a class
+// attribute a note wrote, leaving the rest of it in place.
+func withoutStructural(class string) string {
+	kept := make([]string, 0, 4)
+	for _, f := range strings.Fields(class) {
+		if !slices.Contains(structuralClasses, f) {
+			kept = append(kept, f)
+		}
+	}
+	if len(kept) == len(strings.Fields(class)) {
+		return class
+	}
+	return strings.Join(kept, " ")
+}
+
 // firstSegment returns the byte offset of the first source segment of n
 // or of its first descendant that has one.
 func firstSegment(n ast.Node) (int, bool) {
@@ -420,6 +568,11 @@ func firstSegment(n ast.Node) (int, bool) {
 // use the prefix themselves; TestAppClassesAreUnreachable enforces it.
 const ClassPrefix = "mdn-"
 
+// lineAttr is the attribute the note view scrolls a search hit by. The
+// renderer puts it on the blocks it emits; scrubRaw takes it off anything
+// the note wrote, so what the application reads is the renderer's alone.
+const lineAttr = "data-line"
+
 var (
 	// Heading IDs from goldmark, plus the footnote IDs it generates.
 	idPattern = regexp.MustCompile(`^(fn|fnref):\d+$|^[\pL\pN_\-]+$`)
@@ -430,8 +583,11 @@ var (
 	codeClassPattern = classList(regexp.QuoteMeta(ClassPrefix)+`[a-z0-9]+`, `language-[\w+#.\-]+`)
 	// The classes the note's own structure carries: goldmark's footnotes,
 	// and this package's own two. They are named in full, and the app
-	// styles them only inside the rendered note.
-	noteClassPattern = regexp.MustCompile(`^(footnotes|footnote-ref|footnote-backref|outside-root|line-anchor)$`)
+	// styles them only inside the rendered note. The sanitiser admits them
+	// and scrubRaw takes them off anything the note wrote itself, so the
+	// two are built from one list rather than from two that could drift.
+	structuralClasses = []string{"footnotes", "footnote-ref", "footnote-backref", "outside-root", "line-anchor"}
+	noteClassPattern  = regexp.MustCompile(`^(` + strings.Join(structuralClasses, "|") + `)$`)
 
 	// The only elements the policy allows a class attribute on. Named
 	// here rather than at the call site so that the sanitiser and
@@ -470,7 +626,7 @@ func newPolicy() *bluemonday.Policy {
 	p.AllowTables()
 	p.AllowImages()
 	p.AllowAttrs("id").Matching(idPattern).OnElements("h1", "h2", "h3", "h4", "h5", "h6", "sup", "li")
-	p.AllowAttrs("data-line").Matching(regexp.MustCompile(`^[0-9]{1,9}$`)).OnElements(
+	p.AllowAttrs(lineAttr).Matching(regexp.MustCompile(`^[0-9]{1,9}$`)).OnElements(
 		"p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "table", "pre", "hr", "div")
 	p.AllowAttrs("class").Matching(codeClassPattern).OnElements(codeClassElements...)
 	p.AllowAttrs("class").Matching(noteClassPattern).OnElements(noteClassElements...)
