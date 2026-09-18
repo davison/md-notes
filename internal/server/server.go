@@ -520,8 +520,9 @@ func (s *Server) guard(next http.Handler) http.Handler {
 
 // proxyMarkers are the headers a proxy adds to say it handled a request:
 // the standard one from RFC 7239, the hop record every RFC 9110 proxy is
-// supposed to append, and the three X-Forwarded-* conventions that
-// predate both. Nothing on loopback sets any of them.
+// supposed to append, the three X-Forwarded-* conventions that predate
+// both, and X-Real-IP, which nginx and its imitators write the caller's
+// address into. Nothing on loopback sets any of them.
 var proxyMarkers = [...]string{
 	"Forwarded",
 	"Via",
