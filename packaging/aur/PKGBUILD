@@ -1,4 +1,4 @@
-# Maintainer: Darren Davison <maintainer at example dot invalid>
+# Maintainer: Darren Davison <darren@davisononline.org>
 # Rendered by scripts/aurgen in davison/md-notes, from the version and the
 # SHA256SUMS of a GitHub Release. Edit the renderer, not this file.
 pkgname=md-notes-bin
