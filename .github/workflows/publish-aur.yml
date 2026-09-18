@@ -1,0 +1,133 @@
+# The AUR half of a release (davison/md-notes#136). The operator publishing the
+# draft Release fires `release: published`, and this is the channel that puts
+# md-notes-bin on the Arch User Repository. One file, so a failed push can be
+# re-run on its own from the Actions page against the same release, without
+# cutting another tag — which is why the only trigger here is that event.
+#
+# It renders the PKGBUILD and .SRCINFO from the tag and the release's own
+# SHA256SUMS, then builds, lints, installs and removes the package in an
+# archlinux container, and pushes only if all of that passed. The AUR
+# submission guidelines say automated PKGBUILD updates are the maintainer's own
+# risk and that malfunctioning accounts may be removed without notice; not
+# pushing what it has not built is how this one keeps its side of that.
+#
+# packaging/aur/README.md is the prose account, the secret's name and how the
+# AUR repository was bootstrapped.
+name: publish-aur
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+# One push to the AUR at a time, and never cancelled: a release re-run while
+# the first is still going would otherwise have two clones racing for master.
+concurrency:
+  group: publish-aur
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # The push could sit behind a GitHub Environment with the operator as a
+    # required reviewer — `environment: aur` here, and the environment created
+    # with that reviewer. It does not, by the decision recorded on
+    # davison/md-notes#136: the operator already reads and publishes the draft
+    # Release by hand, and everything below runs before anything leaves this
+    # runner.
+    steps:
+      # The release's tag, not the default branch: the renderer, the licence
+      # and the unit that go into the package are the ones the release was
+      # built from, whatever main has moved on to since.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The two binaries' checksums come from the release itself rather than
+      # from anything rebuilt here, so the package can only ever point at what
+      # was actually published. The licence and the unit are hashed from the
+      # tagged tree, which is what this checkout is.
+      - name: Render the PKGBUILD and .SRCINFO
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "not a v<major>.<minor>.<patch> release tag: $TAG" >&2
+            exit 1
+          fi
+          gh release download "$TAG" --pattern SHA256SUMS --dir "$RUNNER_TEMP"
+          go run ./scripts/aurgen -version "$TAG" -sums "$RUNNER_TEMP/SHA256SUMS"
+          cat packaging/aur/PKGBUILD packaging/aur/.SRCINFO
+
+      # makepkg -s as a non-root user, .SRCINFO diffed against what makepkg
+      # itself would print, namcap over the PKGBUILD and the built package,
+      # then pacman -U, `mdn version` against the tag, and pacman -Rns. The
+      # checkout is mounted read-only: the container builds in its own home.
+      - name: Build, lint and install it in an archlinux container
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          docker run --rm -v "$PWD:/work:ro" -w /work archlinux:latest \
+            bash packaging/aur/verify.sh "$TAG"
+
+      # The last word before the AUR. aurgen refuses both of these itself; this
+      # is the check that does not depend on the renderer being right.
+      - name: Refuse to push a template
+        run: |
+          if grep -q "'SKIP'" packaging/aur/PKGBUILD; then
+            echo "the rendered PKGBUILD still carries SKIP checksums" >&2
+            exit 1
+          fi
+          if grep -q 'example dot invalid' packaging/aur/PKGBUILD; then
+            echo "the maintainer line is still the placeholder: see the gate on davison/md-notes#136" >&2
+            exit 1
+          fi
+
+      # Five files reach the AUR: the PKGBUILD, the .SRCINFO the AUR reads the
+      # version from and refuses a push without, the .install file, the 0BSD
+      # licence the submission guidelines ask of package sources, and a
+      # .gitignore that force-adds those four and excludes everything else, so
+      # no built package or filelist can ever land there.
+      - name: Push to the AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          TAG: ${{ github.event.release.tag_name }}
+          AUR_REPO: ssh://aur@aur.archlinux.org/md-notes-bin.git
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "the repository secret AUR_SSH_PRIVATE_KEY is not set: see the gate on davison/md-notes#136" >&2
+            exit 1
+          fi
+          install -d -m700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          # The AUR's own ed25519 host key, published at https://aur.archlinux.org/
+          # as SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4. Pinned rather
+          # than accepted from an ssh-keyscan, which would trust whatever
+          # answered.
+          printf '%s\n' 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes'
+          git -c init.defaultBranch=master clone "$AUR_REPO" "$RUNNER_TEMP/aur"
+          cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO "$RUNNER_TEMP/aur/"
+          cp packaging/aur/md-notes-bin.install "$RUNNER_TEMP/aur/"
+          cp packaging/aur/LICENSE "$RUNNER_TEMP/aur/LICENSE"
+          cp packaging/aur/aur.gitignore "$RUNNER_TEMP/aur/.gitignore"
+          cd "$RUNNER_TEMP/aur"
+          git add -f PKGBUILD .SRCINFO md-notes-bin.install LICENSE .gitignore
+          if git diff --cached --quiet HEAD 2>/dev/null; then
+            echo "the AUR already carries this content; nothing to push" >&2
+            exit 0
+          fi
+          # The AUR records the author of every commit and it cannot be changed
+          # afterwards, so these are the operator's, set here rather than
+          # globally.
+          git -c user.name='Darren Davison' -c user.email='darren@davisononline.org' \
+            commit -m "Update to ${TAG#v}"
+          git push origin master
+          echo "pushed ${TAG#v} to <https://aur.archlinux.org/packages/md-notes-bin>" >> "$GITHUB_STEP_SUMMARY"
