@@ -11,7 +11,15 @@ export type Coverage = {
   unwatched: number;
   budget: number;
   overBudget: boolean;
+  /** Directories the kernel refused for want of watches, and nothing else. */
   failed: number;
+  /**
+   * Directories refused for any other reason — most often one the daemon
+   * may not read. No limit anyone raises covers these.
+   */
+  refused: number;
+  /** The first such refusal in the words the OS used; absent when none. */
+  reason?: string;
   limited: boolean;
 };
 
