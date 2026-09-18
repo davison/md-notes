@@ -614,6 +614,7 @@ func TestReportNamesEachCause(t *testing.T) {
 
 	cases := []struct {
 		name       string
+		budget     int
 		overBudget bool
 		errs       []error
 		wantCov    Coverage
@@ -621,24 +622,34 @@ func TestReportNamesEachCause(t *testing.T) {
 		notWant    []string
 	}{{
 		name:       "the budget is spent",
+		budget:     3,
 		overBudget: true,
 		wantCov:    Coverage{Budget: 3, OverBudget: true, Watched: 3, Unwatched: 2, Limited: true},
 		want:       []string{"budget of 3 directories is spent", "raise max_watches"},
 		notWant:    []string{"could not be watched"},
 	}, {
+		name:       "a budget of one directory is not 1 directories",
+		budget:     1,
+		overBudget: true,
+		wantCov:    Coverage{Budget: 1, OverBudget: true, Watched: 3, Unwatched: 2, Limited: true},
+		want:       []string{"budget of 1 directory is spent"},
+	}, {
 		name:    "the kernel is out of watches",
+		budget:  3,
 		errs:    []error{syscall.ENOSPC},
 		wantCov: Coverage{Budget: 3, Watched: 3, Unwatched: 2, Failed: 1, Limited: true},
 		want:    []string{"1 could not be watched: no space left on device", "raise fs.inotify.max_user_watches"},
 		notWant: []string{"not the kernel limit", "budget of 3"},
 	}, {
 		name:    "the filesystem refuses them",
+		budget:  3,
 		errs:    []error{syscall.EACCES, syscall.EACCES},
 		wantCov: Coverage{Budget: 3, Watched: 3, Unwatched: 2, Refused: 2, Reason: "permission denied", Limited: true},
 		want:    []string{"2 could not be watched: permission denied", "not the kernel limit", "needs access to those directories"},
 		notWant: []string{"max_user_watches", "budget of 3"},
 	}, {
 		name:       "all three at once",
+		budget:     3,
 		overBudget: true,
 		errs:       []error{syscall.ENOSPC, syscall.EACCES},
 		wantCov:    Coverage{Budget: 3, OverBudget: true, Watched: 3, Unwatched: 2, Failed: 1, Refused: 1, Reason: "permission denied", Limited: true},
@@ -648,7 +659,7 @@ func TestReportNamesEachCause(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			logged = nil
-			cov := Coverage{Budget: 3, OverBudget: c.overBudget, Watched: 3, Unwatched: 2, Limited: true}
+			cov := Coverage{Budget: c.budget, OverBudget: c.overBudget, Watched: 3, Unwatched: 2, Limited: true}
 			var causes refusals
 			for _, err := range c.errs {
 				causes.record(&cov, err)

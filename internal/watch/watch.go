@@ -336,7 +336,7 @@ func (w *Watcher) report(cov Coverage, causes refusals) {
 	}
 	var why []string
 	if cov.OverBudget {
-		why = append(why, fmt.Sprintf("the budget of %d directories is spent (raise max_watches to cover more)", cov.Budget))
+		why = append(why, fmt.Sprintf("the budget of %d director%s is spent (raise max_watches to cover more)", cov.Budget, plural(cov.Budget)))
 	}
 	if cov.Failed > 0 {
 		why = append(why, fmt.Sprintf("%d could not be watched: %v (raise fs.inotify.max_user_watches)", cov.Failed, causes.kernel))
