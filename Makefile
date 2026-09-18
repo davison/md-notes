@@ -83,7 +83,7 @@ release: ui extension-deps
 	MDN_VERSION=$(VERSION) pnpm --dir extension build
 	pnpm --dir extension run zip
 	cp $(EXTENSION_ZIP) $(DIST)/mdn-extension-$(VERSION).zip
-	go run ./scripts/relcheck -version '$(VERSION)' -binary $(DIST)/mdn-$(VERSION)-linux-$(HOST_ARCH) -manifest extension/dist/manifest.json
+	go run ./scripts/relcheck -version '$(VERSION)' -binary $(DIST)/mdn-$(VERSION)-linux-$(HOST_ARCH) -manifest $(DIST)/mdn-extension-$(VERSION).zip
 	cd $(DIST) && sha256sum mdn-* > SHA256SUMS
 
 ## install: copy the binary to $(PREFIX)/bin (default ~/.local/bin)
