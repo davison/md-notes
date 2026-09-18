@@ -134,11 +134,17 @@ func TestWebStoreReadsTheDocumentedNames(t *testing.T) {
 			t.Errorf("%s never reads secrets.%s; that is the name the operator was asked to store it under (davison/md-notes#135)", webstoreWorkflowFile, name)
 		}
 	}
-	if !strings.Contains(raw, "vars.CHROME_WEBSTORE_ITEM_ID") {
-		t.Errorf("%s never reads vars.CHROME_WEBSTORE_ITEM_ID", webstoreWorkflowFile)
-	}
-	if strings.Contains(raw, "secrets.CHROME_WEBSTORE_ITEM_ID") {
-		t.Errorf("%s reads the item id as a secret; it is public, and a secret is masked out of the log line that would name it", webstoreWorkflowFile)
+	// The two identifiers are variables rather than secrets, deliberately:
+	// neither grants anything without the three secrets above, and Actions
+	// masks a secret's value everywhere it appears — including the line that
+	// would say which publisher and item were uploaded to.
+	for _, name := range []string{"CHROME_WEBSTORE_PUBLISHER_ID", "CHROME_WEBSTORE_ITEM_ID"} {
+		if !strings.Contains(raw, "vars."+name) {
+			t.Errorf("%s never reads vars.%s", webstoreWorkflowFile, name)
+		}
+		if strings.Contains(raw, "secrets."+name) {
+			t.Errorf("%s reads %s as a secret; it is an identifier rather than a credential, and a secret is masked out of the log line that would name it", webstoreWorkflowFile, name)
+		}
 	}
 
 	// And the preflight names all four, so a missing one fails in ten seconds
@@ -148,6 +154,7 @@ func TestWebStoreReadsTheDocumentedNames(t *testing.T) {
 		"CHROME_WEBSTORE_CLIENT_ID",
 		"CHROME_WEBSTORE_CLIENT_SECRET",
 		"CHROME_WEBSTORE_REFRESH_TOKEN",
+		"CHROME_WEBSTORE_PUBLISHER_ID",
 		"CHROME_WEBSTORE_ITEM_ID",
 	} {
 		if _, ok := preflight.Env[name]; !ok {
@@ -207,7 +214,7 @@ func TestWebStoreUploadsTheReleasesOwnAsset(t *testing.T) {
 		if err != nil {
 			t.Fatalf("v0.1.0 was refused: %v", err)
 		}
-		want := "tag=v0.1.0\nasset=mdn-extension-v0.1.0.zip\n"
+		want := "tag=v0.1.0\nasset=mdn-extension-v0.1.0.zip\nversion=0.1.0\n"
 		if written != want {
 			t.Errorf("resolved to %q, want %q", written, want)
 		}
@@ -261,6 +268,77 @@ func TestWebStoreUploadsTheReleasesOwnAsset(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestWebStoreVerifiesWhatItSends holds the two checks that stand between "the
+// right file was downloaded" and "the right file was sent".
+//
+// `gh release download` verifies nothing. Provenance is not verification, and
+// three places in this repository claim the store gets the artefact the release
+// page's checksums cover — the workflow's own header, the PR that added it, and
+// a comment in this file. A truncated or replaced asset reaches the store as a
+// package it rejects for reasons that look like anything but this, so the claim
+// has to be made true by a step rather than by a sentence.
+//
+// The version check is the other half: the store refuses a package whose
+// version is not higher than the published one, so a zip carrying 0.0.0 — what
+// an untagged build stamps, per docs/releasing.md — fails inside somebody
+// else's API rather than here, saying something about versions rather than that
+// the asset is not this release's.
+func TestWebStoreVerifiesWhatItSends(t *testing.T) {
+	checksum := webstoreStep(t, "Check the zip against the release's checksums").Run
+	if !strings.Contains(checksum, "sha256sum") {
+		t.Errorf("the checksum step runs no sha256sum:\n%s", checksum)
+	}
+	// `sha256sum --check` exits 0 having verified nothing when the file it was
+	// given is not named in the sums, so the exit status alone is not the
+	// assertion: the asset's own OK line has to be.
+	if !strings.Contains(checksum, `"$ASSET: OK"`) {
+		t.Errorf("the checksum step does not assert the asset's own OK line, so it passes when nothing was verified:\n%s", checksum)
+	}
+
+	download := webstoreStep(t, "Download the release's extension zip").Run
+	if !strings.Contains(download, "--pattern SHA256SUMS") {
+		t.Errorf("the download step never fetches SHA256SUMS, so there is nothing to check against:\n%s", download)
+	}
+
+	version := webstoreStep(t, "Check the package carries this release's version").Run
+	if !strings.Contains(version, `"$VERSION"`) {
+		t.Errorf("the version step does not compare against the release's version; printing it is not checking it:\n%s", version)
+	}
+	if !strings.Contains(version, "exit 1") {
+		t.Errorf("the version step cannot fail:\n%s", version)
+	}
+}
+
+// TestWebStoreUsesTheV2Api keeps the workflow's call in step with the client.
+//
+// The V2 API addresses an item as `publishers/<publisherId>/items/<itemId>`,
+// which V1 did not: a workflow that forgets the publisher id calls a client
+// that refuses before the network, which is the good failure, but only if the
+// argument is there to forget. V1 stops being answered on 15 October 2026.
+func TestWebStoreUsesTheV2Api(t *testing.T) {
+	upload := webstoreStep(t, "Upload to the Chrome Web Store and submit for review").Run
+	for _, argument := range []string{"--publisher-id", "--item-id", "--zip", "--expect-version"} {
+		if !strings.Contains(upload, argument) {
+			t.Errorf("the upload step does not pass %s:\n%s", argument, upload)
+		}
+	}
+
+	client, err := os.ReadFile(filepath.Join("..", "..", "extension", "scripts", "webstore.mjs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(client), `"https://chromewebstore.googleapis.com"`) {
+		t.Error("extension/scripts/webstore.mjs does not name the V2 service host")
+	}
+	// A V1 *endpoint*, not a mention of one: the file's header explains the
+	// deprecation and names V1 to do it, and a needle that cannot tell the two
+	// apart fails on the sentence that exists to prevent the thing it checks.
+	// The scope, `www.googleapis.com/auth/chromewebstore`, is V2's too.
+	if strings.Contains(string(client), `"https://www.googleapis.com/chromewebstore`) {
+		t.Error("extension/scripts/webstore.mjs still calls a V1 endpoint, which is answered only until 15 October 2026")
+	}
 }
 
 // The named step of the one job, or a failure naming what is there instead.

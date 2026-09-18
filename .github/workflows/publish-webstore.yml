@@ -8,8 +8,9 @@
 # tests over the properties below that a reader would not notice the loss of.
 #
 # It uploads. It does not build: the zip is the release's own asset, built from
-# the tag by release.yml and checksummed there, so what reaches the store is
-# byte for byte what the release page offers.
+# the tag by release.yml, and this workflow checks it against the release's
+# SHA256SUMS before sending it, so what reaches the store is byte for byte what
+# the release page offers.
 name: publish-webstore
 
 # `release: published` and nothing else. Not `created`, which also fires for a
@@ -27,7 +28,7 @@ on:
   release:
     types: [published]
 
-# Reading the release's asset is all this needs. The credentials that can write
+# Reading the release's assets is all this needs. The credentials that can write
 # anything are the store's, not GitHub's.
 permissions:
   contents: read
@@ -53,10 +54,12 @@ jobs:
         with:
           node-version: 24
 
-      # The tag, and the asset name built from it. Both are in
-      # docs/releasing.md: the asset is `mdn-extension-<version>.zip` with the
-      # version spelled exactly as the tag, leading `v` and all. Read through
-      # the environment and checked before it reaches a command line.
+      # The tag, the asset name built from it, and the version the package
+      # should carry. All three are in docs/releasing.md: the asset is
+      # `mdn-extension-<version>.zip` with the version spelled exactly as the
+      # tag, leading `v` and all, and only the places that cannot take a `v` —
+      # the extension manifest among them — get the stripped form. Read through
+      # the environment and checked before any of it reaches a command line.
       - name: Resolve the release
         id: release
         env:
@@ -68,6 +71,7 @@ jobs:
           fi
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "asset=mdn-extension-$RELEASE_TAG.zip" >> "$GITHUB_OUTPUT"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
 
       # Before anything is downloaded, so a missing credential fails in the
       # first ten seconds saying which one, rather than after a download and
@@ -77,51 +81,93 @@ jobs:
           CHROME_WEBSTORE_CLIENT_ID: ${{ secrets.CHROME_WEBSTORE_CLIENT_ID }}
           CHROME_WEBSTORE_CLIENT_SECRET: ${{ secrets.CHROME_WEBSTORE_CLIENT_SECRET }}
           CHROME_WEBSTORE_REFRESH_TOKEN: ${{ secrets.CHROME_WEBSTORE_REFRESH_TOKEN }}
+          CHROME_WEBSTORE_PUBLISHER_ID: ${{ vars.CHROME_WEBSTORE_PUBLISHER_ID }}
           CHROME_WEBSTORE_ITEM_ID: ${{ vars.CHROME_WEBSTORE_ITEM_ID }}
         run: |
           missing=()
           for name in CHROME_WEBSTORE_CLIENT_ID CHROME_WEBSTORE_CLIENT_SECRET \
-                      CHROME_WEBSTORE_REFRESH_TOKEN CHROME_WEBSTORE_ITEM_ID; do
+                      CHROME_WEBSTORE_REFRESH_TOKEN CHROME_WEBSTORE_PUBLISHER_ID \
+                      CHROME_WEBSTORE_ITEM_ID; do
             [ -n "${!name}" ] || missing+=("$name")
           done
           if [ ${#missing[@]} -ne 0 ]; then
             echo "not configured: ${missing[*]}" >&2
-            echo "The first three are repository secrets and the last is a repository variable;" >&2
-            echo "davison/md-notes#135 records how each is made." >&2
+            echo "The first three are repository secrets and the last two are repository" >&2
+            echo "variables; davison/md-notes#135 records how each is made." >&2
             exit 1
           fi
 
-      # The release's own asset, by the name docs/releasing.md gives it. Not a
-      # fresh build: a store package that is not the one on the release page,
-      # under the same version, is the one mismatch nobody would ever find.
+      # The release's own asset, by the name docs/releasing.md gives it, and
+      # its checksum line. Not a fresh build: a store package that is not the
+      # one on the release page, under the same version, is the one mismatch
+      # nobody would ever find.
       - name: Download the release's extension zip
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
           ASSET: ${{ steps.release.outputs.asset }}
         run: |
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" --dir .
-          ls -l "$ASSET"
-          # What the log should say the store was sent. Unpacked to a file
-          # first rather than piped into `head`: a `run:` step is
-          # `bash -e -o pipefail`, and a reader that closes early kills the
-          # writer with SIGPIPE, which pipefail then reports as a failed step
-          # — intermittently, on the size of one write.
-          unzip -p "$ASSET" manifest.json > manifest-in-the-package.json
-          grep -E '"(name|version)"' manifest-in-the-package.json || true
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$ASSET" --pattern SHA256SUMS --dir .
+          ls -l "$ASSET" SHA256SUMS
 
-      # Three calls: the refresh-token grant, the package PUT, the publish that
-      # submits it for review. extension/scripts/webstore.mjs makes them and
-      # writes what the store said into the run summary; its request shaping is
-      # tested against a fake server in extension/scripts/webstore.test.mjs.
+      # Provenance is not verification: `gh release download` checks nothing,
+      # and a truncated or replaced asset reaches the store as a package it
+      # rejects for reasons that look like anything but this. --ignore-missing
+      # because SHA256SUMS covers the binaries too and only the zip is here.
+      - name: Check the zip against the release's checksums
+        env:
+          ASSET: ${{ steps.release.outputs.asset }}
+        run: |
+          checked=$(sha256sum --ignore-missing --check SHA256SUMS)
+          echo "$checked"
+          # --check is happy having verified nothing at all, so the asset's own
+          # OK line is what is asserted, not the exit status.
+          grep -qxF "$ASSET: OK" <<<"$checked" || {
+            echo "SHA256SUMS did not verify $ASSET" >&2
+            exit 1
+          }
+
+      # The version inside the package, compared rather than printed. The store
+      # refuses a package whose version is not higher than the published one,
+      # so a zip carrying 0.0.0 — what an untagged build stamps — would fail as
+      # a store error about versions rather than as this workflow saying the
+      # release's asset is not the release's version. relcheck catches it at
+      # build time; this catches it at the only moment the store is involved.
+      - name: Check the package carries this release's version
+        env:
+          ASSET: ${{ steps.release.outputs.asset }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          unzip -p "$ASSET" manifest.json > manifest-in-the-package.json
+          version=$(node -p 'JSON.parse(require("fs").readFileSync("manifest-in-the-package.json","utf8")).version')
+          echo "the package carries version $version"
+          if [ "$version" != "$VERSION" ]; then
+            echo "but this release is $VERSION: the asset is not this release's package" >&2
+            exit 1
+          fi
+
+      # Three calls: the refresh-token grant, the package POST, the publish
+      # that submits it for review. extension/scripts/webstore.mjs makes them
+      # against the Chrome Web Store V2 API and writes what the store said into
+      # the run summary; its request shaping and its reading of every documented
+      # response state are tested against a fake server in
+      # extension/scripts/webstore.test.mjs.
       - name: Upload to the Chrome Web Store and submit for review
         env:
           CHROME_WEBSTORE_CLIENT_ID: ${{ secrets.CHROME_WEBSTORE_CLIENT_ID }}
           CHROME_WEBSTORE_CLIENT_SECRET: ${{ secrets.CHROME_WEBSTORE_CLIENT_SECRET }}
           CHROME_WEBSTORE_REFRESH_TOKEN: ${{ secrets.CHROME_WEBSTORE_REFRESH_TOKEN }}
+          PUBLISHER_ID: ${{ vars.CHROME_WEBSTORE_PUBLISHER_ID }}
           ITEM_ID: ${{ vars.CHROME_WEBSTORE_ITEM_ID }}
           ASSET: ${{ steps.release.outputs.asset }}
-        run: node extension/scripts/webstore.mjs --item-id "$ITEM_ID" --zip "$ASSET"
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          node extension/scripts/webstore.mjs \
+            --publisher-id "$PUBLISHER_ID" \
+            --item-id "$ITEM_ID" \
+            --zip "$ASSET" \
+            --expect-version "$VERSION"
 
       # The store's review takes days and is nobody here's to hurry; a run that
       # failed should say where to look and what re-running does.
