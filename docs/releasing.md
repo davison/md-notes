@@ -155,11 +155,14 @@ existing.
 
 ## When a release has to be re-run
 
-`gh release create` refuses a tag that already has a Release, draft or not, and
-it has no update mode — no `--clobber`, nothing. So a run that got as far as
-drafting cannot simply be re-run: the draft has to go first, from the releases
-page or with `gh release delete <tag>`, and then the failed run can be re-run
-from the Actions page.
+`gh release create` has no update mode — no `--clobber`, nothing — and a tag
+that already has a *published* Release is refused. What it does when a *draft*
+already stands under that tag is not established here: a draft holds no tag
+ref, so it may well leave a second draft rather than refuse. Either way the
+move is the same, and it is the reason this is written as an instruction rather
+than a prediction: delete the draft first, from the releases page or with
+`gh release delete <tag>`, and only then re-run from the Actions page. Skip
+that and the worst case is two drafts under one name to choose between.
 
 Which mistake you are recovering from decides how far back you can go.
 
@@ -175,6 +178,21 @@ re-pushing it would build a different tree under a name that is already out
 there. Delete the Release only, re-run, and publish the new draft. If a channel
 workflow is what failed, do not touch the Release at all — re-run that channel's
 workflow from the Actions page, which is why each has a file of its own.
+
+## To settle at the first release
+
+Two things on this page are read from `gh`'s documentation rather than measured,
+because measuring them means creating a real Release. The first release is the
+moment to look, and to correct this page in the same breath:
+
+- **A re-run with a draft standing.** Does `gh release create` refuse, or does a
+  second draft appear under the same tag? The instruction above is safe under
+  either, but the sentence should say which.
+- **A draft's asset URLs before publication.** The published form is
+  `https://github.com/davison/md-notes/releases/download/<tag>/<asset>`, built
+  from the tag and the asset name; what a draft serves in the meantime, and
+  whether anything but the page's own links changes at the publish, was not
+  observed. The channel workflows read those URLs.
 
 ## Versions
 
