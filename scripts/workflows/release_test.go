@@ -10,6 +10,7 @@ package workflows
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -88,4 +89,101 @@ func TestReleasesDoNotOverlap(t *testing.T) {
 	if parsed.Concurrency.CancelInProgress {
 		t.Error("release.yml cancels a release in progress; a queued release is better than a half-finished one")
 	}
+}
+
+// TestOnlyAReleaseTagResolves runs the workflow's own version step, the script
+// as written, rather than asserting something about its text.
+//
+// It is the one value in the release workflow a person types, and two earlier
+// forms of this check both let something through — a `case` pattern that
+// accepted `v0.1.0-rc1`, then a `grep -E` whose anchors bind a line rather
+// than the string, so a version with a newline in it passed and wrote a second
+// line of its own into $GITHUB_OUTPUT. A table run against the real script is
+// the only form of this test that would have caught either.
+func TestOnlyAReleaseTagResolves(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is the shell a `run:` step gets on the runner")
+	}
+
+	var script string
+	for _, step := range release(t).Jobs["release"].Steps {
+		if step.Name == "Resolve the version" {
+			script = step.Run
+		}
+	}
+	if script == "" {
+		t.Fatal(`release.yml has no "Resolve the version" step`)
+	}
+	if strings.Contains(script, "${{") {
+		t.Fatal("the step now interpolates a workflow expression, so it cannot be run as written: keep its inputs in `env:`")
+	}
+
+	// The step reads the dispatch input, falls back to the ref, and writes the
+	// version it settled on to the step-output file.
+	resolve := func(t *testing.T, input, refName string) (string, error) {
+		t.Helper()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "resolve.sh")
+		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		output := filepath.Join(dir, "step-output")
+		if err := os.WriteFile(output, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(bash, "-e", "-o", "pipefail", path)
+		// A minimal environment, not the test process's: a run under Actions
+		// already has GITHUB_OUTPUT and GITHUB_REF_NAME set to the real ones.
+		cmd.Env = []string{
+			"PATH=" + os.Getenv("PATH"),
+			"INPUT_VERSION=" + input,
+			"GITHUB_REF_NAME=" + refName,
+			"GITHUB_OUTPUT=" + output,
+		}
+		err := cmd.Run()
+		written, readErr := os.ReadFile(output)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		return string(written), err
+	}
+
+	t.Run("accepts a release tag", func(t *testing.T) {
+		for _, tc := range []struct{ input, refName, want string }{
+			// A dispatch: the input wins.
+			{input: "v0.1.0", refName: "main", want: "version=v0.1.0\n"},
+			// A tag push: no input, and the ref is the tag.
+			{input: "", refName: "v1.20.300", want: "version=v1.20.300\n"},
+		} {
+			written, err := resolve(t, tc.input, tc.refName)
+			if err != nil {
+				t.Errorf("input %q at %q: %v, want it accepted", tc.input, tc.refName, err)
+			}
+			if written != tc.want {
+				t.Errorf("input %q at %q wrote %q, want %q", tc.input, tc.refName, written, tc.want)
+			}
+		}
+	})
+
+	t.Run("refuses anything else, and writes nothing", func(t *testing.T) {
+		for _, version := range []string{
+			"v0.1.0-rc1",          // a pre-release the manifest cannot carry
+			"v0.1.0-dirty",        // a describe string off a dirty tree
+			"v1.2",                // too few components
+			"0.1.0",               // the v is part of the shape
+			"v0.1.0 --draft",      // an argument smuggled in beside the version
+			"v1.2.3 ",             // trailing whitespace
+			"v1.2.3\nmalicious=1", // a second $GITHUB_OUTPUT line
+			"",                    // a branch, not a tag: nothing to release
+		} {
+			written, err := resolve(t, version, "main")
+			if err == nil {
+				t.Errorf("version %q was accepted, want it refused", version)
+			}
+			if written != "" {
+				t.Errorf("version %q was refused but wrote %q to the step output", version, written)
+			}
+		}
+	})
 }
