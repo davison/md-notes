@@ -226,8 +226,8 @@ func TestTheNfpmDownloadIsPinnedAndChecked(t *testing.T) {
 	}
 }
 
-// TestOnlyAReleaseTagResolves runs the workflow's own tag step, the script as
-// written, the way release_test.go runs release.yml's.
+// TestOnlyAReleaseTagResolvesForTheDeb runs the workflow's own tag step, the
+// script as written, the way release_test.go runs release.yml's.
 //
 // A Release can be published for any tag at all — the tag is typed by a
 // person and this workflow is started by the event, not by the tag pattern

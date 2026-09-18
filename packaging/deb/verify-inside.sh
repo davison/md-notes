@@ -29,8 +29,10 @@ lintian --version
 # does not execute it.
 for deb in /debs/md-notes_*.deb; do
 	say "lintian $(basename "$deb")"
+	# No exit status echoed after it: `set -e` is what checks it, so a line
+	# printing $? here could only ever print 0 and would read as evidence it
+	# is not. An overridden tag prints as O: and does not fail the run.
 	lintian --display-info --show-overrides --tag-display-limit 0 "$deb"
-	echo "   exit $?  (an overridden tag prints as O: and does not fail)"
 done
 
 # ------------------------------------------------------------ the packages
@@ -56,8 +58,12 @@ if dpkg-query -W -f='${Status}' ripgrep 2>/dev/null | grep -q "^install ok insta
 fi
 echo "   no — good, so what follows is the package's own dependency"
 
+# The literal form, run from the directory the packages are in, because the
+# label above this line is quoted as a transcript and should therefore be the
+# command that ran. `apt install ./name.deb` and `apt install /path/name.deb`
+# behave identically; only one of them is what the pull request shows.
 say "apt install ./$(basename "$deb")"
-apt-get install -y "$deb"
+(cd /debs && apt-get install -y "./$(basename "$deb")")
 
 say "after: ripgrep came in with it"
 dpkg-query -W -f='ripgrep ${Version} ${Status}\n' ripgrep
