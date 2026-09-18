@@ -1,26 +1,27 @@
-# Cutting a release is one act: pushing a v<major>.<minor>.<patch> tag
-# (davison/md-notes#134). Everything below follows from that tag — the version
-# the binaries report, the version the extension manifest carries, the assets,
-# the notes — and the channels that publish afterwards (Chrome Web Store, AUR,
-# .deb) hang off the `release: published` event this workflow emits, each in
-# its own file, so any one of them can be re-run from the Actions page without
-# a new tag. docs/releasing.md is the prose account of all of it.
+# Cutting a release is two acts: pushing a v<major>.<minor>.<patch> tag, then
+# publishing the draft this workflow leaves behind (davison/md-notes#134).
+# Everything between them follows from the tag — the version the binaries
+# report, the version the extension manifest carries, the assets, the notes.
+# The operator's publish is what fires `release: published`, and the channels
+# (Chrome Web Store, AUR, .deb) hang off that event, each in its own file, so
+# any one of them can be re-run from the Actions page without a new tag.
+# docs/releasing.md is the prose account of all of it.
 name: release
 
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
-  # A dry run, so the workflow itself can be exercised from a branch before any
-  # tag exists: it checks, builds and uploads the artefacts for inspection, and
-  # creates no Release.
+  # A dry run, so the workflow itself can be exercised without spending a tag:
+  # it checks, builds and uploads the artefacts for inspection, and creates no
+  # Release, not even a draft.
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to build, e.g. v0.1.0. A dry run: no Release is created."
+        description: "Version to build, e.g. v0.1.0. A dry run: no Release is drafted."
         required: true
         default: v0.0.0
 
-# The release job creates a Release and uploads its assets; nothing else here
+# The release job drafts a Release and uploads its assets; nothing else here
 # writes anything.
 permissions:
   contents: read
@@ -109,22 +110,36 @@ jobs:
       # davison/md-notes#134 all say a dispatch never creates a Release, and
       # this is the line that makes that true; scripts/workflows holds a test
       # over it.
-      - name: Publish the GitHub Release
+      # A draft, and the operator publishes it by hand — the gate resolved on
+      # davison/md-notes#133. A Release created with GITHUB_TOKEN starts no
+      # workflow of its own ("events triggered by the GITHUB_TOKEN will not
+      # create a new workflow run"), so a Release published from here would
+      # never reach the channel workflows that hang off `release: published`.
+      # A person clicking Publish is not that token, so it does. The operator
+      # reads the generated notes before the release goes out either way.
+      - name: Draft the GitHub Release
+        id: draft
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
-        run: gh release create "$VERSION" dist/* --title "$VERSION" --generate-notes --verify-tag
+        run: |
+          url=$(gh release create "$VERSION" dist/* --draft --title "$VERSION" --generate-notes --verify-tag)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Say what was built
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          DRAFT_URL: ${{ steps.draft.outputs.url }}
         run: |
           {
             if [ "${{ github.event_name }}" != "push" ]; then
               echo "Dry run of **$VERSION**: built and uploaded as an artifact, no Release created."
             else
-              echo "Released **$VERSION**: <${{ github.server_url }}/${{ github.repository }}/releases/tag/$VERSION>"
+              echo "Draft created for **$VERSION**: <$DRAFT_URL>"
+              echo
+              echo "It is a **draft**. Read the generated notes and publish it from that page:"
+              echo "publishing is what fires \`release: published\` and starts the channel workflows."
             fi
             echo
             echo '```'
