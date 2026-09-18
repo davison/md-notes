@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -551,6 +552,125 @@ func TestBudgetWatchesThePriorityPrefix(t *testing.T) {
 	if len(logged) != 1 || !strings.Contains(logged[0], "2 unwatched") ||
 		!strings.Contains(logged[0], "budget of 3") || !strings.Contains(logged[0], "max_watches") {
 		t.Fatalf("log = %q", logged)
+	}
+}
+
+// A directory the filesystem refuses is not the kernel running out of
+// watches, and must not be reported as it: raising
+// fs.inotify.max_user_watches will never make a directory at mode 000
+// readable. The reader is told the real reason instead (M8-R7, #33).
+func TestUnreadableDirectoryReportsItsOwnCause(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the directory mode, so nothing is refused")
+	}
+	root := t.TempDir()
+	dirs := []string{"ok", "locked"}
+	for _, d := range dirs {
+		os.MkdirAll(filepath.Join(root, d), 0o755)
+	}
+	locked := filepath.Join(root, "locked")
+	// Restored before t.TempDir's own cleanup, which runs after this one and
+	// cannot remove a directory it may not read.
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+
+	var logged []string
+	w, err := New(root, group(tree.GroupNotes, dirs...), func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+
+	cov := w.Coverage()
+	want := Coverage{Watched: 2, Unwatched: 1, Refused: 1, Reason: "permission denied", Limited: true}
+	if cov != want {
+		t.Fatalf("Coverage() = %+v, want %+v", cov, want)
+	}
+	if len(logged) != 1 {
+		t.Fatalf("log = %q, want one line", logged)
+	}
+	line := logged[0]
+	for _, want := range []string{"1 unwatched", "permission denied", "not the kernel limit", "needs access to that directory"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("log line %q does not say %q", line, want)
+		}
+	}
+	if strings.Contains(line, "max_user_watches") || strings.Contains(line, "max_watches") {
+		t.Errorf("log line %q offers a limit to raise for a refusal no limit answers", line)
+	}
+}
+
+// The three causes are reported as themselves, and only the kernel's own
+// limit carries the sysctl remedy.
+func TestReportNamesEachCause(t *testing.T) {
+	var logged []string
+	w, err := New(t.TempDir(), nil, func(f string, a ...any) { logged = append(logged, fmt.Sprintf(f, a...)) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+
+	cases := []struct {
+		name       string
+		overBudget bool
+		errs       []error
+		wantCov    Coverage
+		want       []string
+		notWant    []string
+	}{{
+		name:       "the budget is spent",
+		overBudget: true,
+		wantCov:    Coverage{Budget: 3, OverBudget: true, Watched: 3, Unwatched: 2, Limited: true},
+		want:       []string{"budget of 3 directories is spent", "raise max_watches"},
+		notWant:    []string{"could not be watched"},
+	}, {
+		name:    "the kernel is out of watches",
+		errs:    []error{syscall.ENOSPC},
+		wantCov: Coverage{Budget: 3, Watched: 3, Unwatched: 2, Failed: 1, Limited: true},
+		want:    []string{"1 could not be watched: no space left on device", "raise fs.inotify.max_user_watches"},
+		notWant: []string{"not the kernel limit", "budget of 3"},
+	}, {
+		name:    "the filesystem refuses them",
+		errs:    []error{syscall.EACCES, syscall.EACCES},
+		wantCov: Coverage{Budget: 3, Watched: 3, Unwatched: 2, Refused: 2, Reason: "permission denied", Limited: true},
+		want:    []string{"2 could not be watched: permission denied", "not the kernel limit", "needs access to those directories"},
+		notWant: []string{"max_user_watches", "budget of 3"},
+	}, {
+		name:       "all three at once",
+		overBudget: true,
+		errs:       []error{syscall.ENOSPC, syscall.EACCES},
+		wantCov:    Coverage{Budget: 3, OverBudget: true, Watched: 3, Unwatched: 2, Failed: 1, Refused: 1, Reason: "permission denied", Limited: true},
+		want:       []string{"budget of 3", "no space left on device", "raise fs.inotify.max_user_watches", "permission denied", "not the kernel limit"},
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			logged = nil
+			cov := Coverage{Budget: 3, OverBudget: c.overBudget, Watched: 3, Unwatched: 2, Limited: true}
+			var causes refusals
+			for _, err := range c.errs {
+				causes.record(&cov, err)
+			}
+			if cov != c.wantCov {
+				t.Fatalf("coverage = %+v, want %+v", cov, c.wantCov)
+			}
+			w.report(cov, causes)
+			if len(logged) != 1 {
+				t.Fatalf("log = %q, want one line", logged)
+			}
+			for _, want := range c.want {
+				if !strings.Contains(logged[0], want) {
+					t.Errorf("log line %q does not say %q", logged[0], want)
+				}
+			}
+			for _, not := range c.notWant {
+				if strings.Contains(logged[0], not) {
+					t.Errorf("log line %q says %q, which is not its cause", logged[0], not)
+				}
+			}
+		})
 	}
 }
 
