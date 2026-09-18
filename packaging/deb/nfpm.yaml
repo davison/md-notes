@@ -1,14 +1,17 @@
 # The md-notes Debian package, for amd64 and arm64 (davison/md-notes#137).
 #
-# One config serves both architectures: packaging/deb/build.sh stages the three
+# One config serves both architectures: packaging/deb/build.sh stages the
 # payload files under the names below, then runs nfpm once per architecture
 # from the staging directory with DEB_ARCH and DEB_VERSION set, naming the
 # output itself. Everything that is the same for both packages is here, so the
 # control fields are one file to read rather than a set of command lines to
 # reconstruct. scripts/workflows/deb_build_test.go asserts this file's fields.
 #
-# The payload is three files and no maintainer scripts. A user unit cannot be
-# enabled at install time — there is no system-wide way to enable one for a
+# The payload is six files — the binary, the unit, the copyright, the
+# changelog, the manual page and one lintian override; the last three are what
+# `lintian` with no errors costs, and each is commented where it is listed.
+# There are no maintainer scripts. A user unit cannot be enabled at install
+# time — there is no system-wide way to enable one for a
 # user who may not have logged in yet — so the package installs it and the user
 # runs `systemctl --user enable --now mdn`, which is what the documentation
 # tells them anyway. That also means there is nothing to undo on removal, which

@@ -140,7 +140,12 @@ jobs:
 
       # To the same release, not a new one. --clobber so a re-run of this
       # workflow from the Actions page replaces the assets it uploaded last
-      # time instead of failing on names that are already there.
+      # time instead of failing on names that are already there. The half of
+      # that `gh release upload --help` also says, and the half that matters
+      # for a re-run: "existing assets are deleted before new assets are
+      # uploaded. If the upload fails, the original assets will be lost" — so
+      # a re-run that dies part way leaves the release with no .deb at all
+      # until it is re-run again, rather than with the previous one.
       - name: Upload the packages to the release
         env:
           GH_TOKEN: ${{ github.token }}
