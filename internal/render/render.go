@@ -461,10 +461,15 @@ func (rawHTMLRenderer) renderInline(w util.BufWriter, source []byte, node ast.No
 // when something was actually removed from it, and every other token is
 // copied byte for byte, so unbalanced tags spanning a block, comments,
 // entities and text come through as they were written.
+//
+// Every fragment goes through the tokeniser. A cheaper first look that
+// scanned for the literal names could not be made to agree with it: the
+// tokeniser decodes entities in an attribute value, and the sanitiser
+// decodes them again afterwards, so `class="line&#45;anchor"` carries
+// none of the bytes such a scan looks for and reaches the page as the
+// class the stylesheet selects on. One decision procedure, which is the
+// one that reads the value the browser will (davison/md-notes#144).
 func scrubRaw(src []byte) []byte {
-	if !carriesMarker(src) {
-		return src
-	}
 	z := xhtml.NewTokenizer(bytes.NewReader(src))
 	var out bytes.Buffer
 	for {
@@ -504,26 +509,6 @@ func scrubRaw(src []byte) []byte {
 		tok.Attr = kept
 		out.WriteString(tok.String())
 	}
-}
-
-// carriesMarker reports whether src is worth tokenising at all. Raw HTML
-// in a note is usually an inline tag or two, and almost none of it names
-// anything the application reads.
-func carriesMarker(src []byte) bool {
-	// Lowered because an attribute name is not case-sensitive in HTML,
-	// and erring towards tokenising: a class name that survives this and
-	// then does not match exactly is a different class, which is the
-	// tokenised path's answer anyway.
-	lower := bytes.ToLower(src)
-	if bytes.Contains(lower, []byte(lineAttr)) {
-		return true
-	}
-	for _, c := range structuralClasses {
-		if bytes.Contains(lower, []byte(c)) {
-			return true
-		}
-	}
-	return false
 }
 
 // withoutStructural drops the renderer's own class names from a class
