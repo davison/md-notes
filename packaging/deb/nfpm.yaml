@@ -1,0 +1,105 @@
+# The md-notes Debian package, for amd64 and arm64 (davison/md-notes#137).
+#
+# One config serves both architectures: packaging/deb/build.sh stages the three
+# payload files under the names below, then runs nfpm once per architecture
+# from the staging directory with DEB_ARCH and DEB_VERSION set, naming the
+# output itself. Everything that is the same for both packages is here, so the
+# control fields are one file to read rather than a set of command lines to
+# reconstruct. scripts/workflows/deb_build_test.go asserts this file's fields.
+#
+# The payload is three files and no maintainer scripts. A user unit cannot be
+# enabled at install time — there is no system-wide way to enable one for a
+# user who may not have logged in yet — so the package installs it and the user
+# runs `systemctl --user enable --now mdn`, which is what the documentation
+# tells them anyway. That also means there is nothing to undo on removal, which
+# is why `apt remove` leaves nothing behind.
+#
+# The `src:` paths are bare names, not ${VARIABLES}: nfpm expands environment
+# variables in the control fields below but not in `contents`, where the glob
+# runs against the literal text. Staging under fixed names is the form that
+# works, and it also makes the file list here a list rather than a puzzle.
+
+name: md-notes
+arch: ${DEB_ARCH}
+platform: linux
+version: ${DEB_VERSION}
+# The version is computed from the release tag by build.sh and used verbatim.
+# nfpm's default schema is semver, which re-derives a Debian version of its own
+# from it — turning a prerelease suffix into a `~` form, among other things —
+# and the package would then not carry the version build.sh put in its name.
+version_schema: none
+
+section: utils
+priority: optional
+maintainer: Darren Davison <darren@davisononline.org>
+homepage: https://github.com/davison/md-notes
+license: MIT
+
+# First line is the synopsis; the rest is the extended description, and a lone
+# `.` is Debian's blank line. Kept under 80 columns because dpkg renders it as
+# it stands.
+description: |
+  local markdown notes served to a browser
+  md-notes turns folders of markdown files into a notes application in the
+  browser, and doubles as a markdown viewer for any folder on disk. It renders
+  notes server-side, watches the folders for changes made by other tools,
+  searches them with ripgrep, and pushes updates to the open page over
+  Server-Sent Events. It binds to localhost.
+  .
+  The daemon is one static binary, mdn, configured in ~/.config/mdn/config.yml.
+  This package installs a systemd user unit; start it with
+  `systemctl --user enable --now mdn`.
+
+# The daemon shells out to ripgrep to list and to search a root, so without it
+# the navigator is empty and search returns nothing. A dependency rather than a
+# recommendation, because nothing the application does works without it.
+depends:
+  - ripgrep
+
+contents:
+  - src: mdn
+    dst: /usr/bin/mdn
+    file_info:
+      mode: 0755
+
+  # Staged by build.sh from contrib/mdn.service with its ExecStart pointed at
+  # /usr/bin/mdn: that file runs %h/.local/bin/mdn, which is right for the
+  # from-source route it documents in its own header and wrong for a package.
+  # See the gate raised on davison/md-notes#137.
+  - src: mdn.service
+    dst: /usr/lib/systemd/user/mdn.service
+    file_info:
+      mode: 0644
+
+  # Policy 12.5: every package ships its copyright here. The upstream LICENSE
+  # verbatim — the packaging and the program are the same source tree, so there
+  # is no second licence to declare.
+  - src: copyright
+    dst: /usr/share/doc/md-notes/copyright
+    file_info:
+      mode: 0644
+
+  # Policy 12.7. `changelog.gz` and not `changelog.Debian.gz` because the
+  # version carries no Debian revision, which makes this a native package —
+  # which it is: this repository is both the program and its packaging, and
+  # there is no separate Debian source to have revisions of. build.sh writes
+  # it, pointing at the release notes, which is where this project's changelog
+  # actually lives.
+  - src: changelog.gz
+    dst: /usr/share/doc/md-notes/changelog.gz
+    file_info:
+      mode: 0644
+
+  # Policy 12.1 asks every program in /usr/bin for a manual page, and lintian
+  # says so. packaging/deb/mdn.1, with its version and date substituted.
+  - src: mdn.1.gz
+    dst: /usr/share/man/man1/mdn.1.gz
+    file_info:
+      mode: 0644
+
+  # One override, for the static binary that is this project's whole
+  # distribution story; the file itself carries the justification.
+  - src: lintian-overrides
+    dst: /usr/share/lintian/overrides/md-notes
+    file_info:
+      mode: 0644
