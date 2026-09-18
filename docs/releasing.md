@@ -63,6 +63,12 @@ The assets are:
 | `mdn-extension-<version>.zip` | the unpacked extension, zipped |
 | `SHA256SUMS` | checksums of the three above |
 
+`<version>` in those names is the tag verbatim, leading `v` and all:
+`mdn-v0.1.0-linux-amd64`, `mdn-extension-v0.1.0.zip`. Only the places that
+cannot take a `v` get the stripped form — the extension manifest, and an AUR
+`pkgver` or a Debian version. A workflow downloading an asset by URL wants the
+`v`; one writing a package version does not.
+
 The binaries are bare rather than tarred: the licence and
 `contrib/mdn.service` are in the tagged source tree, which is what the
 packaging workflows check out.
@@ -115,6 +121,19 @@ default branch` for a `workflow_dispatch` it cannot see there, whatever ref you
 ask for. So the first dry run of a change to this workflow happens after it
 merges and before the tag is pushed, and that is the point of the dry run
 existing.
+
+## When a release has to be re-run
+
+`gh release create` refuses a tag that already has a Release, and it has no
+update mode — no `--clobber`, nothing. So a run that failed after the Release
+existed cannot simply be re-run: delete the Release first, from the releases
+page or with `gh release delete <tag>`, and then re-run the failed run from the
+Actions page.
+
+Delete the Release, not the tag. The tag is what the build is made from and
+what the assets are named after; deleting and re-pushing it would build a
+different commit under the same name, and anyone who already fetched the first
+one would never see the difference.
 
 ## Versions
 
