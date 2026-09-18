@@ -101,7 +101,14 @@ jobs:
           ASSET: ${{ steps.release.outputs.asset }}
         run: |
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" --dir .
-          unzip -p "$ASSET" manifest.json | head -5
+          ls -l "$ASSET"
+          # What the log should say the store was sent. Unpacked to a file
+          # first rather than piped into `head`: a `run:` step is
+          # `bash -e -o pipefail`, and a reader that closes early kills the
+          # writer with SIGPIPE, which pipefail then reports as a failed step
+          # — intermittently, on the size of one write.
+          unzip -p "$ASSET" manifest.json > manifest-in-the-package.json
+          grep -E '"(name|version)"' manifest-in-the-package.json || true
 
       # Three calls: the refresh-token grant, the package PUT, the publish that
       # submits it for review. extension/scripts/webstore.mjs makes them and
