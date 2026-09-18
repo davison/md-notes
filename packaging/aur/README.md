@@ -1,8 +1,9 @@
 # The AUR package
 
 `md-notes-bin` on the [Arch User Repository][aur]. It installs the `mdn`
-binary a release publishes, the systemd user unit and the licence, and
-depends on ripgrep:
+binary a release publishes, the systemd user unit and the licence. It depends
+on ripgrep, and suggests `xdg-utils`, which `mdn open` runs to launch a
+browser:
 
 ```
 paru -S md-notes-bin      # or any other AUR helper
@@ -63,12 +64,24 @@ carries bare binaries and neither of those two files. That is also why they
 are fetched from `raw.githubusercontent.com` at the tag rather than from the
 release.
 
+`pkgrel` is 1 for every release and the workflow never passes anything else: a
+new `pkgver` resets it. The case that needs it bumped is a packaging change at
+a version already on the AUR — a corrected `depends`, say. No release event
+hangs off that, so it is a hand push: render with `-pkgrel 2`, run
+`verify.sh`, and commit the files to the AUR repository yourself. A typo fix
+bumps nothing at all.
+
 ## Verifying it
 
 `verify.sh` does everything the release workflow does except push, in a
-container, so it can be run on any machine with podman or docker:
+container, so it can be run on any machine with podman or docker. **Render
+first**, for a release that exists: it downloads that release's binaries and
+checks them against the PKGBUILD's checksums, so the committed `0.0.0`/`SKIP`
+template fails it with a 404.
 
 ```
+gh release download v0.1.0 --pattern SHA256SUMS
+go run ./scripts/aurgen -version v0.1.0 -sums SHA256SUMS
 podman run --rm -v "$PWD:/work:ro,Z" -w /work archlinux:latest \
     packaging/aur/verify.sh v0.1.0
 ```
@@ -80,6 +93,14 @@ installs the package, checks `mdn version` against the tag and that the unit
 starts `/usr/bin/mdn`, then removes it and checks nothing survived. It
 refuses to run outside a container, because installing and removing packages
 on a machine somebody uses is not a test.
+
+It builds for the host architecture only, which on the runner and on the
+operator's machine is `x86_64`. Nothing — here, in CI, or in the publish
+workflow — ever fetches the `aarch64` binary and installs it. That half of
+`arch=()` rests on the release's own checksum reaching `sha256sums_aarch64`,
+which a unit test proves, including that the two architectures' checksums are
+not swapped; an install on an arm64 Arch machine is the only thing that would
+prove the rest.
 
 Three `namcap` warnings are expected and none is a defect:
 
