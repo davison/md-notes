@@ -104,15 +104,17 @@ func TestThrottleTableIsBounded(t *testing.T) {
 	}
 }
 
-// The bound loginDelay describes is a property of a request rather than of
-// the daemon: every failure past the free tier waits, whatever key it
-// claims, and nothing holds them in a queue. Pinned because the comment now
-// says exactly that, so a change in either direction — dropping the floor,
-// or adding the daemon-wide gate the old wording implied — has to face this
-// test. Measured in process: failed hands back a duration and the login
-// handler serves it (tailnet.go), so what is timed here is the throttle,
-// not a socket.
-func TestFailedLoginsAreNotSerialised(t *testing.T) {
+// The floor holds when failures arrive together and not one at a time:
+// every key past the free tier is told to wait, none is refused for
+// somebody else's guessing, and the bookkeeping is safe to share.
+//
+// What this does not cover is the aggregate the loginDelay comment talks
+// about. failed hands back a duration; the handler is what serves it
+// (tailnet.go), so that is where a gate would sit and where
+// TestFailedLoginsAreNotSerialised looks for one. The elapsed check below
+// is only the narrower claim that failed itself does not sit on the wait
+// while holding its lock (review of PR #144, finding 2).
+func TestTheFloorHoldsWhenFailuresArriveTogether(t *testing.T) {
 	th := newThrottle()
 	const callers = 40
 	waits := make([]time.Duration, callers)
@@ -146,11 +148,10 @@ func TestFailedLoginsAreNotSerialised(t *testing.T) {
 		t.Errorf("%d answered at once and %d delayed, want %d and %d — the floor did not hold under parallel use",
 			plain, delayed, loginFree, callers-loginFree)
 	}
-	// The throttle hands out the wait rather than sitting on it: the
-	// calls do not queue behind each other, which is the aggregate bound
-	// the comment no longer claims.
+	// The throttle hands out the wait rather than sitting on it. This is
+	// about failed's own lock, not about the daemon's aggregate.
 	if elapsed >= loginDelay {
-		t.Errorf("%d parallel calls took %v, at or past one delay of %v — they are being serialised",
+		t.Errorf("%d parallel calls took %v, at or past one delay of %v — failed is serving the wait itself",
 			callers, elapsed, loginDelay)
 	}
 }
