@@ -605,15 +605,28 @@ the root's watch coverage, and sends it again when the coverage has changed — 
 next keepalive tick, so up to thirty seconds later:
 
 ```json
-{"watched": 8192, "unwatched": 4498, "budget": 8192,
- "overBudget": true, "failed": 0, "limited": true}
+{"watched": 8192, "unwatched": 4508, "budget": 8192,
+ "overBudget": true, "failed": 0, "refused": 0, "limited": true}
 ```
 
 `limited` is `unwatched > 0`; `overBudget` says the budget rather than an error is
-the reason; `failed` counts directories the kernel refused; `budget` is the per-root
-maximum and is `0` when there is none, never negative. A root with no watcher at all
-has no stream: the endpoint answers 503, which an `EventSource` reports by closing
-for good rather than reconnecting.
+the reason; `failed` counts directories the kernel's own watch pool refused —
+`ENOSPC` from `inotify_add_watch`, meaning `fs.inotify.max_user_watches` is spent —
+and nothing else; `refused` counts directories refused for any other reason, which no
+limit answers; `budget` is the per-root maximum and is `0` when there is none, never
+negative. Every frame carries all of those. `reason` is sent only when `refused` is
+not zero, and holds the first such refusal in the words the operating system used, so
+a root with one directory the daemon may not read sends:
+
+```json
+{"watched": 2, "unwatched": 1, "budget": 8192, "overBudget": false,
+ "failed": 0, "refused": 1, "reason": "permission denied", "limited": true}
+```
+
+[When coverage is limited](#when-coverage-is-limited) says what the daemon reports for
+each cause and what to do about it. A root with no watcher at all has no stream: the
+endpoint answers 503, which an `EventSource` reports by closing for good rather than
+reconnecting.
 
 Unregistering a root ends the streams open on it, rather than leaving them on
 keepalives for a root the daemon no longer serves; the reconnect that follows meets
