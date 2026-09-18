@@ -1,0 +1,37 @@
+# Maintainer: Darren Davison <maintainer at example dot invalid>
+# Rendered by scripts/aurgen in davison/md-notes, from the version and the
+# SHA256SUMS of a GitHub Release. Edit the renderer, not this file.
+pkgname=md-notes-bin
+pkgver=0.0.0
+pkgrel=1
+pkgdesc='Turns folders of markdown files into a notes application in the browser'
+arch=('x86_64' 'aarch64')
+url='https://github.com/davison/md-notes'
+license=('MIT')
+depends=('ripgrep')
+provides=('md-notes')
+conflicts=('md-notes')
+# The binary is the release's own, already stripped at link time (-s -w): left
+# alone it is byte-identical to the asset SHA256SUMS covers, and there is no
+# debug package to be made from it.
+options=('!strip' '!debug')
+install=md-notes-bin.install
+source=("md-notes-$pkgver-LICENSE::https://raw.githubusercontent.com/davison/md-notes/v$pkgver/LICENSE"
+        "md-notes-$pkgver-mdn.service::https://raw.githubusercontent.com/davison/md-notes/v$pkgver/contrib/mdn.service")
+sha256sums=('SKIP'
+            'SKIP')
+source_x86_64=("md-notes-$pkgver-mdn::https://github.com/davison/md-notes/releases/download/v$pkgver/mdn-v$pkgver-linux-amd64")
+sha256sums_x86_64=('SKIP')
+source_aarch64=("md-notes-$pkgver-mdn::https://github.com/davison/md-notes/releases/download/v$pkgver/mdn-v$pkgver-linux-arm64")
+sha256sums_aarch64=('SKIP')
+
+package() {
+	install -Dm755 "$srcdir/md-notes-$pkgver-mdn" "$pkgdir/usr/bin/mdn"
+	# The unit in the source tree starts the binary from ~/.local/bin, where
+	# `make install` puts it. The packaged one is on PATH at /usr/bin.
+	sed 's|^ExecStart=%h/\.local/bin/mdn |ExecStart=/usr/bin/mdn |' \
+		"$srcdir/md-notes-$pkgver-mdn.service" |
+		install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/mdn.service"
+	install -Dm644 "$srcdir/md-notes-$pkgver-LICENSE" \
+		"$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
