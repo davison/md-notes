@@ -286,6 +286,32 @@ fallback is to narrow the declaration to `https://*/*` alone and tell users on a
 non-default **http** port to load the extension unpacked — which would be worse
 for them, and is the trade to be made only if it is made for us.
 
+**The data-use declaration.** The listing declares nothing collected in any
+category, and a reviewer may well ask how that squares with an extension that
+transmits the content of a web page somewhere. The answer, if it is asked:
+
+> The extension transmits the page the user asked it to clip to one address:
+> the URL of the md-notes daemon, which the user types into the extension's own
+> options page and which is a program running on their own computer. The
+> developer operates no server, receives nothing, and has no means of receiving
+> anything — there is no endpoint of ours in the package, and the source is
+> public. The categories in this declaration ask what data the *developer*
+> collects or transmits to third parties; the answer to every one of them is
+> none. The user sending their own page to their own machine is the extension's
+> single purpose rather than a collection of data.
+
+Worth knowing while writing that: the program policy defines "handle" as
+"collecting, transmitting, using, or sharing user data", and the User Data FAQ
+says disclosure can be required even where data "is processed or stored locally
+on a user's device and is not transmitted to external servers" — so the question
+is not settled by the data staying on the user's own machine, and the listing
+should not argue that it is. The daemon URL may also be a Tailscale name, which
+is the user's own machine reached over their own network, and still nobody
+else's server. If the review disagrees and asks for a category to be ticked, the
+one to tick is **Website content**, with the same explanation in the
+justification field; nothing about the extension changes, and the declaration
+becomes more conservative than it needs to be rather than wrong.
+
 **A daemon on `localhost`.** A reviewer with no md-notes daemon running sees an
 extension that cannot do anything. The description says what is needed in its
 own section, and the review notes for the submission should say it again, with
