@@ -367,6 +367,9 @@ record the decisions behind them. The inbox, which turns URLs shared from a
 phone into clips, follows in a later milestone. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
 is run as a [CodeCrew](https://github.com/radiusred/gh-codecrew) project.
+[CONTRIBUTING.md](CONTRIBUTING.md) is the way in: what to install, what to
+run, the commit convention, how a change gets from an issue to a merged pull
+request, and how a release is cut.
 
 ## License
 
