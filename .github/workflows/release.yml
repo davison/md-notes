@@ -70,11 +70,16 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           version="${INPUT_VERSION:-$GITHUB_REF_NAME}"
-          # The same shape the tag trigger filters on, anchored: a shell `case`
-          # pattern cannot express "digits and nothing else", so it would let
-          # v0.1.0-rc1 through to build a release whose manifest silently falls
-          # back to the development version.
-          if ! printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+          # The same shape the tag trigger filters on, anchored to the whole
+          # string. Two weaker forms were here first and both let something
+          # through: a shell `case` pattern cannot express "digits and nothing
+          # else", so v0.1.0-rc1 passed and would have built a release whose
+          # manifest silently fell back to the development version; and
+          # `grep -E '^…$'` anchors per *line*, so a dispatch input of
+          # "v1.2.3" followed by a newline and anything at all passed, and the
+          # line below would have written both of them into $GITHUB_OUTPUT.
+          # bash's =~ anchors the string. scripts/workflows runs this step.
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "not a v<major>.<minor>.<patch> version: $version" >&2
             exit 1
           fi
