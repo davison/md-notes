@@ -22,14 +22,16 @@ const (
 	// loginDelay is how long a failure past loginFree waits before it is
 	// answered — past loginFree from one caller, or past loginFree in
 	// total. Small enough not to look broken. What it bounds is a
-	// request: every failure past the free tier waits, whatever key it
-	// claims, but nothing holds them in a queue, so a caller still gets
-	// as many attempts in that half-second as it opens sockets (40 in
-	// parallel, measured at 533 ms). A daemon-wide gate would make the
-	// aggregate claim true and would queue the operator's own mistyped
-	// token behind whatever flood is in front of it — the lockout the
-	// total below refuses to create, arriving by another road. The token
-	// is 130 bits; this is a work and log-volume bound, not a lock.
+	// request: every failure that is answered at all past the free tier
+	// waits, whatever key it claims — past loginMax one key is refused
+	// instead, before it reaches the delay — but nothing holds them in a
+	// queue, so a caller still gets as many attempts in that half-second
+	// as it opens sockets (40 in parallel, measured at 533 ms). A
+	// daemon-wide gate would make the aggregate claim true and would
+	// queue the operator's own mistyped token behind whatever flood is in
+	// front of it — the lockout the total below refuses to create,
+	// arriving by another road. The token is 130 bits; this is a work and
+	// log-volume bound, not a lock.
 	loginDelay = 500 * time.Millisecond
 )
 
