@@ -1,0 +1,132 @@
+# Publishes a release's extension zip to the Chrome Web Store
+# (davison/md-notes#135, M8-R2).
+#
+# One of the channel workflows that hang off a published Release — its own
+# file, like the AUR and .deb ones, so a channel that fails can be re-run on
+# its own from the Actions page against the same release without cutting
+# another tag. docs/releasing.md is the prose account; scripts/workflows holds
+# tests over the properties below that a reader would not notice the loss of.
+#
+# It uploads. It does not build: the zip is the release's own asset, built from
+# the tag by release.yml and checksummed there, so what reaches the store is
+# byte for byte what the release page offers.
+name: publish-webstore
+
+# `release: published` and nothing else. Not `created`, which also fires for a
+# draft, and not `released`, which does not fire for a pre-release: `published`
+# is the one the operator's press on the draft's Publish button emits, and the
+# gate resolved on davison/md-notes#133 makes that press the start of every
+# channel.
+#
+# There is deliberately no `workflow_dispatch` here. A failed channel is re-run
+# with GitHub's own re-run, which replays this event with its release payload;
+# a dispatch would add a second path to the store that carries no release with
+# it and would have to be told which tag to trust. The one way in is a release
+# somebody published.
+on:
+  release:
+    types: [published]
+
+# Reading the release's asset is all this needs. The credentials that can write
+# anything are the store's, not GitHub's.
+permissions:
+  contents: read
+
+# One upload at a time. The store refuses a package uploaded while another is
+# in flight for the same item, and two releases published a minute apart would
+# otherwise race; never cancelled, because an upload abandoned half way is
+# worse than one that waits.
+concurrency:
+  group: publish-webstore
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # A `release` event runs at the release's own commit, so the default
+      # checkout is the tagged tree: the publishing script that ships with the
+      # release is the one that publishes it.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # The tag, and the asset name built from it. Both are in
+      # docs/releasing.md: the asset is `mdn-extension-<version>.zip` with the
+      # version spelled exactly as the tag, leading `v` and all. Read through
+      # the environment and checked before it reaches a command line.
+      - name: Resolve the release
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "not a v<major>.<minor>.<patch> release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "asset=mdn-extension-$RELEASE_TAG.zip" >> "$GITHUB_OUTPUT"
+
+      # Before anything is downloaded, so a missing credential fails in the
+      # first ten seconds saying which one, rather than after a download and
+      # inside somebody else's API. Only the names are ever printed.
+      - name: Check the store credentials are configured
+        env:
+          CHROME_WEBSTORE_CLIENT_ID: ${{ secrets.CHROME_WEBSTORE_CLIENT_ID }}
+          CHROME_WEBSTORE_CLIENT_SECRET: ${{ secrets.CHROME_WEBSTORE_CLIENT_SECRET }}
+          CHROME_WEBSTORE_REFRESH_TOKEN: ${{ secrets.CHROME_WEBSTORE_REFRESH_TOKEN }}
+          CHROME_WEBSTORE_ITEM_ID: ${{ vars.CHROME_WEBSTORE_ITEM_ID }}
+        run: |
+          missing=()
+          for name in CHROME_WEBSTORE_CLIENT_ID CHROME_WEBSTORE_CLIENT_SECRET \
+                      CHROME_WEBSTORE_REFRESH_TOKEN CHROME_WEBSTORE_ITEM_ID; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "not configured: ${missing[*]}" >&2
+            echo "The first three are repository secrets and the last is a repository variable;" >&2
+            echo "davison/md-notes#135 records how each is made." >&2
+            exit 1
+          fi
+
+      # The release's own asset, by the name docs/releasing.md gives it. Not a
+      # fresh build: a store package that is not the one on the release page,
+      # under the same version, is the one mismatch nobody would ever find.
+      - name: Download the release's extension zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          ASSET: ${{ steps.release.outputs.asset }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" --dir .
+          unzip -p "$ASSET" manifest.json | head -5
+
+      # Three calls: the refresh-token grant, the package PUT, the publish that
+      # submits it for review. extension/scripts/webstore.mjs makes them and
+      # writes what the store said into the run summary; its request shaping is
+      # tested against a fake server in extension/scripts/webstore.test.mjs.
+      - name: Upload to the Chrome Web Store and submit for review
+        env:
+          CHROME_WEBSTORE_CLIENT_ID: ${{ secrets.CHROME_WEBSTORE_CLIENT_ID }}
+          CHROME_WEBSTORE_CLIENT_SECRET: ${{ secrets.CHROME_WEBSTORE_CLIENT_SECRET }}
+          CHROME_WEBSTORE_REFRESH_TOKEN: ${{ secrets.CHROME_WEBSTORE_REFRESH_TOKEN }}
+          ITEM_ID: ${{ vars.CHROME_WEBSTORE_ITEM_ID }}
+          ASSET: ${{ steps.release.outputs.asset }}
+        run: node extension/scripts/webstore.mjs --item-id "$ITEM_ID" --zip "$ASSET"
+
+      # The store's review takes days and is nobody here's to hurry; a run that
+      # failed should say where to look and what re-running does.
+      - name: Say what failed
+        if: failure()
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          {
+            echo "**$TAG was not submitted to the Chrome Web Store.** The step log above says why."
+            echo
+            echo "Nothing else about the release is affected: the release page, its assets and the"
+            echo "other channels stand. Fix the cause and re-run this workflow from the Actions"
+            echo "page — it replays this release, and uploads the same asset again."
+          } >> "$GITHUB_STEP_SUMMARY"
