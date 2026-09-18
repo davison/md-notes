@@ -1,0 +1,109 @@
+# Cutting a release is one act: pushing a v<major>.<minor>.<patch> tag
+# (davison/md-notes#134). Everything below follows from that tag — the version
+# the binaries report, the version the extension manifest carries, the assets,
+# the notes — and the channels that publish afterwards (Chrome Web Store, AUR,
+# .deb) hang off the `release: published` event this workflow emits, each in
+# its own file, so any one of them can be re-run from the Actions page without
+# a new tag. docs/releasing.md is the prose account of all of it.
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  # A dry run, so the workflow itself can be exercised from a branch before any
+  # tag exists: it checks, builds and uploads the artefacts for inspection, and
+  # creates no Release.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. v0.1.0. A dry run: no Release is created."
+        required: true
+        default: v0.0.0
+
+# The release job creates a Release and uploads its assets; nothing else here
+# writes anything.
+permissions:
+  contents: read
+
+jobs:
+  # The commit is checked the way every other commit is checked, by calling CI
+  # rather than restating it: both of its jobs, `check` and `e2e`, gate the
+  # build below.
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: |
+            ui/pnpm-lock.yaml
+            extension/pnpm-lock.yaml
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The tag on a tag push, the dispatch input on a dry run. Read through
+      # the environment and checked against the tag pattern before it reaches
+      # a command line: it is the one value here that a person types.
+      - name: Resolve the version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="${INPUT_VERSION:-$GITHUB_REF_NAME}"
+          case "$version" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "not a v<major>.<minor>.<patch> version: $version" >&2; exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Both static binaries, the extension zip and SHA256SUMS, and the check
+      # that the tag, the binary and the manifest all say the same version.
+      # The same target the operator runs locally, so a release that fails here
+      # fails the same way on a laptop.
+      - name: Build the release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: make release VERSION="$VERSION"
+
+      # Kept whatever the trigger, so a dry run has something to inspect and a
+      # real release has its assets outside the Release as well.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mdn-${{ steps.version.outputs.version }}
+          path: dist/
+          if-no-files-found: error
+
+      - name: Publish the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "$VERSION" dist/* --title "$VERSION" --generate-notes --verify-tag
+
+      - name: Say what was built
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          {
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "Dry run of **$VERSION**: built and uploaded as an artifact, no Release created."
+            else
+              echo "Released **$VERSION**: <${{ github.server_url }}/${{ github.repository }}/releases/tag/$VERSION>"
+            fi
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

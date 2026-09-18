@@ -8,6 +8,10 @@ on:
   # over three consecutive runs before M5 closes, and a branch without a
   # pull request has nothing else that would start one.
   workflow_dispatch:
+  # Called by release.yml, so a release checks its commit by running CI itself
+  # rather than restating its steps and drifting from them
+  # (davison/md-notes#134).
+  workflow_call:
 
 jobs:
   check:
