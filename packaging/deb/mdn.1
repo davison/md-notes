@@ -6,13 +6,26 @@
 .\" one, and lintian says so; the alternative was a lintian override
 .\" justifying its absence, and for a command with four subcommands the page
 .\" is smaller than the justification.
+.\"
+.\" Every flag and every configuration key below was read off cmd/mdn/*.go and
+.\" internal/config/config.go rather than from memory. A manual page installed
+.\" into /usr/share/man is the same class of claim as a comment or a README
+.\" line, and this milestone has a requirement about those being true.
 .TH MDN 1 "@DATE@" "md-notes @VERSION@" "User Commands"
 .SH NAME
 mdn \- local markdown notes served to a browser
 .SH SYNOPSIS
-.B mdn
-.I command
-.RI [ flags ]
+.B mdn serve
+.RI [ options ]
+.br
+.B mdn open
+.RI [ options ]
+.I DIR
+.br
+.B mdn token
+.RI [ options ]
+.br
+.B mdn version
 .SH DESCRIPTION
 .B mdn
 is a small local service that turns folders of markdown files into a notes
@@ -23,7 +36,14 @@ other tools, searches them with
 .BR rg (1),
 and pushes changes to the open page over Server\-Sent Events.
 .PP
-It binds to localhost by default.
+It listens on the loopback address.
+A
+.B tailnet_host
+may be configured so that the daemon also answers to one extra Host name
+forwarded by a
+.B tailscale serve
+proxy; every request under that name must authenticate.
+.PP
 Notes stay plain markdown files in a folder hierarchy, editable with any tool
 and synced by anything that syncs files.
 .SH COMMANDS
@@ -35,22 +55,95 @@ This is what the systemd user unit starts.
 .BI "open " DIR
 Register
 .I DIR
-with the running daemon and open it in the browser.
-With
-.B \-\-no\-browser
-the URL is printed instead of opened.
+with the running daemon as an additional root and open it in the browser.
+Roots added this way are remembered in the state file.
 .TP
 .B token
 Print the daemon's bearer token, which the browser extension needs.
-.B \-\-rotate
-replaces it with a new one.
 .TP
 .B version
 Print the version and exit.
+.SH OPTIONS
+.SS mdn serve
+.TP
+.BI \-config " FILE"
+Configuration file.
+Default
+.IR ~/.config/mdn/config.yml .
+.TP
+.BI \-root " DIR"
+Notes root, overriding
+.B notes_root
+in the configuration file.
+.TP
+.BI \-port " N"
+Loopback port, overriding
+.B port
+in the configuration file.
+.TP
+.BI \-state " FILE"
+File that remembers the roots added with
+.BR "mdn open" .
+.TP
+.BI \-token\-file " FILE"
+File holding the bearer token clients present.
+Created on first start.
+.TP
+.BI \-max\-watches " N"
+Directories watched per root for live update;
+.B 0
+for no limit.
+Overrides
+.B max_watches
+in the configuration file.
+Default 8192.
+.TP
+.BI \-tailnet\-host " NAME"
+Extra Host name to answer to, for a
+.B tailscale serve
+proxy.
+Overrides
+.B tailnet_host
+in the configuration file.
+.SS mdn open
+.TP
+.BI \-config " FILE"
+Configuration file.
+.TP
+.BI \-port " N"
+Daemon port, overriding
+.B port
+in the configuration file.
+.TP
+.B \-no\-browser
+Print the URL instead of opening a browser.
+.SS mdn token
+.TP
+.BI \-token\-file " FILE"
+File holding the daemon's bearer token.
+.TP
+.B \-rotate
+Replace the token with a new one.
+.PP
+Each option is also accepted with two leading dashes.
 .SH FILES
 .TP
 .I ~/.config/mdn/config.yml
-The daemon's configuration: the notes roots, the address to bind and the port.
+The daemon's configuration:
+.BR notes_root ,
+.BR port ,
+.BR max_watches ,
+.B clips_dir
+and
+.BR tailnet_host .
+.TP
+.I ~/.local/state/mdn/roots.json
+The roots added with
+.BR "mdn open" ,
+so they survive a restart.
+.TP
+.I ~/.local/state/mdn/token
+The bearer token clients present, created on first start.
 .TP
 .I /usr/lib/systemd/user/mdn.service
 The systemd user unit this package installs.
@@ -61,6 +154,10 @@ Start it with
 systemctl \-\-user enable \-\-now mdn
 .fi
 .RE
+.PP
+The three paths above follow
+.BR XDG_CONFIG_HOME " and " XDG_STATE_HOME
+where those are set; the defaults are shown.
 .SH DEPENDENCIES
 The daemon shells out to
 .BR rg (1)
