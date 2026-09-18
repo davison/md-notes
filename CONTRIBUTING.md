@@ -164,8 +164,9 @@ project. Coordination lives in GitHub issues and pull requests rather than in
 a chat log, and the shape is the same whether a person or a model is doing the
 work:
 
-- **An issue first, then a plan, then a branch.** Every change has a task
-  issue. Before the first commit, the plan goes into the issue: what will
+- **An issue first, then a plan, then a branch.** Every change of substance
+  has a task issue — the exception below, for a typo or a dead link, is the
+  only one. Before the first commit, the plan goes into the issue: what will
   change, which requirement it serves, and anything that needs a human to
   decide. A trivial change gets a trivial plan, not an absent one.
 - **One pull request per task**, closing its issue with `Closes #N`.
