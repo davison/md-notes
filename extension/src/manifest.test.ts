@@ -13,6 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
 const manifest = JSON.parse(readFileSync(resolve(root, "public/manifest.json"), "utf8")) as {
   manifest_version: number;
+  version?: string;
   permissions: string[];
   host_permissions: string[];
   optional_host_permissions: string[];
@@ -68,6 +69,14 @@ describe("manifest", () => {
 
   it("keeps any other origin optional, for a daemon that is not on the default port", () => {
     expect([...manifest.optional_host_permissions].sort()).toEqual(["http://*/*", "https://*/*"]);
+  });
+
+  it("carries no version of its own: the build stamps one in", () => {
+    // M8-R1 holds the version in one place, the git tag. A literal here would
+    // be a second place, and the second place is the one that goes stale:
+    // scripts/stamp-manifest.mjs writes dist/manifest.json's version from the
+    // build's VERSION, and this file must not compete with it.
+    expect(manifest.version).toBeUndefined();
   });
 
   it("registers no content script and exposes no resource to web pages", () => {

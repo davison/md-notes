@@ -1,7 +1,6 @@
 {
   "manifest_version": 3,
   "name": "md-notes",
-  "version": "0.1.0",
   "description": "Open local markdown files in md-notes, and clip pages into your notes.",
   "minimum_chrome_version": "116",
   "background": {
