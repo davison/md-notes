@@ -24,8 +24,18 @@
 # published, so the changelog says when the release happened rather than when
 # the runner got round to it.
 #
+# It packages what it is given and vouches for nothing about it: the only test
+# applied to a binary here is that the file exists. The publish workflow checks
+# the assets against the release's SHA256SUMS before calling this, and a test
+# pins that ordering; a run by hand against a directory nobody checked will
+# package whatever is in it.
+#
 #     make release VERSION=v0.1.0
-#     packaging/deb/build.sh v0.1.0 dist packaging/deb/out
+#     packaging/deb/build.sh v0.1.0 dist dist/deb
+#
+# An output directory under dist/, which .gitignore already covers: a run that
+# writes 14 MB of packages into the working tree leaves them to be committed by
+# accident.
 
 set -euo pipefail
 
@@ -35,6 +45,7 @@ readonly HERE REPO
 readonly ARCHS=(amd64 arm64)
 readonly PACKAGE=md-notes
 readonly MAINTAINER='Darren Davison <darren@davisononline.org>'
+readonly HOMEPAGE='https://github.com/davison/md-notes'
 
 # Set by main before it can fail with the directory half-built; the trap that
 # removes it runs after main has returned, so it cannot be one of main's
@@ -130,6 +141,24 @@ stage_changelog() {
 	gzip -9n "$dst"
 }
 
+# stage_copyright writes the copyright file Policy 12.5 asks for: the licence
+# verbatim, under a line saying where the sources it covers came from.
+#
+# Not DEP-5, and deliberately: the machine-readable format exists to describe a
+# package whose files carry several licences and several copyright holders, and
+# this one is a single MIT-licensed tree. What Policy asks for that the licence
+# text alone does not give is the upstream source, so that is the line that is
+# added and nothing else — lintian is satisfied either way in both
+# distributions, so this is for the person who reads the file.
+stage_copyright() {
+	local dst="$1"
+	{
+		echo "Source: $HOMEPAGE"
+		echo
+		cat "$REPO/LICENSE"
+	} >"$dst"
+}
+
 # stage_manpage writes packaging/deb/mdn.1 with its placeholders filled in.
 stage_manpage() {
 	local version="$1" dst="$2" date
@@ -157,13 +186,22 @@ main() {
 	stage_unit "$STAGING/mdn.service"
 	stage_changelog "$version" "$STAGING/changelog"
 	stage_manpage "$version" "$STAGING/mdn.1"
-	install -m 0644 "$REPO/LICENSE" "$STAGING/copyright"
+	stage_copyright "$STAGING/copyright"
 	install -m 0644 "$HERE/lintian-overrides" "$STAGING/lintian-overrides"
 
-	local arch binary target
+	# Every asset before any package: the loop below writes one package per
+	# architecture, so finding the second binary missing half way through
+	# would leave the first package sitting in the output directory as though
+	# the run had gone well.
+	local arch binary
 	for arch in "${ARCHS[@]}"; do
 		binary="$assets/mdn-$tag-linux-$arch"
 		[ -f "$binary" ] || die "no $arch binary at $binary"
+	done
+
+	local target
+	for arch in "${ARCHS[@]}"; do
+		binary="$assets/mdn-$tag-linux-$arch"
 		# The staged copy is what nfpm reads, and a binary downloaded over
 		# HTTP arrives without its executable bit.
 		install -m 0755 "$binary" "$STAGING/mdn"
