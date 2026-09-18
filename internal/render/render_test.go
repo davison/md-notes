@@ -5,8 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
 )
 
 var r = New()
@@ -431,4 +434,88 @@ func TestLineMarkerSanitised(t *testing.T) {
 func TestRawHTMLAllowedSubset(t *testing.T) {
 	n := render(t, "x.md", "<details><summary>More</summary>\n\nHidden\n\n</details>\n\n<kbd>Ctrl</kbd>\n")
 	wantContains(t, n.HTML, "<kbd>Ctrl</kbd>")
+}
+
+// lineTargetOf applies the rule the note view uses to choose the element a
+// `?l=` hit scrolls to (`ui/src/note-view.tsx:156`): among the elements
+// carrying a data-line at or below the requested line, the last one in
+// document order with the highest value. It is reproduced here so that what
+// the renderer emits is checked against the choice it feeds rather than
+// against the markup alone.
+func lineTargetOf(t *testing.T, doc string, want int) *html.Node {
+	t.Helper()
+	root, err := html.Parse(strings.NewReader(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var best *html.Node
+	bestLine := -1
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			for _, a := range n.Attr {
+				if a.Key != "data-line" {
+					continue
+				}
+				if v, err := strconv.Atoi(a.Val); err == nil && v <= want && v >= bestLine {
+					best, bestLine = n, v
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(root)
+	return best
+}
+
+// nodeText is the visible text of a parsed element.
+func nodeText(n *html.Node) string {
+	var b strings.Builder
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.TextNode {
+			b.WriteString(n.Data)
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	return b.String()
+}
+
+// forgeryNote places two decoys after the block a search hit for line 5
+// would really point at: one wearing the renderer's own line-anchor class,
+// and one a bare paragraph wearing nothing but the attribute. Under the
+// selection rule both tie with the real block and beat it, being later in
+// document order.
+const forgeryNote = "first\n" +
+	"\n" +
+	"## Two\n" +
+	"\n" +
+	"real target\n" +
+	"\n" +
+	`<div class="line-anchor" data-line="5"></div>` + "\n" +
+	"\n" +
+	`<p data-line="5">decoy without a class</p>` + "\n"
+
+// A note cannot plant a scroll target: what the app's own JavaScript reads
+// off the rendered markup has to come from the renderer, not from raw HTML
+// the note wrote (#31, M8-R6). The class is not the vector on its own — the
+// bare paragraph forges the same target — so the attribute goes with it.
+func TestNoteContentCannotForgeAScrollTarget(t *testing.T) {
+	n := render(t, "x.md", forgeryNote)
+	target := lineTargetOf(t, n.HTML, 5)
+	if target == nil {
+		t.Fatalf("no scroll target at all:\n%s", n.HTML)
+	}
+	if got := nodeText(target); got != "real target" {
+		t.Errorf("a hit on line 5 scrolls to %q, want %q — note content redirected it:\n%s",
+			got, "real target", n.HTML)
+	}
+	// The decoys keep their text and lose only what the app reads off them.
+	wantContains(t, n.HTML, "decoy without a class", "<div></div>")
+	wantMissing(t, n.HTML, `data-line="5">decoy`, `class="line-anchor" data-line="5"`)
 }
