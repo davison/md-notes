@@ -83,15 +83,19 @@ e2e: build
 # govulncheck exits 3 and pnpm audit exits 1 on a finding, so either one fails
 # the build.
 #
-# --prod because the question is what a user runs: the daemon, the bundle it
-# serves and the extension zip. An advisory against vite or vitest is worth
-# knowing and is not worth failing an unrelated pull request over.
+# The whole dependency set, not --prod. The tempting line is that only what
+# ships can hurt a user, but ui/dist is what the daemon serves and vite
+# builds it: an advisory in the toolchain that produces the artefact reaches
+# the artefact without ever appearing in a production dependency. The dev
+# tree is also where a supply-chain compromise lands first, and it runs on
+# the machine of everyone who builds this. Both workspaces audit clean with
+# dev dependencies included, so the wider scan costs nothing today.
 GOVULNCHECK ?= golang.org/x/vuln/cmd/govulncheck@v1.8.0
 
 vuln:
 	go run $(GOVULNCHECK) ./...
-	pnpm --dir ui audit --prod
-	pnpm --dir extension audit --prod
+	pnpm --dir ui audit
+	pnpm --dir extension audit
 
 ## release: build dist/ for VERSION: both binaries, the extension zip and SHA256SUMS
 # Everything the release workflow publishes, built here rather than in the
