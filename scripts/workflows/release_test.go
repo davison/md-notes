@@ -46,15 +46,21 @@ func release(t *testing.T) workflow {
 	return parsed
 }
 
-// TestOnlyATagPushPublishes holds the claim the record makes in three places —
-// the dispatch input's description, the run summary, and the decision recorded
-// on davison/md-notes#134 — that a workflow_dispatch of the release workflow is
-// always a dry run.
+// TestOnlyATagPushPublishes holds two claims the record makes.
 //
-// A dispatch may name a tag as its ref, so a guard on github.ref does not say
-// this: dispatched at a tag, it would publish a Release under the dispatch's
-// input version, which need not be the tag the workflow ran at. Only the event
-// distinguishes the two.
+// That a workflow_dispatch of the release workflow is always a dry run — said
+// by the dispatch input's description, by the run summary, and by the decision
+// recorded on davison/md-notes#134. A dispatch may name a tag as its ref, so a
+// guard on github.ref does not say this: dispatched at a tag it would create a
+// Release under the dispatch's input version, which need not be the tag the
+// workflow ran at. Only the event distinguishes the two.
+//
+// And that what a tag push creates is a draft, for the operator to read and
+// publish by hand — the gate resolved on davison/md-notes#133. A Release
+// published by this workflow's token starts no workflow run, so it would never
+// reach the channel workflows waiting on `release: published`; dropping
+// --draft would leave every channel silently unstarted, which is the failure
+// that gate was raised over.
 func TestOnlyATagPushPublishes(t *testing.T) {
 	steps := release(t).Jobs["release"].Steps
 	if len(steps) == 0 {
@@ -70,6 +76,9 @@ func TestOnlyATagPushPublishes(t *testing.T) {
 		if step.If != "github.event_name == 'push'" {
 			t.Errorf("the step %q is guarded by %q, want %q: a dispatch can run at a tag, so only the event keeps a dry run dry",
 				step.Name, step.If, "github.event_name == 'push'")
+		}
+		if !strings.Contains(step.Run, "--draft") {
+			t.Errorf("the step %q creates a Release without --draft: a Release published by this workflow's token fires no release event, so no channel workflow would ever start (davison/md-notes#133)", step.Name)
 		}
 	}
 	if publishes != 1 {
