@@ -312,7 +312,10 @@ package() {
 		printf '# Installed by the md-notes-bin package.\n'
 		printf '#   systemctl --user enable --now mdn\n'
 		printf '# The daemon reads ~/.config/mdn/config.yml and needs a notes_root in it.\n'
-		sed -e '/^#/d' -e '/./,$!d' \
+		# The range starts at the first line that is not a comment, so what is
+		# dropped is the header block and the blank line after it — a comment
+		# further down, inside a section, is inside the range and survives.
+		sed -e '/^[^#]/,$!d' \
 			-e 's|^ExecStart=%h/\.local/bin/mdn |ExecStart=/usr/bin/mdn |' \
 			"$srcdir/md-notes-$pkgver-mdn.service"
 	} | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/mdn.service"
