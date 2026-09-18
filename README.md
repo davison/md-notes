@@ -84,6 +84,7 @@ make build      # builds the UI and the static ./mdn binary
 make extension  # builds the browser extension to extension/dist and a zip
 make check      # vet, typecheck, tests, build
 make e2e        # browser checks for the UI, in headless Chromium
+make vuln       # scans dependencies for published vulnerabilities
 make install    # copies ./mdn to ~/.local/bin/mdn (PREFIX=... to change)
 make release    # everything a release publishes, into dist/ (VERSION=v0.1.0)
 ```
