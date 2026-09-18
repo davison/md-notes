@@ -94,9 +94,12 @@ if grep -q 'local/bin' "$unit"; then
 	exit 1
 fi
 test -s /usr/share/licenses/md-notes-bin/LICENSE
-# Not `systemd-analyze --user verify`: it wants a session manager and a runtime
-# directory, and fails in a container for want of them rather than for anything
-# to do with the unit.
+# systemd's own reading of the unit, which catches what the greps above cannot:
+# a bad directive, a missing [Install]. In a container the only obstacle is the
+# runtime directory — without XDG_RUNTIME_DIR it fails with "Failed to lookup
+# RuntimeDirectory path" and never looks at the file; with it set, it reads the
+# unit and says nothing.
+XDG_RUNTIME_DIR=/run systemd-analyze --user verify "$unit"
 pacman -Qi md-notes-bin | grep -E '^(Name|Version|Depends On|Optional Deps|Provides|Conflicts With)'
 
 echo "== pacman -Rns =="
