@@ -197,8 +197,10 @@ appear, so a root over its budget loses the directories that hold files but no
 note, and a directory that gains notes later takes a watch back from one of
 them. When the budget is spent, or the kernel runs out of watches, the daemon
 logs one line saying how much of the root is covered and the page shows a
-notice above the navigator; the rest of the root stays live. To raise the
-kernel's own limit (this needs root):
+notice above the navigator; the rest of the root stays live. A directory the
+daemon may not read is reported as that — with the reason the operating
+system gave, and no limit to raise, because none would help — rather than as
+the kernel limit. To raise the kernel's own limit (this needs root):
 
 ```
 sudo sysctl fs.inotify.max_user_watches=524288

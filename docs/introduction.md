@@ -1242,13 +1242,25 @@ A spent budget and a kernel out of watches mean the same thing to a reader — p
 the root is not live — so they are one report:
 
 - the daemon logs one line per root, whatever the number of directories behind it,
-  naming the root, how many directories are covered, how many are not, why, and
-  which limit to raise;
+  naming the root, how many directories are covered, how many are not, why, and what
+  to do about each cause;
 - the root's event stream opens with a `status` event carrying the same numbers, and
   sends it again on the next keepalive tick after they change;
 - the page shows a notice above the navigator whenever coverage is limited, naming
-  whichever limits are in play, so it is visible in the browser and not only in the
-  daemon's log.
+  whichever causes are in play and the remedy for each, so it is visible in the
+  browser and not only in the daemon's log.
+
+A third cause is not a limit at all. A directory the daemon may not read — a
+subdirectory at mode `000`, say — cannot be watched however much of either pool is
+left, so it is counted and named on its own, in the words the operating system used,
+and no limit is offered for it. The log line reads `1 could not be watched:
+permission denied (not the kernel limit — the daemon needs access to that
+directory)`, the `status` event carries `"refused"` and `"reason"` beside `"failed"`,
+and the notice ends `to cover them all, give the daemon access to the 1 directory it
+could not watch (permission denied)`. The remedy is to make the directory readable —
+`chmod` it, or change its owner — or to leave it out of the root; raising either
+limit would change nothing. Anything else the filesystem refuses is reported the same
+way, under whatever reason it gave.
 
 A root whose watcher never started is the same story with nothing covered: its event
 stream answers 503, and the page says live update is not available for that root and
@@ -1257,8 +1269,9 @@ root leaves a tab behind: with no stream to end, such a tab keeps the notice and
 tree instead of routing home — see [Roots](#roots).
 
 None of this stops the daemon, and none of it disables live update for the rest of a
-root. To cover a large root completely, raise `max_watches` (or set it to `0` for no
-budget) and raise the kernel's own limit to match:
+root. To cover a large root completely — where the budget or the kernel's pool is
+what stands in the way — raise `max_watches` (or set it to `0` for no budget) and
+raise the kernel's own limit to match:
 
 ```
 sudo sysctl fs.inotify.max_user_watches=524288
