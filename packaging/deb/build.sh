@@ -84,13 +84,26 @@ debian_version() {
 # the unit fails `systemd-analyze verify` even with the package installed, and
 # `systemctl --user start mdn` fails the same way — measured on the gate raised
 # at davison/md-notes#137. The packaged unit is therefore derived from that
-# file rather than copied from it, and this line is the only difference.
+# file rather than copied from it, and the path is the only difference.
+#
+# The path, and not the line. Replacing the whole line would look identical
+# today, when the unit runs `mdn serve` and nothing more, and would drop
+# whatever was added the day a flag appeared — in this package only, because
+# the AUR package rewrites the same line by anchoring on the old path
+# (davison/md-notes#136). The two channels would then start the daemon
+# differently with nothing to say so. The expression here is that one, so the
+# two agree by construction; scripts/workflows/deb_build_test.go holds a unit
+# carrying a flag against it.
 stage_unit() {
 	local src="$REPO/contrib/mdn.service" dst="$1"
 	grep -q '^ExecStart=' "$src" || die "$src has no ExecStart= line to rewrite"
-	sed 's|^ExecStart=.*|ExecStart=/usr/bin/mdn serve|' "$src" >"$dst"
-	grep -qx 'ExecStart=/usr/bin/mdn serve' "$dst" ||
-		die "the ExecStart rewrite did not take: $dst"
+	sed 's|^ExecStart=%h/\.local/bin/mdn |ExecStart=/usr/bin/mdn |' "$src" >"$dst"
+	# A prefix, because everything after the binary is the unit's business. If
+	# contrib/mdn.service ever stops running the binary from ~/.local/bin the
+	# substitution matches nothing, and this is what says so rather than
+	# shipping a unit that points into a home directory.
+	grep -q '^ExecStart=/usr/bin/mdn ' "$dst" ||
+		die "the ExecStart rewrite did not take — is $src still running %h/.local/bin/mdn?"
 }
 
 # stage_changelog writes the Debian changelog Policy 12.7 asks for.

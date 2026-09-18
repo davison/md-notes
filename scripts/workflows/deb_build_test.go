@@ -192,6 +192,15 @@ printf '%s\t%s\t%s\n' "$DEB_ARCH" "$DEB_VERSION" "$target" >>"$STUB_RECORD/invoc
 
 func runBuild(t *testing.T, tag string, binaries map[string]string) ([]invocation, string, error) {
 	t.Helper()
+	return runBuildAgainstUnit(t, tag, binaries, "")
+}
+
+// runBuildAgainstUnit is runBuild against a copy of the repository whose
+// contrib/mdn.service is the given text, so a test can ask what the packaging
+// does with a unit file this repository does not have yet. An empty unit runs
+// the script where it lives, against the real one.
+func runBuildAgainstUnit(t *testing.T, tag string, binaries map[string]string, unit string) ([]invocation, string, error) {
+	t.Helper()
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash runs the build script")
 	}
@@ -218,7 +227,11 @@ func runBuild(t *testing.T, tag string, binaries map[string]string) ([]invocatio
 		t.Fatal(err)
 	}
 
-	script, err := filepath.Abs(filepath.Join(repoRoot, "packaging", "deb", "build.sh"))
+	root := repoRoot
+	if unit != "" {
+		root = fakeRepo(t, filepath.Join(dir, "repo"), unit)
+	}
+	script, err := filepath.Abs(filepath.Join(root, "packaging", "deb", "build.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,4 +487,108 @@ func gunzip(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(content)
+}
+
+// fakeRepo lays out just enough of this repository at root — the packaging
+// directory as it stands, the licence, and a contrib/mdn.service of the
+// caller's choosing — for build.sh to run against. build.sh finds the
+// repository from its own location, so copying it is what makes a different
+// unit file reachable.
+func fakeRepo(t *testing.T, root, unit string) string {
+	t.Helper()
+	deb := filepath.Join(root, "packaging", "deb")
+	if err := os.MkdirAll(deb, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "contrib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(filepath.Join(repoRoot, "packaging", "deb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		copyFile(t, filepath.Join(repoRoot, "packaging", "deb", entry.Name()), filepath.Join(deb, entry.Name()))
+	}
+	copyFile(t, filepath.Join(repoRoot, "LICENSE"), filepath.Join(root, "LICENSE"))
+	if err := os.WriteFile(filepath.Join(root, "contrib", "mdn.service"), []byte(unit), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func copyFile(t *testing.T, from, to string) {
+	t.Helper()
+	content, err := os.ReadFile(from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(to, content, info.Mode().Perm()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestTheStagedUnitKeepsTheRestOfTheExecStartLine. The packaging replaces the
+// path the unit runs, and only the path.
+//
+// contrib/mdn.service runs `%h/.local/bin/mdn serve` today and nothing else,
+// so a substitution that rewrote the whole line would look correct for as long
+// as that stayed true — and then, the day the unit gained a flag, would drop
+// it, silently, in the .deb only: the AUR package rewrites the same line by
+// anchoring on the old path and keeping the rest (davison/md-notes#136), so
+// the two channels would start the daemon differently while every test stayed
+// green. That divergence is the thing the gate on davison/md-notes#137 was
+// raised about, so it is worth a test of its own rather than an assertion
+// about the file as it happens to be.
+func TestTheStagedUnitKeepsTheRestOfTheExecStartLine(t *testing.T) {
+	for _, tc := range []struct{ name, unit, want string }{
+		{
+			name: "a flag after the subcommand survives",
+			unit: "ExecStart=%h/.local/bin/mdn serve --port 7337",
+			want: "ExecStart=/usr/bin/mdn serve --port 7337",
+		},
+		{
+			name: "so does more than one, specifier and all",
+			unit: "ExecStart=%h/.local/bin/mdn serve --port 7337 --root %h/notes",
+			want: "ExecStart=/usr/bin/mdn serve --port 7337 --root %h/notes",
+		},
+		{
+			name: "the unit as it stands today",
+			unit: "ExecStart=%h/.local/bin/mdn serve",
+			want: "ExecStart=/usr/bin/mdn serve",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			unit := "[Unit]\nDescription=mdn\n\n[Service]\n" + tc.unit + "\nRestart=on-failure\n"
+			invocations, stderr, err := runBuildAgainstUnit(t, "v0.1.0",
+				map[string]string{"amd64": "a", "arm64": "b"}, unit)
+			if err != nil {
+				t.Fatalf("build.sh failed: %v\n%s", err, stderr)
+			}
+			staged, err := os.ReadFile(filepath.Join(invocations[0].staging, "mdn.service"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := execStart(string(staged)); got != tc.want {
+				t.Errorf("the packaged unit runs\n  %s\nwant\n  %s\nonly the binary path is the package's to change", got, tc.want)
+			}
+		})
+	}
+}
+
+// execStart is the unit's ExecStart line, without its newline.
+func execStart(unit string) string {
+	for _, line := range strings.Split(unit, "\n") {
+		if strings.HasPrefix(line, "ExecStart=") {
+			return line
+		}
+	}
+	return ""
 }
