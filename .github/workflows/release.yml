@@ -85,8 +85,15 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+      # The event, not the ref: a workflow_dispatch can name a tag as its ref,
+      # and guarding on the ref would let a dispatch publish — under the
+      # dispatch's *input* version, which need not be the tag it ran at. The
+      # input's description, the run summary below and the decision recorded on
+      # davison/md-notes#134 all say a dispatch never creates a Release, and
+      # this is the line that makes that true; scripts/workflows holds a test
+      # over it.
       - name: Publish the GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -97,7 +104,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           {
-            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.event_name }}" != "push" ]; then
               echo "Dry run of **$VERSION**: built and uploaded as an artifact, no Release created."
             else
               echo "Released **$VERSION**: <${{ github.server_url }}/${{ github.repository }}/releases/tag/$VERSION>"
