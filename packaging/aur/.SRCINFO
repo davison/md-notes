@@ -1,0 +1,24 @@
+pkgbase = md-notes-bin
+	pkgdesc = Turns folders of markdown files into a notes application in the browser
+	pkgver = 0.0.0
+	pkgrel = 1
+	url = https://github.com/davison/md-notes
+	install = md-notes-bin.install
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	depends = ripgrep
+	provides = md-notes
+	conflicts = md-notes
+	options = !strip
+	options = !debug
+	source = md-notes-0.0.0-LICENSE::https://raw.githubusercontent.com/davison/md-notes/v0.0.0/LICENSE
+	source = md-notes-0.0.0-mdn.service::https://raw.githubusercontent.com/davison/md-notes/v0.0.0/contrib/mdn.service
+	sha256sums = SKIP
+	sha256sums = SKIP
+	source_x86_64 = md-notes-0.0.0-mdn::https://github.com/davison/md-notes/releases/download/v0.0.0/mdn-v0.0.0-linux-amd64
+	sha256sums_x86_64 = SKIP
+	source_aarch64 = md-notes-0.0.0-mdn::https://github.com/davison/md-notes/releases/download/v0.0.0/mdn-v0.0.0-linux-arm64
+	sha256sums_aarch64 = SKIP
+
+pkgname = md-notes-bin
