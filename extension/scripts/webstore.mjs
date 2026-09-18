@@ -213,7 +213,7 @@ export function report({ itemId, uploaded, submitted }) {
     "",
     "A new version is reviewed before it reaches anyone; the store decides when,",
     "and this run reports only that it was submitted.",
-    `<https://chrome.google.com/webstore/detail/${itemId}>`,
+    `<https://chromewebstore.google.com/detail/${itemId}>`,
   ];
 }
 
