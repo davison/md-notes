@@ -1,8 +1,12 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 EXTENSION_ZIP := extension/mdn-extension.zip
+DIST ?= dist
+# The release runs one of the binaries it just built to check what version
+# it reports, so it builds on a host that can run one of its own targets.
+HOST_ARCH := $(shell go env GOHOSTARCH)
 
-.PHONY: all build ui ui-deps extension extension-dist extension-deps test vet check e2e install clean
+.PHONY: all build ui ui-deps extension extension-dist extension-deps test vet check e2e release install clean
 PREFIX ?= $(HOME)/.local
 
 all: build
@@ -62,12 +66,33 @@ check: vet test build extension
 e2e: build
 	pnpm --dir ui e2e
 
+## release: build dist/ for VERSION: both binaries, the extension zip and SHA256SUMS
+# Everything the release workflow publishes, built here rather than in the
+# workflow, so a release can be proven locally without pushing a tag:
+#
+#     make release VERSION=v0.1.0
+#
+# The version reaches the binaries through -ldflags and the extension manifest
+# through MDN_VERSION, both from VERSION; relcheck then refuses to let the
+# release go out if they do not agree.
+release: ui extension-deps
+	rm -rf $(DIST)
+	mkdir -p $(DIST)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/mdn-$(VERSION)-linux-amd64 ./cmd/mdn
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/mdn-$(VERSION)-linux-arm64 ./cmd/mdn
+	MDN_VERSION=$(VERSION) pnpm --dir extension build
+	pnpm --dir extension run zip
+	cp $(EXTENSION_ZIP) $(DIST)/mdn-extension-$(VERSION).zip
+	go run ./scripts/relcheck -version '$(VERSION)' -binary $(DIST)/mdn-$(VERSION)-linux-$(HOST_ARCH) -manifest extension/dist/manifest.json
+	cd $(DIST) && sha256sum mdn-* > SHA256SUMS
+
 ## install: copy the binary to $(PREFIX)/bin (default ~/.local/bin)
 install: build
 	install -Dm755 mdn $(PREFIX)/bin/mdn
 
 clean:
 	rm -f mdn $(EXTENSION_ZIP)
+	rm -rf $(DIST)
 	mkdir -p ui/dist
 	find ui/dist -mindepth 1 ! -name .gitkeep -delete
 	touch ui/dist/.gitkeep

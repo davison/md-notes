@@ -1,4 +1,5 @@
 /mdn
+/dist/
 /ui/node_modules/
 /ui/dist/*
 !/ui/dist/.gitkeep
