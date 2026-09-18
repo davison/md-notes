@@ -133,7 +133,7 @@ func manifestVersionOf(path string) (string, error) {
 func manifestInZip(path string) ([]byte, error) {
 	archive, err := zip.OpenReader(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	defer archive.Close()
 	entry, err := archive.Open("manifest.json")
