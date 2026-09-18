@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -100,5 +101,56 @@ func TestThrottleTableIsBounded(t *testing.T) {
 	}
 	if _, refuse := th.failed("z"); !refuse {
 		t.Error("counting stopped after the table was cleared")
+	}
+}
+
+// The bound loginDelay describes is a property of a request rather than of
+// the daemon: every failure past the free tier waits, whatever key it
+// claims, and nothing holds them in a queue. Pinned because the comment now
+// says exactly that, so a change in either direction — dropping the floor,
+// or adding the daemon-wide gate the old wording implied — has to face this
+// test. Measured in process: failed hands back a duration and the login
+// handler serves it (tailnet.go), so what is timed here is the throttle,
+// not a socket.
+func TestFailedLoginsAreNotSerialised(t *testing.T) {
+	th := newThrottle()
+	const callers = 40
+	waits := make([]time.Duration, callers)
+	refused := make([]bool, callers)
+	var wg sync.WaitGroup
+	start := time.Now()
+	for i := range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			waits[i], refused[i] = th.failed(fmt.Sprintf("10.0.0.%d", i))
+		}()
+	}
+	wg.Wait()
+	elapsed := time.Since(start)
+
+	var delayed, plain int
+	for i := range callers {
+		if refused[i] {
+			t.Fatalf("caller %d refused; a total counted across callers must never lock anyone out", i)
+		}
+		if waits[i] == loginDelay {
+			delayed++
+		} else if waits[i] == 0 {
+			plain++
+		} else {
+			t.Fatalf("caller %d waits %v, want 0 or %v", i, waits[i], loginDelay)
+		}
+	}
+	if plain != loginFree || delayed != callers-loginFree {
+		t.Errorf("%d answered at once and %d delayed, want %d and %d — the floor did not hold under parallel use",
+			plain, delayed, loginFree, callers-loginFree)
+	}
+	// The throttle hands out the wait rather than sitting on it: the
+	// calls do not queue behind each other, which is the aggregate bound
+	// the comment no longer claims.
+	if elapsed >= loginDelay {
+		t.Errorf("%d parallel calls took %v, at or past one delay of %v — they are being serialised",
+			callers, elapsed, loginDelay)
 	}
 }
