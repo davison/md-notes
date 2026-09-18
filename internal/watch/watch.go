@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -45,6 +46,9 @@ type Watcher struct {
 
 	cmu sync.Mutex
 	cov Coverage
+	// causes is the first error seen for each reason a watch was refused,
+	// kept so a report made without relisting still names them.
+	causes refusals
 	// held is how many watches were in place when the set was last
 	// computed, so a shrinking watch list shows a directory went away.
 	held int
@@ -67,9 +71,19 @@ type Coverage struct {
 	// OverBudget reports that the budget, rather than an error, is what
 	// left directories unwatched.
 	OverBudget bool `json:"overBudget"`
-	// Failed counts directories the kernel refused, which on Linux means
-	// fs.inotify.max_user_watches is exhausted.
+	// Failed counts directories the kernel refused for want of watches:
+	// on Linux, ENOSPC from inotify_add_watch, meaning
+	// fs.inotify.max_user_watches is exhausted. It is the only refusal
+	// raising that limit answers.
 	Failed int `json:"failed"`
+	// Refused counts directories refused for any other reason — a property
+	// of the directory rather than of the pool, most often one the daemon
+	// may not read. Raising a watch limit does nothing for these.
+	Refused int `json:"refused"`
+	// Reason is the first such refusal in the words the OS used
+	// ("permission denied"), empty when Refused is zero, so the log line
+	// and the page can name the cause without enumerating errnos.
+	Reason string `json:"reason,omitempty"`
 	// Limited is Unwatched > 0: live update covers part of the root.
 	Limited bool `json:"limited"`
 }
@@ -132,9 +146,9 @@ func WithBudget(n int) Option {
 // New watches root and the relative directories in dirs, most valuable
 // first (the root itself is always watched, whatever the budget).
 // Directories created later inside a watched one are added as they appear.
-// A spent budget and a kernel out of inotify watches are both reported
-// through warnf and through Coverage, leaving the rest unwatched rather
-// than failing.
+// A spent budget, a kernel out of inotify watches, and a directory the
+// filesystem refuses are each reported as themselves through warnf and
+// through Coverage, leaving the rest unwatched rather than failing.
 func New(root string, dirs []tree.Dir, warnf func(string, ...any), opts ...Option) (*Watcher, error) {
 	if warnf == nil {
 		warnf = func(string, ...any) {}
@@ -208,9 +222,9 @@ func (w *Watcher) place(dirs []tree.Dir) {
 		return givable[i] > givable[j]
 	})
 
-	// One error stands for all of them: a root with hundreds of
+	// One error stands for all of them, per cause: a root with hundreds of
 	// unwatchable directories logs one line, not hundreds.
-	var first error
+	var causes refusals
 	cov := Coverage{Budget: w.budget}
 	for _, d := range all {
 		rel := d.Path
@@ -251,10 +265,7 @@ func (w *Watcher) place(dirs []tree.Dir) {
 		}
 		placed, err := w.add(abs)
 		if err != nil {
-			if first == nil {
-				first = err
-			}
-			cov.Failed++
+			causes.record(&cov, err)
 			cov.Unwatched++
 			continue
 		}
@@ -277,10 +288,36 @@ func (w *Watcher) place(dirs []tree.Dir) {
 
 	w.cmu.Lock()
 	changed := cov != w.cov
-	w.cov, w.held = cov, len(watched)
+	w.cov, w.held, w.causes = cov, len(watched), causes
 	w.cmu.Unlock()
 	if changed {
-		w.report(cov, first)
+		w.report(cov, causes)
+	}
+}
+
+// refusals holds the first error seen for each reason a watch was refused,
+// so one log line can name a real error per cause.
+type refusals struct {
+	kernel error // the kernel is out of watches
+	other  error // this directory cannot be watched, whatever the pool holds
+}
+
+// record counts one refused directory under the cause its error names.
+// ENOSPC from inotify_add_watch is the watch pool running dry, and the only
+// refusal fs.inotify.max_user_watches answers; every other error belongs to
+// the directory itself — a subdirectory at mode 000 gives EACCES — and no
+// limit anyone raises will make it watchable.
+func (r *refusals) record(cov *Coverage, err error) {
+	if errors.Is(err, syscall.ENOSPC) {
+		cov.Failed++
+		if r.kernel == nil {
+			r.kernel = err
+		}
+		return
+	}
+	cov.Refused++
+	if r.other == nil {
+		r.other, cov.Reason = err, err.Error()
 	}
 }
 
@@ -293,7 +330,7 @@ func (w *Watcher) Coverage() Coverage {
 
 // report logs one line for a limited coverage, whatever the number of
 // directories behind it, saying why and what it costs.
-func (w *Watcher) report(cov Coverage, first error) {
+func (w *Watcher) report(cov Coverage, causes refusals) {
 	if !cov.Limited {
 		return
 	}
@@ -302,10 +339,22 @@ func (w *Watcher) report(cov Coverage, first error) {
 		why = append(why, fmt.Sprintf("the budget of %d directories is spent (raise max_watches to cover more)", cov.Budget))
 	}
 	if cov.Failed > 0 {
-		why = append(why, fmt.Sprintf("%d could not be watched: %v (raise fs.inotify.max_user_watches)", cov.Failed, first))
+		why = append(why, fmt.Sprintf("%d could not be watched: %v (raise fs.inotify.max_user_watches)", cov.Failed, causes.kernel))
+	}
+	if cov.Refused > 0 {
+		why = append(why, fmt.Sprintf("%d could not be watched: %v (not the kernel limit — the daemon needs access to %s)",
+			cov.Refused, causes.other, directories(cov.Refused)))
 	}
 	w.warnf("watch %s: live update covers %d director%s, %d unwatched — %s; a change in an unwatched directory is seen when a watched one reports it or the daemon restarts",
 		w.root, cov.Watched, plural(cov.Watched), cov.Unwatched, strings.Join(why, "; "))
+}
+
+// directories names a count of them the way the log line refers back to it.
+func directories(n int) string {
+	if n == 1 {
+		return "that directory"
+	}
+	return "those directories"
 }
 
 func plural(n int) string {
@@ -517,10 +566,11 @@ func (w *Watcher) refresh() {
 		cov.Watched = held
 	}
 	changed := cov != w.cov
+	causes := w.causes
 	w.cov, w.held = cov, held
 	w.cmu.Unlock()
 	if changed {
-		w.report(cov, nil)
+		w.report(cov, causes)
 	}
 }
 
