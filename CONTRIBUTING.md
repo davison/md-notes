@@ -15,21 +15,33 @@ part of it a human would also read.
 - **pnpm**, version 10, and **Node** 24 — what CI uses.
 - **ripgrep** (`rg`) on `PATH`. The daemon shells out to it for the
   navigator's tree, for search and for the tag panel, so it is a runtime
-  dependency and not a build one: a daemon started without it serves an
-  empty navigator and finds nothing. It is also what keeps gitignored and
-  hidden files out of the tree and out of results, since ripgrep already
-  knows the ignore rules.
+  dependency and not a build one. It says so when it is missing rather than
+  quietly serving nothing: the daemon starts and answers the UI, logs
+  `watch notes: ripgrep (rg) is not installed or not on PATH; watching every
+  non-hidden directory`, and the tree, search and tags endpoints each answer
+  `{"error":"ripgrep (rg) is not installed or not on PATH"}`. It is also what
+  keeps gitignored and hidden files out of the tree and out of results, since
+  ripgrep already knows the ignore rules.
 - **Chromium**, for the two browser suites only. Playwright downloads its own
-  build; `make ui-deps` installs the driver but not the browser, so fetch it
-  once:
+  build, and the download is a separate step from installing the package:
+  `make ui-deps` installs the driver, and the driver then fetches the browser.
+  So the two commands go together, in this order:
 
   ```
+  make ui-deps
   pnpm --dir ui exec playwright install chromium
   ```
 
-  Both suites drive a real browser against the real built daemon, which is
-  why a browser is needed at all rather than a DOM shim. Without it they skip
-  rather than fail, and say which piece is missing.
+  The second on its own, in a clone that has never been built, exits 254 with
+  `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command "playwright" not found`: there
+  is no `ui/node_modules` for it to find the driver in yet.
+
+  Do this before running either browser suite. Both drive a real browser
+  against the real built daemon — which is why a browser is needed at all,
+  rather than a DOM shim — and with the download missing they do not skip.
+  They fail at the call that would have started the browser, with
+  `Executable doesn't exist at …` and Playwright's own box telling you to
+  install one: `make e2e` exits 2, `pnpm --dir extension e2e` exits 1.
 
 ## Building
 
@@ -65,7 +77,8 @@ red scan means something was published, not that the build broke.
 `make e2e` builds the daemon and drives it through headless Chromium — the
 phone layout, the drawer, the display settings, the tap targets, the asset
 cache, creating and deleting a note, the navigator's two orders, removing a
-root, and the installable app. It is CI's second job.
+root, the installable app and the service worker's cache name: eight suites,
+54 tests. It is CI's second job.
 
 The extension has a browser suite of its own, which CI does not run, because
 it needs both the extension and the daemon built:
@@ -77,9 +90,11 @@ pnpm --dir extension e2e
 ```
 
 It loads the built extension into a real browser profile and clips into a
-daemon it starts itself. With either half missing it skips and names what is
-missing (`no mdn binary at …`), so an incomplete run is quiet rather than
-confusing — worth knowing, because a suite that skips still exits 0.
+daemon it starts itself. With either of those two halves missing it skips and
+names what is missing (`no mdn binary at …`) — worth knowing, because a suite
+that skips still exits 0 and reads like a pass. The browser download is not
+one of the halves it checks for: without it, this suite and `make e2e` both
+fail at launch, as above.
 
 ## Running it while you work
 
@@ -96,10 +111,19 @@ Then open `http://localhost:8819/` in a browser. The daemon binds the loopback
 address only.
 
 `--token-file` and `--state` are worth passing. The daemon writes a bearer
-token on first start — what the extension presents to post a clip, printed by
-`mdn token` — and remembers the folders registered with `mdn open`; both live
-under your home directory by default, and pointing them at a scratch path is
-how a test run stays out of the state your real daemon is using.
+token on first start — what the extension presents to post a clip — and
+remembers the folders registered with `mdn open`; both live under your home
+directory by default, and pointing them at a scratch path is how a test run
+stays out of the state your real daemon is using. Pass the same path when you
+read the token back:
+
+```
+./mdn token --token-file /tmp/mdn-dev/token
+```
+
+Bare `mdn token` reads the token under your home directory instead — and
+creates one there if there is none — so against a scratch daemon it prints a
+token that daemon has never heard of.
 
 The README's [Running](README.md#running) section describes the configuration
 file, the tailnet host and the rest of the daemon's behaviour; there is no
@@ -121,7 +145,7 @@ test(render): show a note forging the scroll-to-line target (#139)
   parentheses at the end. The scope is optional and is usually the package or
   directory the change lives in.
 - The types in use are `feat`, `fix`, `docs`, `test`, `refactor`, `chore`,
-  `build` and `ci`.
+  `build`, `ci` and `perf`.
 - The summary says what the commit does, in the imperative, and is not
   capitalised.
 - One change per commit. A test that demonstrates a bug and the fix that
@@ -182,12 +206,16 @@ one the backlog already uses:
   This part is a suggestion, not a specification; the task that adopts the
   issue decides.
 
-Please open the issue before writing any code. A pull request that arrives
-with no issue behind it is not how this repository works: the plan, the
-recorded decisions and the review all hang off the issue, and a change that
-skips it has nowhere to record why it was made. An issue may sit in the
-backlog for a while before a milestone takes it up — that is the backlog
-working as intended, not the issue being ignored.
+Open the issue before writing the code, for anything with a decision in it.
+The plan, the recorded decisions and the review all hang off the issue, so a
+change that skips it has nowhere to say why it was made, and the first
+question it meets will be that one. An obvious typo, a dead link or a stale
+line in the documentation is welcome as a pull request on its own — there is
+nothing to plan, and an issue would only be a second place to read the same
+diff.
+
+An issue may sit in the backlog for a while before a milestone takes it up.
+That is the backlog working as intended, not the issue being ignored.
 
 ## Cutting a release
 
