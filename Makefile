@@ -6,7 +6,7 @@ DIST ?= dist
 # it reports, so it builds on a host that can run one of its own targets.
 HOST_ARCH := $(shell go env GOHOSTARCH)
 
-.PHONY: all build ui ui-deps extension extension-dist extension-deps test vet check e2e release install clean
+.PHONY: all build ui ui-deps extension extension-dist extension-deps test vet check e2e vuln release install clean
 PREFIX ?= $(HOME)/.local
 
 all: build
@@ -65,6 +65,33 @@ check: vet test build extension
 # `node --test e2e/` is a module path to Node 24, not a directory to walk.
 e2e: build
 	pnpm --dir ui e2e
+
+## vuln: scan the Go module graph and both lockfiles for published vulnerabilities
+# Not part of `check`, and deliberately: govulncheck downloads the
+# vulnerability database and `pnpm audit` asks the registry, so folding the
+# scan into `check` would make the local edit-and-check loop fail whenever the
+# network is away, and would put a check whose answer changes without the tree
+# changing in front of every build. CI runs this as its own step of the
+# `check` job instead (davison/md-notes#147) — the same job release.yml calls
+# through workflow_call, so a release is scanned on the same terms.
+#
+# Needs no `ui-deps`/`extension-deps`: pnpm audit reads the lockfile, not
+# node_modules.
+#
+# The scanner is pinned while the data it reads is fetched at run time and so
+# is always current; nothing is gained by letting the tool itself float.
+# govulncheck exits 3 and pnpm audit exits 1 on a finding, so either one fails
+# the build.
+#
+# --prod because the question is what a user runs: the daemon, the bundle it
+# serves and the extension zip. An advisory against vite or vitest is worth
+# knowing and is not worth failing an unrelated pull request over.
+GOVULNCHECK ?= golang.org/x/vuln/cmd/govulncheck@v1.8.0
+
+vuln:
+	go run $(GOVULNCHECK) ./...
+	pnpm --dir ui audit --prod
+	pnpm --dir extension audit --prod
 
 ## release: build dist/ for VERSION: both binaries, the extension zip and SHA256SUMS
 # Everything the release workflow publishes, built here rather than in the

@@ -33,6 +33,15 @@ jobs:
           go-version-file: go.mod
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
       - run: make check
+      # A step of its own rather than part of `make check`: this one asks the
+      # vulnerability database and the npm registry, so it can go red without
+      # the tree having changed, and a red scan should read as "something was
+      # published" and not as "the build broke" (davison/md-notes#147). It is
+      # in the `check` job because that is the job release.yml calls through
+      # workflow_call, so a release is scanned on the same terms as a pull
+      # request.
+      - name: Scan dependencies for published vulnerabilities
+        run: make vuln
 
   # Browser-level checks: the layout at phone widths, the display settings
   # and the asset cache, in headless Chromium against the built daemon
