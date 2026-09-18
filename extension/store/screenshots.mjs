@@ -42,6 +42,36 @@ const mdnBin = process.env.MDN_BIN ?? path.join(repoRoot, "mdn");
 const WIDTH = 1280;
 const HEIGHT = 800;
 
+/**
+ * The port the daemon runs on here, which is its own default.
+ *
+ * Two of the shots render the daemon's address — the options page above its
+ * own help text saying the default is `http://localhost:7337`, and the popup
+ * in its header line — so an ephemeral port makes one screenshot contradict
+ * itself in front of strangers and makes both of them differ on every run.
+ *
+ * It has to be the real port: the daemon answers only to a Host header naming
+ * the port it was started with (`internal/server/server.go`, the loopback
+ * guard), which is a defence against DNS rebinding and not one to work
+ * around. So this refuses to run rather than rendering an address the app did
+ * not produce. `README.md` in this directory says how to run it without
+ * stopping a daemon you already have on 7337.
+ */
+const DAEMON_PORT = 7337;
+
+/**
+ * The name the clipped page is served under.
+ *
+ * `.example` is reserved by RFC 2606 and can never be a real site, so nothing
+ * is impersonated; Chromium is told to resolve it to the fixture server with
+ * `--host-resolver-rules`, which maps the name below the URL layer, so the
+ * address in the shot — and the `source:` the clip records — is
+ * `http://theslowweb.example/...` with no port in it. The page is really
+ * served, really clipped, and really saved; only the name is arranged.
+ */
+const SITE_HOST = "theslowweb.example";
+const SITE_ORIGIN = `http://${SITE_HOST}`;
+
 function loadPlaywright() {
   const roots = [process.env.PLAYWRIGHT_ROOT, extensionDir, path.join(repoRoot, "ui"), repoRoot].filter(
     Boolean,
@@ -61,14 +91,12 @@ function refuse(why) {
   process.exit(1);
 }
 
-function freePort() {
-  return new Promise((resolve, reject) => {
+/** Whether nothing is listening on `port` here. */
+function portIsFree(port) {
+  return new Promise((resolve) => {
     const server = createServer();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const { port } = server.address();
-      server.close(() => resolve(port));
-    });
+    server.on("error", () => resolve(false));
+    server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
   });
 }
 
@@ -195,15 +223,22 @@ async function main() {
   if (!fs.existsSync(mdnBin)) refuse(`no mdn binary at ${mdnBin} (make build, or set MDN_BIN)`);
 
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mdn-store-shots-")));
-  // The app's header shows the notes root's real path, so it is in every
-  // screenshot that shows the app. A mkdtemp name there reads as a scratch
-  // directory, which is not what a notes root is; a plain one under the
-  // temporary directory reads as somebody's notes. Anything already sitting at
-  // that name belongs to someone else, so this falls back rather than touching
-  // it — the screenshot is then a little uglier and nothing is lost.
-  const preferred = path.join(fs.realpathSync(os.tmpdir()), "notes");
-  const notesDir = fs.existsSync(preferred) ? path.join(tmp, "notes") : preferred;
-  const removeNotes = notesDir !== path.join(tmp, "notes");
+
+  // The app's header shows the notes root's real path, so it is in every shot
+  // that shows the app: it has to be a fixed one, and one that reads like
+  // somebody's notes rather than like a scratch directory. Falling back to a
+  // random name when this one is taken was the first version of this, and it
+  // was wrong twice over — a run that died left the directory behind, and
+  // every run after it then rendered a different random path into two of the
+  // four shots. Deterministic or not at all, the same rule as the port.
+  const notesDir = path.join(fs.realpathSync(os.tmpdir()), "notes");
+  if (fs.existsSync(notesDir)) {
+    refuse(
+      `${notesDir} already exists. It is where this script puts the notes root it renders ` +
+        "into the screenshots, and it will not write over a directory it did not create. " +
+        `If it is this script's own leftover from a run that died, \`rm -rf ${notesDir}\`.`,
+    );
+  }
   fs.mkdirSync(path.join(notesDir, "reading"), { recursive: true });
   fs.writeFileSync(
     path.join(notesDir, "index.md"),
@@ -247,31 +282,41 @@ async function main() {
   const tokenFile = path.join(tmp, "token");
   const token = execFileSync(mdnBin, ["token", "--token-file", tokenFile], { encoding: "utf8" }).trim();
 
-  const port = await freePort();
-  const appOrigin = `http://localhost:${port}`;
+  if (!(await portIsFree(DAEMON_PORT))) {
+    refuse(
+      `port ${DAEMON_PORT} is in use. It is the daemon's default, and the shots render the ` +
+        "address the extension is configured with, so they are taken on it or not at all. " +
+        "Stop whatever is listening — most likely your own `mdn serve` — or run this in a " +
+        "network namespace of its own; extension/store/README.md has the command.",
+    );
+  }
+  const appOrigin = `http://localhost:${DAEMON_PORT}`;
   const daemon = spawn(
     mdnBin,
-    ["serve", "--root", notesDir, "--port", String(port), "--state", path.join(tmp, "state.json"), "--token-file", tokenFile],
+    ["serve", "--root", notesDir, "--port", String(DAEMON_PORT), "--state", path.join(tmp, "state.json"), "--token-file", tokenFile],
     { stdio: ["ignore", "ignore", "inherit"] },
   );
   await waitFor(() => fetch(`${appOrigin}/api/roots`).then(() => true).catch(() => false), "the daemon to listen");
 
+  // The fixture site keeps an ephemeral port, because nothing ever sees it:
+  // Chromium is told below to resolve SITE_HOST to it, so every address in
+  // the screenshots and in the clip's frontmatter is the portless name.
   const site = createHttpServer((_req, res) => {
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.end(ARTICLE);
   });
   await new Promise((r) => site.listen(0, "127.0.0.1", r));
-  const siteOrigin = `http://127.0.0.1:${site.address().port}`;
-  const articleUrl = `${siteOrigin}/2026/what-a-note-is-for/`;
+  const sitePort = site.address().port;
+  const articleUrl = `${SITE_ORIGIN}/2026/what-a-note-is-for/`;
 
   // A copy of dist/, so the shipped manifest keeps its narrow host permission
-  // while this run grants the ephemeral ports it needs. The article's origin
-  // stands in for the `activeTab` grant a real click makes.
+  // while this run grants the addresses it needs. The article's origin stands
+  // in for the `activeTab` grant a real click makes.
   const extDir = path.join(tmp, "ext");
   fs.cpSync(dist, extDir, { recursive: true });
   const manifestPath = path.join(extDir, "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  manifest.host_permissions = [`http://localhost:${port}/*`, `http://127.0.0.1:${port}/*`, `${siteOrigin}/*`, "file:///*"];
+  manifest.host_permissions = [`${appOrigin}/*`, `${SITE_ORIGIN}/*`, "file:///*"];
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
   const extensionId = unpackedExtensionId(extDir);
@@ -288,7 +333,13 @@ async function main() {
     headless: true,
     channel: "chromium",
     viewport: { width: WIDTH, height: HEIGHT },
-    args: [`--disable-extensions-except=${extDir}`, `--load-extension=${extDir}`],
+    args: [
+      `--disable-extensions-except=${extDir}`,
+      `--load-extension=${extDir}`,
+      // The fixture's name resolved to the fixture's port, below the URL
+      // layer, so the page is served here and addressed as itself.
+      `--host-resolver-rules=MAP ${SITE_HOST} 127.0.0.1:${sitePort}`,
+    ],
   });
 
   try {
@@ -411,7 +462,7 @@ async function main() {
     site.close();
     daemon.kill("SIGTERM");
     fs.rmSync(tmp, { recursive: true, force: true });
-    if (removeNotes) fs.rmSync(notesDir, { recursive: true, force: true });
+    fs.rmSync(notesDir, { recursive: true, force: true });
   }
 }
 
