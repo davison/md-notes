@@ -1,0 +1,162 @@
+# The Debian channel (davison/md-notes#137). Publishing a Release is what
+# starts this: the operator opens the draft release.yml left, reads the
+# generated notes and presses Publish, and `release: published` fires. A file
+# of its own, as docs/releasing.md says each channel is, so a failure here can
+# be re-run from the Actions page against the same release without another tag
+# and without republishing anything.
+#
+# It packages the release's own binaries rather than building its own: the
+# assets the operator published are downloaded, their checksums checked against
+# the release's SHA256SUMS before anything is unpacked, and nfpm wraps them.
+# What a Debian user installs is then byte for byte what the release page
+# attests to, which it would not be if this workflow compiled anything.
+name: publish-deb
+
+# Only this. A `workflow_dispatch` would let a .deb be built for something
+# that is not a published release — under whatever tag was typed — and a
+# re-run from the Actions page needs no trigger of its own. scripts/workflows
+# holds a test over it.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+# One run per release, and never cancelled: a re-run started while the first
+# is still uploading would otherwise race it for the same asset names.
+concurrency:
+  group: publish-deb-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    permissions:
+      # gh release upload writes the two packages back to the release.
+      contents: write
+    env:
+      # Pinned, and checked: this binary packages the software, so a
+      # compromised or merely different nfpm is a compromised or merely
+      # different package. Bump both together — the digest is the one
+      # goreleaser publishes in checksums.txt for this release.
+      NFPM_VERSION: 2.47.0
+      NFPM_SHA256: 0660ca602b2d2d2ae4781a06c692b3eeb9d437ffea05b831d76e41f4a3188783
+    steps:
+      # The tag, not the default branch: contrib/mdn.service, LICENSE and
+      # packaging/deb/ have to be the ones this release was cut from, or the
+      # package would carry files from whatever main had drifted to since.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      # The one value here a person types. Read through the environment and
+      # checked against the release shape before it reaches a command line, an
+      # asset name or a package version — the same anchored test release.yml
+      # applies to the tag it builds, so a Release published for a tag that
+      # workflow could not have built stops here rather than half way through.
+      - name: Resolve the release tag
+        id: release
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "not a v<major>.<minor>.<patch> release tag: $TAG_NAME" >&2
+            exit 1
+          fi
+          echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
+
+      # By the names docs/releasing.md publishes them under, the tag's leading
+      # v and all. The extension zip is not wanted here.
+      - name: Download the release's binaries and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          mkdir -p assets
+          gh release download "$TAG" --dir assets \
+            --pattern "mdn-$TAG-linux-amd64" \
+            --pattern "mdn-$TAG-linux-arm64" \
+            --pattern "SHA256SUMS"
+
+      # Before packaging, not after: the point of the check is that nothing
+      # that fails it ever reaches a .deb. SHA256SUMS also covers the extension
+      # zip, which was not downloaded, so the two binaries' lines are taken out
+      # of it — and there must be exactly two, or the file is not the one this
+      # release published.
+      - name: Verify the checksums before packaging anything
+        working-directory: assets
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          grep -F \
+            -e "  mdn-$TAG-linux-amd64" \
+            -e "  mdn-$TAG-linux-arm64" \
+            SHA256SUMS > binaries.sha256
+          lines=$(wc -l < binaries.sha256)
+          if [ "$lines" -ne 2 ]; then
+            echo "SHA256SUMS names $lines of the two binaries, want 2:" >&2
+            cat SHA256SUMS >&2
+            exit 1
+          fi
+          sha256sum -c binaries.sha256
+          rm binaries.sha256
+
+      - name: Fetch the pinned nfpm
+        run: |
+          tarball="nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/$tarball"
+          echo "$NFPM_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" nfpm
+          "$RUNNER_TEMP/nfpm" --version
+
+      # Both architectures, from one config. SOURCE_DATE_EPOCH so the Debian
+      # changelog says when the release was published rather than when a runner
+      # happened to pick the job up — including on a re-run months later.
+      - name: Build the packages
+        id: build
+        env:
+          NFPM: ${{ runner.temp }}/nfpm
+          TAG: ${{ steps.release.outputs.tag }}
+          PUBLISHED_AT: ${{ github.event.release.published_at }}
+        run: |
+          SOURCE_DATE_EPOCH=$(date -u -d "$PUBLISHED_AT" +%s)
+          export SOURCE_DATE_EPOCH
+          packaging/deb/build.sh "$TAG" assets packaging/deb/out
+          ls -l packaging/deb/out
+
+      # No errors, and the one tag that cannot be fixed is overridden in the
+      # package itself with its justification, so this is the whole check
+      # rather than a filtered one. --fail-on error is the default; it is
+      # written out because this line is the requirement.
+      - name: Lintian
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lintian
+          lintian --version
+          lintian --display-info --show-overrides --tag-display-limit 0 \
+            --fail-on error packaging/deb/out/*.deb
+
+      # To the same release, not a new one. --clobber so a re-run of this
+      # workflow from the Actions page replaces the assets it uploaded last
+      # time instead of failing on names that are already there.
+      - name: Upload the packages to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: gh release upload "$TAG" packaging/deb/out/*.deb --clobber
+
+      - name: Say what was published
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          {
+            echo "Debian packages uploaded to **$TAG**:"
+            echo
+            echo '```'
+            (cd packaging/deb/out && sha256sum ./*.deb)
+            echo '```'
+            echo
+            echo "Install with \`apt install ./md-notes_<version>_<arch>.deb\`."
+          } >> "$GITHUB_STEP_SUMMARY"
