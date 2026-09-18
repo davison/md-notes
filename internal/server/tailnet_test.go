@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1261,5 +1262,83 @@ func TestLoginPageCSP(t *testing.T) {
 		if !strings.Contains(csp, want) {
 			t.Errorf("Content-Security-Policy %q lacks %q", csp, want)
 		}
+	}
+}
+
+// What loginDelay bounds is a request, not the daemon: each failure waits,
+// and nothing holds them in a queue. Driven over HTTP because that is where
+// the wait is served (see the login handler) and therefore where the
+// capture's "semaphore of one around the delay" would go — a test against
+// the throttle's bookkeeping alone passes with such a gate in place and so
+// faces nothing (review of PR #144, finding 2). Serialised, these 40 would
+// take 8 seconds; the reviewer measured 18.6 with the daemon's own delay.
+func TestFailedLoginsAreNotSerialised(t *testing.T) {
+	ts, _ := newTailnetServer(t)
+	s := serverOf(t, ts)
+	s.logins.delay = 200 * time.Millisecond
+
+	const callers = 40
+	type attempt struct {
+		status int
+		took   time.Duration
+		err    error
+	}
+	got := make([]attempt, callers)
+	var wg sync.WaitGroup
+	start := time.Now()
+	for i := range callers {
+		wg.Add(1)
+		// Built by hand rather than through loginPost: a helper that
+		// calls t.Fatal cannot be used off the test's own goroutine.
+		go func() {
+			defer wg.Done()
+			req, err := http.NewRequest("POST", ts.URL+loginPath, strings.NewReader("token=WRONG&redirect=/"))
+			if err != nil {
+				got[i].err = err
+				return
+			}
+			req.Host = tailnetName
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Origin", tailnetOrigin)
+			req.Header.Set("X-Forwarded-Proto", "https")
+			req.Header.Set("X-Forwarded-For", fmt.Sprintf("10.0.0.%d", i))
+			began := time.Now()
+			resp, err := noRedirect.Do(req)
+			got[i].took = time.Since(began)
+			if err != nil {
+				got[i].err = err
+				return
+			}
+			resp.Body.Close()
+			got[i].status = resp.StatusCode
+		}()
+	}
+	wg.Wait()
+	wall := time.Since(start)
+
+	waited := 0
+	for i, a := range got {
+		if a.err != nil {
+			t.Fatalf("caller %d: %v", i, a.err)
+		}
+		if a.status != http.StatusUnauthorized {
+			t.Fatalf("caller %d: status %d, want 401 — a total counted across callers must never refuse", i, a.status)
+		}
+		if a.took >= s.logins.delay {
+			waited++
+		}
+	}
+	// Every key but the free tier met the floor, which is the bound the
+	// comment does claim.
+	if waited < callers-loginFree {
+		t.Errorf("%d of %d requests waited the delay, want at least %d — the floor did not survive parallel use",
+			waited, callers, callers-loginFree)
+	}
+	// And they met it at the same time. A gate around the delay would put
+	// them end to end; the margin is wide enough that a slow machine does
+	// not fail this and narrow enough that one delay each cannot pass it.
+	if limit := callers * s.logins.delay / 5; wall >= limit {
+		t.Errorf("%d parallel failed logins took %v, at or past %v — they are being serialised",
+			callers, wall, limit)
 	}
 }
