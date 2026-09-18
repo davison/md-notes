@@ -612,6 +612,57 @@ func TestEventsStreamReportsLimitedCoverage(t *testing.T) {
 	}
 }
 
+// A directory the filesystem refuses reaches the browser as that cause, not
+// as the kernel limit: the page can then offer a remedy that works (M8-R7).
+func TestEventsStreamNamesARefusedDirectory(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the directory mode, so nothing is refused")
+	}
+	notes := t.TempDir()
+	os.WriteFile(filepath.Join(notes, "top.md"), []byte("x"), 0o644)
+	os.MkdirAll(filepath.Join(notes, "ok"), 0o755)
+	os.WriteFile(filepath.Join(notes, "ok", "n.md"), []byte("x"), 0o644)
+	locked := filepath.Join(notes, "locked")
+	os.MkdirAll(locked, 0o755)
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+
+	reg, err := roots.New(notes, filepath.Join(t.TempDir(), "roots.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(reg, port, fstest.MapFS{}, log.New(io.Discard, "", 0))
+	s.keepalive = 100 * time.Millisecond
+	t.Cleanup(s.Close)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/r/"+reg.List()[0].Slug+"/events", nil)
+	req.Host = "localhost:7337"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	next := sseReader(t, resp.Body)
+	next(func(l string) bool { return l == "event: status" })
+	data := next(func(l string) bool { return strings.HasPrefix(l, "data: ") })
+	var cov watch.Coverage
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(data, "data: ")), &cov); err != nil {
+		t.Fatal(err)
+	}
+	if cov.Refused != 1 || cov.Reason != "permission denied" || cov.Failed != 0 || !cov.Limited {
+		t.Fatalf("coverage = %+v, want one directory refused by the filesystem and none by the kernel", cov)
+	}
+	if !strings.Contains(data, `"refused":1`) || !strings.Contains(data, `"reason":"permission denied"`) {
+		t.Fatalf("status event = %s, want the cause on the wire", data)
+	}
+}
+
 // M2-R4 over the wire: the first note in a directory whose only file is a
 // hidden placeholder reaches the browser, at every level of a nest of them.
 func TestEventsStreamReportsFirstNoteInPlaceholderDirectories(t *testing.T) {
