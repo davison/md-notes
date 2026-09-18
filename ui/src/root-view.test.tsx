@@ -271,8 +271,30 @@ describe("watch coverage", () => {
     await screen.findByText("docs");
     FakeEventSource.last!.emitStatus({ ...limited, failed: 12, unwatched: 4510 });
     const notice = (await screen.findAllByText(/Live update covers/))[0];
-    expect(notice.textContent).toContain("raise max_watches above 8,192");
-    expect(notice.textContent).toContain("fs.inotify.max_user_watches");
+    expect(notice.textContent).toContain(
+      "to cover them all, raise max_watches above 8,192 and raise fs.inotify.max_user_watches.",
+    );
+  });
+
+  it("reads as a list when all three causes are in play", async () => {
+    render(
+      <LocationProvider>
+        <RootView slug="n" />
+      </LocationProvider>,
+    );
+    await screen.findByText("docs");
+    FakeEventSource.last!.emitStatus({
+      ...limited,
+      failed: 12,
+      refused: 1,
+      reason: "permission denied",
+      unwatched: 4511,
+    });
+    const notice = (await screen.findAllByText(/Live update covers/))[0];
+    expect(notice.textContent).toContain(
+      "to cover them all, raise max_watches above 8,192, raise fs.inotify.max_user_watches and " +
+        "give the daemon access to the 1 directory it could not watch (permission denied).",
+    );
   });
 
   it("names the cause, and no limit to raise, when the filesystem refused a directory", async () => {
