@@ -7,8 +7,10 @@ require (
 	// internal/render/gencss tones both colour schemes from, no longer
 	// styles GenericHeading, GenericStrong, GenericSubheading,
 	// GenericPrompt, GenericError, GenericTraceback or NameException, so
-	// the upgrade takes the colour off the prompt in a console block, the
-	// hunk header in a diff and bold in a markdown block. Measured on
+	// the upgrade takes the colour off the prompt in a console block and
+	// the hunk header in a diff, and the weight off bold in a markdown
+	// block -- GenericStrong is `font-weight: bold` in both schemes and
+	// carries no colour of its own. Measured on
 	// davison/md-notes#147; the hold-back and what would lift it are
 	// recorded there.
 	github.com/alecthomas/chroma/v2 v2.2.0
