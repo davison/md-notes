@@ -48,24 +48,52 @@ part of it a human would also read.
 ```
 make build      # the UI bundle and the static ./mdn binary
 make extension  # the browser extension, into extension/dist, and a zip
-make install    # copies ./mdn to /usr/bin/mdn; needs root (PREFIX=... to change)
+make install    # installs what make build made; needs root (PREFIX=... to change)
+make clean      # removes what build, extension and release produce
+make distclean  # clean, and both node_modules trees as well
 ```
 
-`make install` installs system-wide — `/usr/bin/mdn`, the path
-`contrib/mdn.service` runs and the path the `.deb` uses — so it wants
-`sudo make install`. **If the `md-notes` package is installed, do not:** both
-write `/usr/bin/mdn`, so `make install` would overwrite the packaged binary
-behind dpkg's back (`dpkg -V md-notes` then reports it modified) and a later
-`apt remove` would delete your build. Use a prefix of your own instead, which
-is also how to try a build without root:
+`make install` is a copy and nothing else. It has no prerequisite: it installs
+the `./mdn` that `make build` already made and `contrib/mdn.service` beside it,
+and refuses in one line, having copied nothing, if either is missing. So build
+as yourself and install as root — never the other way round, which is what used
+to run `pnpm install` and `go build` under `sudo` and leave root-owned files in
+your checkout (#163):
 
 ```
+make build
+sudo make install
+```
+
+The two destinations are `/usr/bin/mdn` and
+`/usr/lib/systemd/user/mdn.service`, which are the two paths the `.deb`
+installs. **If the `md-notes` package is installed, do not:** both write
+`/usr/bin/mdn`, so `make install` would overwrite the packaged binary behind
+dpkg's back (`dpkg -V md-notes` then reports it modified) and a later
+`apt remove` would delete your build. Use a prefix or a staging directory of
+your own instead, which is also how to try an install without root:
+
+```
+make install DESTDIR=$PWD/dist/scratch  # ./dist/scratch/usr/..., gitignored
 make install PREFIX=$PWD/dist/scratch   # ./dist/scratch/bin/mdn, gitignored
 make install PREFIX=$HOME/.local        # ~/.local/bin/mdn, the old default
 ```
 
+Installing does not start anything: the target's last lines are the
+`systemctl --user daemon-reload` and `systemctl --user enable --now mdn` for
+you to run, because `systemctl --user` under `sudo` is root's session and
+cannot enable a user unit for you.
+
 Under any prefix but `/usr`, `contrib/mdn.service` needs a drop-in pointing
-`ExecStart` at the binary you installed; the unit's header has the three lines.
+`ExecStart` at the binary you installed, and under a prefix systemd does not
+search — `~/.local` is one — the unit needs copying to
+`~/.config/systemd/user/`; the unit's header has both.
+
+`make clean` removes the binary, `ui/dist`, `extension/dist`, the extension zip
+and `dist/`, and nothing else; it attempts all of them and names what it could
+not remove rather than stopping at the first. `make distclean` also removes
+`ui/node_modules` and `extension/node_modules`, so the next build re-runs
+`pnpm install` and needs the network.
 
 The UI is built into the binary, so `make build` builds both halves; there is
 no separate step to remember. The version the binary reports comes from

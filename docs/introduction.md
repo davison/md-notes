@@ -121,8 +121,12 @@ name the daemon answers to, for requests a `tailscale serve` proxy forwards to t
 loopback port; it is empty by default, and everything under it must authenticate.
 See [Reaching the daemon over the tailnet](#reaching-the-daemon-over-the-tailnet).
 `contrib/mdn.service` is a systemd user unit that runs `/usr/bin/mdn serve`, which
-is where both `make install` and the `.deb` put the binary; a per-user install
-points it elsewhere with a drop-in, as the unit's own header describes.
+is where both `make install` and the `.deb` put the binary; both install the unit
+itself to `/usr/lib/systemd/user/mdn.service` as well, and leave
+`systemctl --user enable --now mdn` to you. `make install` copies what
+`make build` already made and refuses if it is not there, so build first; a
+per-user install points the unit elsewhere with a drop-in, as the unit's own
+header describes.
 
 ripgrep (`rg`) must be on `PATH` at runtime. It builds the navigator's file listing,
 runs search, and decides which files the tag collector reads — which is how
