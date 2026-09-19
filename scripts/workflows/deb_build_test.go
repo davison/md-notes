@@ -545,7 +545,7 @@ func TestAUnitThePackageCannotStartIsRefused(t *testing.T) {
 	for _, tc := range []struct{ name, execStart string }{
 		{"the home-directory path the unit used to carry", "ExecStart=%h/.local/bin/mdn serve"},
 		{"another prefix entirely", "ExecStart=/usr/local/bin/mdn serve"},
-		{"the right path with an argument appended", "ExecStart=/usr/bin/mdn serve --port 7337"},
+		{"a path this one is a prefix of", "ExecStart=/usr/bin/mdn-wrapper serve"},
 		{"no ExecStart at all", "Restart=on-failure"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -559,6 +559,23 @@ func TestAUnitThePackageCannotStartIsRefused(t *testing.T) {
 				t.Errorf("the build was refused but still packaged %d times", len(invocations))
 			}
 		})
+	}
+
+	// What is guarded is the path, not the whole line: arguments after the
+	// binary are the unit's own business and this package starts them fine.
+	// Refusing them would turn a flag added to contrib/mdn.service into a red
+	// build blaming the path, which is the wrong complaint about a working
+	// unit.
+	for _, execStart := range []string{
+		"ExecStart=/usr/bin/mdn serve",
+		"ExecStart=/usr/bin/mdn serve --port 7337",
+		"ExecStart=/usr/bin/mdn serve --port 7337 --root %h/notes",
+	} {
+		unit := "[Unit]\nDescription=mdn\n\n[Service]\n" + execStart + "\n"
+		if _, stderr, err := runBuildAgainstUnit(t, "v0.1.0",
+			map[string]string{"amd64": "a", "arm64": "b"}, unit); err != nil {
+			t.Errorf("a unit running %q was refused: %v\n%s", execStart, err, stderr)
+		}
 	}
 
 	// And the unit as the repository holds it goes through.
@@ -580,4 +597,54 @@ func execStart(unit string) string {
 		}
 	}
 	return ""
+}
+
+// TestTheInstallPrefixAndTheUnitAgree is the one string pair the gate
+// resolution on davison/md-notes#137 rests on.
+//
+// The operator resolved that gate by making `make install` install
+// system-wide, so that the from-source route and the package put the binary in
+// the same place and contrib/mdn.service can name one path. Everything else
+// follows from those two strings agreeing: the unit the package ships, the
+// unit a from-source install copies, and the instruction in the unit's own
+// header are all correct only while they do.
+//
+// The package's half is pinned three ways over in build.sh and the tests
+// around it. The from-source half was pinned by nothing at all — reverting
+// PREFIX to $(HOME)/.local left `make check` green, which is how the drift the
+// gate was raised about would come back. This reads both files and asserts the
+// pair, so a change to either side without the other fails here rather than at
+// `systemctl --user start mdn` on a stranger's machine.
+func TestTheInstallPrefixAndTheUnitAgree(t *testing.T) {
+	makefile, err := os.ReadFile(filepath.Join(repoRoot, "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := ""
+	for _, line := range strings.Split(string(makefile), "\n") {
+		if rest, ok := strings.CutPrefix(line, "PREFIX ?="); ok {
+			prefix = strings.TrimSpace(rest)
+		}
+	}
+	if prefix == "" {
+		t.Fatal("the Makefile declares no `PREFIX ?=` default; `make install` and contrib/mdn.service have to agree on one, and this is half of it")
+	}
+
+	unit, err := os.ReadFile(filepath.Join(repoRoot, "contrib", "mdn.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := execStart(string(unit))
+	if line == "" {
+		t.Fatal("contrib/mdn.service has no ExecStart= line")
+	}
+	// The path, without whatever arguments follow it.
+	path, _, _ := strings.Cut(strings.TrimPrefix(line, "ExecStart="), " ")
+
+	// `make install` runs `install -Dm755 mdn $(PREFIX)/bin/mdn`.
+	if want := prefix + "/bin/mdn"; path != want {
+		t.Errorf("contrib/mdn.service runs %q but `make install` puts the binary at %q (PREFIX ?= %s).\n"+
+			"These are the two strings the gate resolution on davison/md-notes#137 made equal; whichever one moved, the other has to move with it — or a from-source install gets a unit that cannot start it.",
+			path, want, prefix)
+	}
 }
