@@ -53,12 +53,15 @@ make install    # copies ./mdn to /usr/bin/mdn; needs root (PREFIX=... to change
 
 `make install` installs system-wide — `/usr/bin/mdn`, the path
 `contrib/mdn.service` runs and the path the `.deb` uses — so it wants
-`sudo make install`. To try it without root, or to keep a checkout's build out
-of the way of an installed one, give it a prefix of your own:
+`sudo make install`. **If the `md-notes` package is installed, do not:** both
+write `/usr/bin/mdn`, so `make install` would overwrite the packaged binary
+behind dpkg's back (`dpkg -V md-notes` then reports it modified) and a later
+`apt remove` would delete your build. Use a prefix of your own instead, which
+is also how to try a build without root:
 
 ```
-make install PREFIX=$PWD/.scratch   # ./.scratch/bin/mdn
-make install PREFIX=$HOME/.local    # ~/.local/bin/mdn, the old default
+make install PREFIX=$PWD/dist/scratch   # ./dist/scratch/bin/mdn, gitignored
+make install PREFIX=$HOME/.local        # ~/.local/bin/mdn, the old default
 ```
 
 Under any prefix but `/usr`, `contrib/mdn.service` needs a drop-in pointing

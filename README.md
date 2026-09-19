@@ -110,7 +110,10 @@ and additionally need `make extension`.
 `make install` installs system-wide, so it wants `sudo make install`, and it
 puts the binary where [contrib/mdn.service](contrib/mdn.service) expects it.
 `make install PREFIX=$HOME/.local` installs for one user instead and needs no
-root; the unit file's header says what that route then needs.
+root; the unit file's header says what that route then needs. Use a prefix of
+your own if the `md-notes` package is installed too: both put the binary at
+`/usr/bin/mdn`, so installing over it leaves dpkg's record wrong and an
+`apt remove` later takes your build with it.
 
 The commands below assume the binary is on your PATH; otherwise run `./mdn`
 from the repository.
