@@ -1,11 +1,17 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X main.version=$(VERSION)
+# Recursively expanded, both of them, so the two subprocesses behind them run
+# only for the targets that use them — `build` and `release`. Immediately
+# expanded (`:=`) they ran at parse time, on every invocation: `make install`
+# and `make clean` forked `git describe` and `go env` for values neither of
+# them reads, and under sudo that `go env` created /root/.config/go/telemetry
+# (the review of PR #166, nit (b)).
+LDFLAGS = -s -w -X main.version=$(VERSION)
 EXTENSION_ZIP := extension/mdn-extension.zip
 UNIT := contrib/mdn.service
 DIST ?= dist
 # The release runs one of the binaries it just built to check what version
 # it reports, so it builds on a host that can run one of its own targets.
-HOST_ARCH := $(shell go env GOHOSTARCH)
+HOST_ARCH = $(shell go env GOHOSTARCH)
 
 .PHONY: all build ui ui-deps extension extension-dist extension-deps test vet check e2e vuln release install clean distclean
 
@@ -154,6 +160,9 @@ release: ui extension-deps
 # sudo, `systemctl --user` is root's session, not the session a user unit has
 # to run in, so enabling it is the invoking user's step and saying so at the
 # terminal is the most this target can honestly do (davison/md-notes#164).
+# A staged install says it staged instead: nothing under DESTDIR is where
+# systemd looks, so those two lines would either do nothing or enable whatever
+# was installed for real earlier.
 install:
 	@test -f mdn || { echo 'make install: ./mdn is not here — run `make build` first; install does not build.' >&2; exit 1; }
 	@test -f $(UNIT) || { echo 'make install: $(UNIT) is not here — run make install from the repository root.' >&2; exit 1; }
@@ -163,10 +172,15 @@ install:
 	@echo 'Installed $(DESTDIR)$(PREFIX)/bin/mdn'
 	@echo '      and $(DESTDIR)$(PREFIX)/lib/systemd/user/mdn.service'
 	@echo
+ifeq ($(strip $(DESTDIR)),)
 	@echo 'Now, as the user who will run the daemon (not root):'
 	@echo
 	@echo '    systemctl --user daemon-reload'
 	@echo '    systemctl --user enable --now mdn'
+else
+	@echo 'Staged under $(DESTDIR): nothing is installed on this system, so'
+	@echo 'there is nothing to enable yet.'
+endif
 
 # What `build`, `extension` and `release` write, and nothing else. ui/dist is
 # emptied rather than removed: its .gitkeep is tracked.
@@ -203,5 +217,9 @@ clean:
 ## distclean: clean, and the two pnpm dependency trees as well
 # The next build then re-runs `pnpm install` for both workspaces, which needs
 # the network.
+#
+# It goes through `clean`, so a tree `clean` could not finish stops here with
+# its report and keeps its node_modules: a tree you cannot clean is not one to
+# delete more of, and the leftovers it named are what to deal with first.
 distclean: clean
 	rm -rf ui/node_modules extension/node_modules
