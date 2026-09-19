@@ -6,7 +6,9 @@ instead of letting the browser render them as plain text, and it clips a web
 page or a selection into the notes root as markdown.
 
 This page covers installing it, building it, the file URL permission, the token,
-clipping, and every permission it asks for.
+clipping, and every permission it asks for. The inbox clipper for URLs shared
+from a phone is later work and is not here; everything else on this page works
+today, against a released daemon or one built from `main`.
 
 ## Installing it
 
@@ -43,10 +45,16 @@ unchanged:
 The same steps work in Chrome and Chromium at `chrome://extensions`.
 
 Nothing updates it afterwards: a store listing is what would have brought
-updates, and there is none. A later release is a later zip, unzipped over the
-same folder or into a new one, followed by the reload arrow on the extension's
-card — or **Load unpacked** again if the folder moved. The version the browser
-shows on the card is the release's, stamped into the manifest at build time.
+updates, and there is none. A later release is a later zip, and the way to take
+it is to unzip it into a **new** folder and **Load unpacked** that one, or to
+delete the old folder first and unzip in its place. Not to unzip over the folder
+that is there: plain `unzip` asks about every one of the twelve files it would
+replace and, given no answer, unpacks none of them, while `unzip -o` replaces
+what it recognises and leaves behind anything the old build had and the new one
+does not — the bundle's `chunk-*.js` names carry a content hash, so they change
+from release to release and the stale ones would accumulate. The version the
+browser shows on the card is the release's, stamped into the manifest at build
+time.
 
 ## Building it from source
 
@@ -95,10 +103,6 @@ options**):
   manifest only grants the default (see below).
 - **Token** — the installation's bearer token, printed by `mdn token`. Paste
   it and save.
-
-The inbox clipper for URLs shared from a phone is later work and is not here;
-everything else on this page works today, against a released daemon or one built
-from `main`.
 
 **Test connection** asks the daemon for its roots and says what came back.
 

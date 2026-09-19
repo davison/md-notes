@@ -70,8 +70,9 @@ reported as that rather than as the kernel's watch limit
 current release or held back for a reason recorded in the file that holds it, with
 `govulncheck` and `pnpm audit` in CI; and between the drawer breakpoint and the width
 the three-column layout needs, the search and tag pane sits under the navigator so the
-note keeps its reading width, with thin scrollbars in the theme's own colours
-throughout ([In a narrower window](#in-a-narrower-window)).
+note column gets every pixel that is not the navigator — reaching the full reading width
+from 1020 px up — with thin scrollbars in the theme's own colours throughout
+([In a narrower window](#in-a-narrower-window)).
 
 The browser half is a Chromium extension that clips a readable page or a selection
 into the notes root as markdown, and opens a local markdown file in the app instead
