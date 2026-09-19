@@ -12,7 +12,12 @@ pixels in portrait and 936x702 in landscape — a capacitive touchscreen, a Waco
 stylus, and a Chromium-based browser called NeoBrowser. Both of those are under
 the application's 960-pixel breakpoint, so on those figures the tablet gets [the
 narrow layout](introduction.md#on-a-phone): the note has the screen, and the
-navigator and the search-and-tags pane are tabs of a drawer. The figures are
+navigator and the search-and-tags pane are tabs of a drawer. Zoomed out, which
+is the first thing a reader does on a panel this slow, it crosses into [the
+two-column layout](introduction.md#in-a-narrower-window) — the navigator with
+the search pane under it, and the note taking every pixel the navigator does
+not — and only a zoom of about 70% or less takes it past 1290 pixels into the
+three-pane one. The figures are
 arithmetic from the panel, not a reading taken off the device — see [what has
 not been checked](#what-has-been-checked-and-what-has-not) — but nothing here
 depends on them: the tap targets follow the pointer at any width, and the
@@ -52,6 +57,13 @@ reports a touch or stylus pointer, including the wide layout you get by zooming
 out. A mouse keeps the compact rows. Links *inside* a note are the exception,
 and have to be: their size is the line of prose they sit in, and a 40-pixel line
 is not prose.
+
+Scrollbars need no setting either. Every scrolling pane — the navigator, the
+note, the search results, the editor and the drawer — draws a thin bar in the
+palette's own colours rather than the browser's grey, in either scheme and
+under the light override, with the thumb at least 3:1 against the pane behind
+it so it is still there on a panel with no backlight. Thin, never hidden: a bar
+you cannot see is a bar a stylus cannot catch.
 
 Creating and deleting a note are stylus-sized for the same reason. **New note**
 sits in the top bar at every width, so it is reachable without scrolling a long
