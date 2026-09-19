@@ -33,7 +33,7 @@ version literal that has to be bumped by hand.
   `extension/public/manifest.json`, the committed one, carries no `version` key
   at all, because a literal there would be a second source and the second
   source is the one nobody remembers to bump.
-- An extension manifest's `version` is Chromium's own rule, not a store's:
+- The rule for an extension manifest's `version` is Chromium's, not a store's:
   *"Required value 'version' is missing or invalid. It must be between 1-4
   dot-separated integers each between 0 and 65536."* So the manifest carries the
   tag normalised: `v0.1.0` becomes `0.1.0`. Anything that is not a clean release
@@ -73,8 +73,8 @@ are on the draft before anyone sees it; the two `.deb`s are added afterwards by
 | `mdn-<version>-linux-arm64` | the static daemon, aarch64 | `release.yml` |
 | `mdn-extension-<version>.zip` | the unpacked extension, zipped | `release.yml` |
 | `SHA256SUMS` | checksums of the three above | `release.yml` |
-| `md-notes_<pkgver>_amd64.deb` | the Debian package, x86-64 | `publish-deb.yml` |
-| `md-notes_<pkgver>_arm64.deb` | the Debian package, arm64 | `publish-deb.yml` |
+| `md-notes_<version without the v>_amd64.deb` | the Debian package, x86-64 | `publish-deb.yml` |
+| `md-notes_<version without the v>_arm64.deb` | the Debian package, arm64 | `publish-deb.yml` |
 
 `SHA256SUMS` covers the three files built beside it and nothing else: the
 `.deb`s do not exist when it is written, and re-writing it afterwards would mean
@@ -198,7 +198,12 @@ Which mistake you are recovering from decides how far back you can go.
 started, so this is free: delete the draft, and if the commit itself was wrong,
 delete the tag and push it again at the right one. A draft Release, its assets
 and its tag can all be deleted — the immutability that pins a release's tag and
-assets applies only once it is published.
+assets applies only once it is published. A draft holds no tag ref of its own,
+which the first release showed plainly: the run summary recorded the draft it
+had created as
+`https://github.com/davison/md-notes/releases/tag/untagged-ce73351a50e41ea92653`,
+a generated name rather than `v0.1.0`, which is the address it answered to until
+the operator pressed Publish.
 
 **It is already published.** Then the tag stays. It names the commit the assets
 were built from, and someone may already have fetched it; deleting and
@@ -255,7 +260,9 @@ that the first release did not supply:
   the instruction above is still written to be safe under either.
 - **A draft's asset URLs before publication.** The draft stood for about three
   minutes and nobody fetched an asset from it, so what a draft serves is still
-  unobserved. Nothing depends on it: no channel workflow
+  unobserved — though the *page* address is now known, since the run summary
+  recorded it as `untagged-ce73351a50e41ea92653` rather than the tag. Nothing
+  depends on it: no channel workflow
   runs before the publish.
 
 ## Versions
