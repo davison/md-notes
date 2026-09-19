@@ -223,19 +223,26 @@ What that settled, and what it did not:
   and
   [publish-deb](https://github.com/davison/md-notes/actions/runs/35460432286).
   A person pressing Publish is what the design needs, and it is what happened.
-- **The assets survive the publish.** All four the workflow attached to the
-  draft are on the published release, and the two `.deb`s joined them from the
-  channel run.
+- **The assets survive the publish, unchanged.** The four the workflow attached
+  were created at 18:08:44Z, three minutes before the operator published, and
+  the digests the release API reports for them are the ones `SHA256SUMS`
+  attests to and the ones a download checks out against — measured by QA after
+  the fact
+  ([#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744403052),
+  observation 5). The two `.deb`s joined them from the channel run.
 - **The published URL form is the one written above.** `makepkg` inside
   publish-aur's container fetched
   `https://github.com/davison/md-notes/releases/download/v0.1.0/mdn-v0.1.0-linux-amd64`
   from the PKGBUILD's `source_x86_64` and matched it against the checksum
   `SHA256SUMS` carried, so the form is measured rather than inferred.
-- **A channel re-runs on its own.** `publish-deb` succeeded on the publish and
-  was then re-run against the same published release, deliberately rather than
-  in recovery; the second attempt succeeded too, re-uploading both packages over
-  the first attempt's. That is the re-run M8-R1 asks for, and it is what
-  `--clobber` is there for.
+- **A channel re-runs on its own, and `--clobber` behaves.** `publish-deb`
+  succeeded on the publish and was then re-run against the same published
+  release, deliberately rather than in recovery; the second attempt succeeded
+  too, replacing both packages in place at 18:14:25Z while the four
+  release-workflow assets went untouched. Afterwards the release API's digests
+  for the two `.deb`s equal the SHA-256 of the files downloaded from the page,
+  and both install. That is the re-run M8-R1 asks for, and the caveat above is
+  now written from a measurement rather than from the manual.
 - **The generated notes need a previous tag to be short.** With none, GitHub
   generated notes listing every pull request in the repository's history. That
   is one-off: the next release's notes span one tag to the next.
