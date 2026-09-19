@@ -65,10 +65,10 @@ contents:
     file_info:
       mode: 0755
 
-  # Staged by build.sh from contrib/mdn.service with its ExecStart pointed at
-  # /usr/bin/mdn: that file runs %h/.local/bin/mdn, which is right for the
-  # from-source route it documents in its own header and wrong for a package.
-  # See the gate raised on davison/md-notes#137.
+  # contrib/mdn.service, byte for byte. It runs /usr/bin/mdn, which is where
+  # this package installs the binary and where `make install` puts it too —
+  # the gate on davison/md-notes#137, resolved by making the two routes agree
+  # on one path rather than having the packaging rewrite the file.
   - src: mdn.service
     dst: /usr/lib/systemd/user/mdn.service
     file_info:
