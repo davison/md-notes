@@ -196,6 +196,9 @@ describe("the layout at phone widths and above", { skip: blocker ?? false }, () 
       assert.equal(note.x, nav.width, "the note begins where the navigator ends");
       assert.equal(note.width, width - nav.width, "the side pane takes no width from the note");
       assert.ok(note.width >= NOTE_COLUMN, `the note column is ${note.width}, its reading width plus gutters is ${NOTE_COLUMN}`);
+      // This window has 80 px of slack over the column's minimum, so the
+      // note is at its reading width whether or not the browser draws a
+      // bar in the gutter — unlike the two figures at the threshold itself.
       assert.equal(article.width, READING_WIDTH, "the rendered note is at its reading width");
 
       // Each pane scrolls on its own, which is the point of two rows rather
@@ -236,6 +239,14 @@ describe("the layout at phone widths and above", { skip: blocker ?? false }, () 
 
       // At it, all three fit and the note column is exactly its reading
       // width plus the 2rem `.note-body` pads it with either side.
+      //
+      // The article's own figures below are the ones for a browser that
+      // draws no bar in that gutter, which is the browser this suite has:
+      // Playwright launches Chromium with `--hide-scrollbars`. Where a bar
+      // is drawn it takes 10 px of the gutter, so the article is 710 here
+      // and reaches 720 at 1300 — measured, and stated in the introduction
+      // and on davison/md-notes#158. The column is the same either way,
+      // which is why the column is what the threshold is made of.
       const over = await at(THREE_COLUMN);
       assert.equal(over.side.x, over.nav.width + over.note.width, "the side pane is a column again");
       assert.equal(over.nav.width + over.note.width + over.side.width, THREE_COLUMN, "the three panes are the window");

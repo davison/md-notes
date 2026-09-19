@@ -762,20 +762,31 @@ editor, so nothing asks the daemon what the note is called now. Both are recorde
 
 ### In a narrower window
 
-Between 960 and 1290 pixels of window width — a laptop screen, or a desktop window with
+Between 961 and 1289 pixels of window width — a laptop screen, or a desktop window with
 something else beside it — the three panes are two columns: the navigator with the
 **Search & tags** pane underneath it on the left, each scrolling on its own, and the note
 taking everything that is not the navigator. Nothing moves into a drawer and no control
-changes; the side pane is a row rather than a column.
+changes; the side pane is a row rather than a column. 960 and below is the drawer, as
+before.
 
-The number is where all three panes fit without any of it coming out of the note: the
+1290 is where all three panes fit without any of it coming out of the note: the
 navigator's 16rem, the note's 48rem reading width with the 2rem of padding either side of
-it, and the side pane's 18rem — 1290 pixels at the application's root font. At 1290 and
-above the side pane returns to its own column on the right, which is the layout that was
-there at every width above 960 before, and where the note column was the one that paid:
-at 1100 pixels it left the note 530 pixels of an intended 720.
+it, and the side pane's 18rem, at the application's root font. From there the side pane is
+a column on the right again — the layout that was there at every width above 960 before,
+and where the note column was the one that paid: at 1100 pixels the note column was 590
+pixels and the note inside it 530 of an intended 720.
 
-Between 960 and 1020 pixels the note is still narrower than its reading width, because a
+One caveat if you are checking these figures against a window of your own. The reading
+width is the note *column* less that 2rem of padding either side, and where the browser
+draws a scrolling bar **in** the padding rather than over the text — Chromium on a desktop
+does; a phone and macOS do not — the bar takes 10 more pixels of it. So the note first
+reaches its full 720 at 1020 pixels with no bar drawn and at 1030 with one, and crossing
+1290 costs it those 10 pixels back until 1300, the side pane having just taken its column.
+The breakpoint is the layout's own arithmetic and leaves the bar out on purpose: a bar is
+10 pixels in one browser, none in another, and absent altogether from a note too short to
+scroll, so a breakpoint that assumed one would be wrong in all three places.
+
+Below about 1020 pixels the note is still narrower than its reading width, because a
 16rem navigator and 48rem of text do not fit in less than that. It gets every pixel that
 is not the navigator, which is 270 more than it used to have.
 
@@ -904,7 +915,9 @@ against the built daemon on a temporary root, and CI runs it as a job of its own
 pane rectangles at four phone profiles and a desktop control, the 960-pixel
 breakpoint walked at 959, 960 and 961, the 1290-pixel one walked at 1289 and 1290 —
 the side pane under the navigator below it, a column of its own at it, and the note
-exactly at its 720-pixel reading width either way — the drawer's geometry and all four
+exactly at its 720-pixel reading width either way, which is the figure for a browser
+drawing no bar in the gutter, as the suite's own headless one does not — the drawer's
+geometry and all four
 of its close paths, the tag chip, the 40-pixel targets under a coarse pointer with the
 mouse-driven window's density left alone, the scrollbars' computed width and colour on
 the navigator, the note, the search pane and the editor's own scroller in both schemes,
