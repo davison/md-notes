@@ -16,9 +16,13 @@ import {
   BREAKPOINT,
   COARSE_DESKTOP,
   DESKTOP,
+  MIDDLE,
+  NOTE_COLUMN,
   PHONES,
   PIXEL_7,
+  READING_WIDTH,
   TAP_TARGET,
+  THREE_COLUMN,
   drawerReady,
   loadPlaywright,
   missingPrerequisite,
@@ -151,6 +155,98 @@ describe("the layout at phone widths and above", { skip: blocker ?? false }, () 
           `${sel} is not laid out at a wide width`,
         );
       }
+    } finally {
+      await close();
+    }
+  });
+
+  /**
+   * The middle layout (M8-R10, davison/md-notes#156): above the drawer
+   * breakpoint but below the width at which all three panes fit, the
+   * search-and-tags pane is a second row under the navigator rather than a
+   * column taken out of the note.
+   *
+   * The note is measured two ways here, because the requirement is about
+   * both: the column, which is the whole window less the navigator — the
+   * side pane costs it nothing — and the rendered article inside it, which
+   * is at its 48rem reading width at this width and was 530 px before this
+   * layout existed.
+   */
+  it("stacks the side pane under the navigator between the two breakpoints", async () => {
+    const [p, close] = await page(MIDDLE);
+    try {
+      const { width } = MIDDLE.viewport;
+      await openNote(p, fixture.url("projects/deep/nested.md"));
+      assert.ok(width > BREAKPOINT && width < THREE_COLUMN, "the profile is between the two");
+
+      const nav = await rect(p, ".nav");
+      const side = await rect(p, ".side");
+      const note = await rect(p, ".note");
+      const article = await rect(p, ".note-article");
+
+      assert.equal(nav.x, 0);
+      assert.equal(side.x, 0, "the side pane is in the left column, not a column of its own");
+      assert.equal(side.width, nav.width, "the two share the column's width");
+      // Within a hundredth of a pixel: the two rows are fractions of the
+      // space under the bar, and `rect` rounds each of them on its own.
+      const meets = (a, b, what) => assert.ok(Math.abs(a - b) < 0.02, `${what}: ${a} against ${b}`);
+      meets(side.y, nav.y + nav.height, "the side pane begins where the navigator ends");
+      meets(nav.height + side.height, note.height, "the two fill the column beside the note");
+
+      assert.equal(note.x, nav.width, "the note begins where the navigator ends");
+      assert.equal(note.width, width - nav.width, "the side pane takes no width from the note");
+      assert.ok(note.width >= NOTE_COLUMN, `the note column is ${note.width}, its reading width plus gutters is ${NOTE_COLUMN}`);
+      assert.equal(article.width, READING_WIDTH, "the rendered note is at its reading width");
+
+      // Each pane scrolls on its own, which is the point of two rows rather
+      // than one scrolling box holding both.
+      assert.deepEqual(
+        await p.evaluate(() => [".nav", ".side"].map((s) => getComputedStyle(document.querySelector(s)).overflowY)),
+        ["auto", "auto"],
+      );
+
+      // The drawer wrapper is inert above the breakpoint at this width too,
+      // which is what `drawer.tsx` asks the element when a window crosses it.
+      assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector(".panes")).display), "contents");
+    } finally {
+      await close();
+    }
+  });
+
+  it(`moves to three columns at ${THREE_COLUMN} CSS pixels and not at ${THREE_COLUMN - 1}`, async () => {
+    const [p, close] = await page({ name: "resizable", viewport: { width: THREE_COLUMN, height: 900 } });
+    try {
+      await openNote(p, fixture.url("projects/deep/nested.md"));
+      const at = async (width) => {
+        await p.setViewportSize({ width, height: 900 });
+        await p.waitForFunction((w) => document.documentElement.clientWidth === w, width);
+        const [nav, note, side, article] = await Promise.all(
+          [".nav", ".note", ".side", ".note-article"].map((s) => rect(p, s)),
+        );
+        return { nav, note, side, article };
+      };
+
+      // One pixel below it the three columns would have had to come out of
+      // the note: 1289 - 16rem - 18rem is 779, a pixel under the 780 the
+      // reading width and its gutters need. So the side pane is still a row.
+      const under = await at(THREE_COLUMN - 1);
+      assert.equal(under.side.x, 0, "the side pane is still under the navigator");
+      assert.equal(under.note.width, THREE_COLUMN - 1 - under.nav.width);
+      assert.equal(under.article.width, READING_WIDTH);
+
+      // At it, all three fit and the note column is exactly its reading
+      // width plus the 2rem `.note-body` pads it with either side.
+      const over = await at(THREE_COLUMN);
+      assert.equal(over.side.x, over.nav.width + over.note.width, "the side pane is a column again");
+      assert.equal(over.nav.width + over.note.width + over.side.width, THREE_COLUMN, "the three panes are the window");
+      assert.equal(over.note.width, NOTE_COLUMN, "the note column is exactly its reading width plus gutters");
+      assert.equal(over.article.width, READING_WIDTH, "and the note itself is exactly at its reading width");
+
+      // Wider still, the note column grows and the note stays at its
+      // reading width: the max-width has been doing that all along.
+      const wide = await at(DESKTOP.viewport.width);
+      assert.equal(wide.article.width, READING_WIDTH);
+      assert.ok(wide.note.width > NOTE_COLUMN);
     } finally {
       await close();
     }

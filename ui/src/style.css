@@ -158,6 +158,23 @@ code {
   white-space: nowrap;
 }
 
+/*
+ * Three layouts, in the order the cascade reads them: this rule is the
+ * middle one, the `min-width: 1290px` block below promotes it to three
+ * columns, and the `max-width: 60rem` block after that collapses it to the
+ * drawer. The middle layout is two columns with the search-and-tags pane in
+ * a second row under the navigator, so the note column is never narrowed by
+ * the side pane to pay for it (davison/md-notes#156).
+ *
+ * The rows: the top bar, then the space under it split between the two left
+ * panes, each keeping the `overflow: auto` it has at every width, so they
+ * scroll independently and neither pushes the other off the screen. 3fr to
+ * the navigator against 2fr to the side pane, because the navigator is the
+ * pane a reader steers by and is full whatever is on screen, while the side
+ * pane's own content — a search box, its hits and the tag list — leads with
+ * the box, which is the part that must not need scrolling to. The note
+ * spans both rows.
+ */
 .shell {
   display: grid;
   height: 100vh;
@@ -165,11 +182,12 @@ code {
      viewport with the browser's chrome retracted, which leaves the bottom
      of the shell under the address bar. */
   height: 100dvh;
-  grid-template-columns: 16rem minmax(0, 1fr) 18rem;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: 16rem minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 3fr) minmax(0, 2fr);
   grid-template-areas:
-    "top top top"
-    "nav note side";
+    "top top"
+    "nav note"
+    "side note";
 }
 
 .shell > .topbar {
@@ -581,11 +599,55 @@ code {
   height: 100%;
 }
 
+/*
+ * Under the navigator in the middle layout, so its rules are the ones a
+ * second row wants: a top border where the navigator ends, and the same
+ * right border the navigator draws, continuing the left column's edge. The
+ * three-column block below turns both back into the single left border it
+ * has always had at wide widths.
+ */
 .shell .side {
   grid-area: side;
-  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  border-right: 1px solid var(--line);
   overflow: auto;
   padding: 0.75rem;
+}
+
+/*
+ * Wide enough for all three panes without taking width from the note, which
+ * is the width this number is: the navigator's 16rem, plus the note column
+ * at its reading width — `.note-article`'s 48rem and the 2rem of padding
+ * `.note-body` draws either side of it — plus the side pane's 18rem. 86rem
+ * against the 15 px root font this page sets, so 1290 CSS pixels; below it
+ * the note column would be the one to give, which is what the middle layout
+ * above exists to stop.
+ *
+ * In pixels, not rem, and deliberately: a media query's `rem` is the
+ * *initial* 16 px rather than the root font the page actually has, which is
+ * why `60rem` below is 960 px and not 900. The two units in one stylesheet
+ * are a trap the milestone four record leaves open; the arithmetic above is
+ * in the application's rem and the query is in the pixels it comes to, so
+ * neither number has to be read twice.
+ *
+ * Measured, not asserted: at 1290 px the note column is 780 px and
+ * `.note-article` is exactly 720 px, its 48rem; at 1289 it is 719 and
+ * falling. `ui/e2e/layout.test.mjs` holds both sides of that.
+ */
+@media (min-width: 1290px) {
+  .shell {
+    grid-template-columns: 16rem minmax(0, 1fr) 18rem;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "top top top"
+      "nav note side";
+  }
+
+  .shell .side {
+    border-top: 0;
+    border-right: 0;
+    border-left: 1px solid var(--line);
+  }
 }
 
 /*
