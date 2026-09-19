@@ -48,8 +48,21 @@ part of it a human would also read.
 ```
 make build      # the UI bundle and the static ./mdn binary
 make extension  # the browser extension, into extension/dist, and a zip
-make install    # copies ./mdn to ~/.local/bin/mdn (PREFIX=... to change)
+make install    # copies ./mdn to /usr/bin/mdn; needs root (PREFIX=... to change)
 ```
+
+`make install` installs system-wide — `/usr/bin/mdn`, the path
+`contrib/mdn.service` runs and the path the `.deb` uses — so it wants
+`sudo make install`. To try it without root, or to keep a checkout's build out
+of the way of an installed one, give it a prefix of your own:
+
+```
+make install PREFIX=$PWD/.scratch   # ./.scratch/bin/mdn
+make install PREFIX=$HOME/.local    # ~/.local/bin/mdn, the old default
+```
+
+Under any prefix but `/usr`, `contrib/mdn.service` needs a drop-in pointing
+`ExecStart` at the binary you installed; the unit's header has the three lines.
 
 The UI is built into the binary, so `make build` builds both halves; there is
 no separate step to remember. The version the binary reports comes from

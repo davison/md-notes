@@ -120,7 +120,7 @@ of the notes root, is refused at startup. `tailnet_host` is the one extra `Host`
 name the daemon answers to, for requests a `tailscale serve` proxy forwards to the
 loopback port; it is empty by default, and everything under it must authenticate.
 See [Reaching the daemon over the tailnet](#reaching-the-daemon-over-the-tailnet).
-`contrib/mdn.service` is a systemd user unit that runs `mdn serve`.
+`contrib/mdn.service` is a systemd user unit that runs `/usr/bin/mdn serve`, which is where both `make install` and the `.deb` put the binary; a per-user install points it elsewhere with a drop-in, as the unit's own header describes.
 
 ripgrep (`rg`) must be on `PATH` at runtime. It builds the navigator's file listing,
 runs search, and decides which files the tag collector reads — which is how
