@@ -16,10 +16,11 @@ navigator and the search-and-tags pane are tabs of a drawer. Zoomed out, which
 is the first thing a reader does on a panel this slow, it crosses into [the
 two-column layout](introduction.md#in-a-narrower-window) — the navigator with
 the search pane under it, and the note taking every pixel the navigator does
-not — and only a zoom of about 70% or less takes it past 1290 pixels into the
-three-pane one. The figures are
-arithmetic from the panel, not a reading taken off the device — see [what has
-not been checked](#what-has-been-checked-and-what-has-not) — but nothing here
+not. Past 1290 pixels, into the three-pane layout, takes a zoom of about 72%
+or less in landscape and about 54% or less in portrait, those being 936 and
+702 pixels divided by 1290. The figures are arithmetic from the panel, not a
+reading taken off the device — see
+[what has not been checked](#what-has-been-checked-and-what-has-not) — but nothing here
 depends on them: the tap targets follow the pointer at any width, and the
 layout follows the width whatever it turns out to be.
 

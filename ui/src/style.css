@@ -664,7 +664,11 @@ code {
  * why `60rem` below is 960 px and not 900. The two units in one stylesheet
  * are a trap the milestone four record leaves open; the arithmetic above is
  * in the application's rem and the query is in the pixels it comes to, so
- * neither number has to be read twice.
+ * neither number has to be read twice. One consequence of the two units:
+ * a reader whose browser default font is large enough moves `60rem` past
+ * 1290 and matches both queries at once — the narrow block wins on source
+ * order and they get the drawer, which is the right answer at that text
+ * size rather than a broken grid.
  *
  * Measured, not asserted: at 1290 px the note column is 780 px and
  * `.note-article` is exactly 720 px, its 48rem; at 1289 it is 719 and
