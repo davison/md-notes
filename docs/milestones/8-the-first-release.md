@@ -12,7 +12,8 @@ operator on 2026-09-19 and published by them at 18:11:59Z.
 
 Independent QA ran against the published artefacts rather than a working tree and found
 M8-R1, M8-R3, M8-R4, M8-R6, M8-R7, M8-R9 and M8-R10 satisfied, M8-R5 **not** satisfied on
-two false claims in `CONTRIBUTING.md`, and M8-R8 untestable until this record merges
+two false claims in `CONTRIBUTING.md`'s release section and a third, smaller one beside
+them, and M8-R8 untestable until this record merges
 ([#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141)).
 M8-R2 was struck before the release and carries no verdict; M8-R11 was added after it and
 has its own task still open. Both of M8-R5's claims are corrected in the pull request
@@ -35,7 +36,9 @@ the release workflow went first and the channels hung off its `release: publishe
 event. The milestone grew three requirements after it opened — M8-R9 (dependencies
 current and scanned), M8-R10 (the middle-width layout and themed scrollbars) and M8-R11
 (`make install` only installs) — and lost one: M8-R2, the Chrome Web Store, was struck
-four hours before the tag.
+nine minutes before the tag. The gate resolved at 17:56:01Z, the strike was recorded at
+17:57:03Z, and the annotated `v0.1.0` tag is dated 18:06:03Z. Four hours before the tag
+the store item's id was being written down and the channel was still alive.
 
 What a stranger can do now that they could not before: install the daemon with
 `paru -S md-notes-bin` on Arch or `apt install ./md-notes_0.1.0_amd64.deb` on Debian and
@@ -200,12 +203,12 @@ tests, the extension's suite 3 suites and 28 tests.
 | M8-R1 | A versioned release from a tag: CI on the commit, both static binaries, the extension zip, `SHA256SUMS`, one version checked in three places, and channels on `release: published` re-runnable from the Actions page | The tag is the only version; the manifest carries no literal and `relcheck` refuses a mismatch; `make release` builds locally what the workflow builds; the Release is drafted for a person to publish, which is what makes the channel event fire at all ([#134](https://github.com/davison/md-notes/issues/134#issuecomment-5734230707)) | [Satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — all six assets downloaded, `sha256sum -c` 3/3, `mdn version` `v0.1.0`, the arm64 binary read through its build metadata (`GOARCH=arm64`, `CGO_ENABLED=0`, `-trimpath`), `relcheck` made to fail on a forced mismatch, the `publish-deb` re-run exercised, and the release zip loaded unpacked into Chromium with both clip actions writing real notes |
 | M8-R2 | The extension on the Chrome Web Store | **Struck** ([#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744125602)). Nothing delivered; the reasoning is the gate resolution on [#135](https://github.com/davison/md-notes/issues/135#issuecomment-5744118645) | No verdict — the requirement was struck before QA ran |
 | M8-R3 | The Arch User Repository: a named package, ripgrep, the unit, the licence, namcap clean, `PKGBUILD` in this repository, pushed by a workflow, verified from the published package | `md-notes-bin`, prebuilt, rendered from the release's own checksums and verified in a container before the push ([#136](https://github.com/davison/md-notes/issues/136#issuecomment-5734587464)) | [Satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141), with one thing the environment forbade — QA cloned the AUR repository, found the pushed `PKGBUILD` and `.SRCINFO` **byte-identical** to a local render, built it with `makepkg`, and ran `namcap`, `pacman -U`, the unit and `pacman -R` in a container. An AUR helper needs root, which QA may not use; `makepkg` plus the `pacman -U` the helper itself ends with is as close as the host allows |
-| M8-R4 | A `.deb` for amd64 and arm64 from the same version source, the three files, `Depends: ripgrep`, lintian clean, uploaded on release | nfpm 2.47.0 pinned and checksum-checked, one config for both architectures, three lintian findings fixed and one overridden with its justification installed in the package ([#137](https://github.com/davison/md-notes/issues/137#issuecomment-5734675114)) | [Satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — installed in `debian:stable` and `ubuntu:24.04`, ripgrep pulled in, `systemd-analyze --user verify` exit 0, lintian exit 0 on both architectures on both distributions, `apt remove` leaving none of the 18 paths, and the packaged binary byte-identical to the release asset |
-| M8-R5 | A contributing guide covering build, test, the browser suites, the commit convention, the CodeCrew flow, how to report a bug, and how a release is cut and what publishes after the tag | Nine sections, every command run before it was written ([#138](https://github.com/davison/md-notes/issues/138#issuecomment-5734490063)) | **[Not satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141)** — every command still runs as written and all four documented failure modes reproduce, but two claims had been overtaken: the release section named the struck Chrome Web Store as one of three channels and said none had published when two had, and `make e2e` was given as 54 tests where it is 61 ([#138](https://github.com/davison/md-notes/issues/138#issuecomment-5744398417)). Both are corrected in the pull request carrying this record, on the coordinator's disposition ([#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744425314)); a superseding verdict is owed after it merges |
+| M8-R4 | A `.deb` for amd64 and arm64 from the same version source, the three files, `Depends: ripgrep`, lintian clean, uploaded on release | nfpm 2.47.0 pinned and checksum-checked, one config for both architectures, and three lintian findings dealt with — two fixed, one overridden with its justification installed in the package ([#137](https://github.com/davison/md-notes/issues/137#issuecomment-5734675114), as corrected at [#137](https://github.com/davison/md-notes/issues/137#issuecomment-5744563625)) | [Satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — installed in `debian:stable` and `ubuntu:24.04`, ripgrep pulled in, `systemd-analyze --user verify` exit 0, lintian exit 0 on both architectures on both distributions, `apt remove` leaving none of the 18 paths, and the packaged binary byte-identical to the release asset |
+| M8-R5 | A contributing guide covering build, test, the browser suites, the commit convention, the CodeCrew flow, how to report a bug, and how a release is cut and what publishes after the tag | Nine sections, every command run before it was written ([#138](https://github.com/davison/md-notes/issues/138#issuecomment-5734490063)) | **[Not satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141)** — every command still runs as written and all four documented failure modes reproduce, but two claims in its release section had been overtaken — it named the struck Chrome Web Store as one of three channels and said none had published when two had — and a third, smaller one beside them: `make e2e` was given as 54 tests where it is 61 ([#138](https://github.com/davison/md-notes/issues/138#issuecomment-5744398417)). Both are corrected in the pull request carrying this record, on the coordinator's disposition ([#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744425314)); a superseding verdict is owed after it merges |
 | M8-R6 | Claims and confinement before strangers run it: no forged scroll target, a throttle comment that is true, a README that names the headers | The forgery needed `data-line`, not the class the capture named, so the scrub takes both before the sanitiser runs; the throttle comment was narrowed rather than the code serialised, because serialising converts a burst into a backlog ([#139](https://github.com/davison/md-notes/issues/139#issuecomment-5733355532)) | [Satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — thirteen decoy spellings against the **downloaded release binary**, including the entity and hex forms, upper case, single quotes and a self-closing tag, all stripped while the renderer's own markers survive; the six proxy headers in the README match `proxyMarkers` in order |
 | M8-R7 | A watch failure reported by its cause in the log, the status event and the notice, with the introduction naming the third cause | Three scalars on a comparable `Coverage` rather than a per-directory list, and the kernel limit named in the negative because the wrong remedy is what the old line gave ([#140](https://github.com/davison/md-notes/issues/140#issuecomment-5733373364)) | [Satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — a mode-`000` subdirectory under the downloaded release binary, seen through all three surfaces at once: the log line with no `sysctl` in it, `"failed":0,"refused":1,"reason":"permission denied"` on the event stream, and the notice in Chromium, with the negative asserted too |
 | M8-R8 | Documentation and record: the README's installation section, the extension and sync pages, the roadmap row, and this record | This task; the pull request carrying this record is what delivers it | [Untestable at the verdict](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — QA graded it against `main` before this task had a pull request, where none of it exists. A superseding verdict is owed once it merges. The two things QA named for whoever wrote it — `docs/releasing.md`'s store row and its four-asset table — are both done |
-| M8-R9 | No reachable known vulnerability, every direct dependency current or held back with a reason, lockfiles updated, scanners in CI | The vulnerable module was taken to its current release rather than to the first fixed one; chroma alone is held, with fifteen lines in `go.mod` saying which seven token types v2.27.0 stops styling ([#147](https://github.com/davison/md-notes/issues/147#issuecomment-5734015503)) | [Satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — `make vuln` exit 0 on the tagged tree, and the **published arm64 binary's own build metadata** records `golang.org/x/net v0.59.0`, so the artefact on the page is the scanned one; the release run's `check` job shows the scan step succeeding |
+| M8-R9 | No reachable known vulnerability, every direct dependency current or held back with a reason, lockfiles updated, scanners in CI | The vulnerable module was taken to its current release rather than to the first fixed one; chroma alone is held, with a ten-line comment in `go.mod` saying which seven token types v2.27.0 stops styling ([#147](https://github.com/davison/md-notes/issues/147#issuecomment-5734015503)) | [Satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — `make vuln` exit 0 on the tagged tree, and the **published arm64 binary's own build metadata** records `golang.org/x/net v0.59.0`, so the artefact on the page is the scanned one; the release run's `check` job shows the scan step succeeding |
 | M8-R10 | The side pane under the navigator between the drawer breakpoint and the three-column width, the reading width kept, and thin themed scrollbars in both schemes and under the e-ink override | The threshold is 1290 px, computed from the stylesheet's own widths and confirmed either side of it; the scrollbar colours were chosen against WCAG 1.4.11 rather than by eye ([#158](https://github.com/davison/md-notes/issues/158#issuecomment-5742041075), [#158](https://github.com/davison/md-notes/issues/158#issuecomment-5742043518)) | [Satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — measured against the release binary's own embedded UI, walking the viewport, and with Chromium launched **without** `--hide-scrollbars`, which the shipped suite cannot do for itself; the recorded table reproduces to the pixel, and the scrollbar properties compute on `.cm-scroller` in all four states including a coarse pointer |
 | M8-R11 | `make install` only installs, and refuses when what it would install is not built; `make clean` only cleans | Added after the release, on the operator's first `sudo make install` of the v0.1.0 tree ([#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744342213)) | No verdict in this pass by design; task [#164](https://github.com/davison/md-notes/issues/164) is open and gets its own when its pull request merges |
 
@@ -406,11 +409,12 @@ independently by downloading the same tarball and the same `checksums.txt`.
 
 Alongside it, the control fields and the lintian handling
 ([#137](https://github.com/davison/md-notes/issues/137#issuecomment-5734674955),
-[#137](https://github.com/davison/md-notes/issues/137#issuecomment-5734675114)): three
-findings fixed — a changelog and a manual page written rather than waved away — and one,
-`statically-linked-binary`, overridden **with its justification installed in the package**
-at `/usr/share/lintian/overrides/md-notes`, so anyone who runs lintian on it reads the
-reason in the same output as the tag.
+[#137](https://github.com/davison/md-notes/issues/137#issuecomment-5734675114)). The
+first run raised three tags. **Two were fixed** rather than waved away — a changelog and
+a manual page were written — and the third, `statically-linked-binary`, was **overridden
+with its justification installed in the package** at
+`/usr/share/lintian/overrides/md-notes`, so anyone who runs lintian on it reads the reason
+in the same output as the tag.
 
 ### chroma is held at v2.2.0, and the hold-back is the requirement's own provision
 
@@ -566,7 +570,8 @@ reference announcing its retirement for October 2026. Doing it later would have 
 going back to the operator for a publisher ID after they had finished with the dashboard,
 and the gate asking for four other values was still open
 ([#135](https://github.com/davison/md-notes/issues/135#issuecomment-5736561442)). The
-migration was the right call on its own terms and bought nothing in the end, which is what
+recorded reason is that this was the cheapest the change would ever be, not that the
+channel would survive to use it; in the end nothing ran against either API, which is what
 a withdrawn channel does to the work under it.
 
 ## Deviations and narrowings
@@ -656,6 +661,38 @@ re-review of the delta rather than a fresh read.
 [PR #151](https://github.com/davison/md-notes/pull/151), the store work, was reviewed
 twice and closed unmerged; its second review is the one that found the V1 API's
 retirement, which produced a migration that was then withdrawn with the channel.
+
+## Corrections to the record itself
+
+Three numbers in the sources this record synthesises are wrong, and a record that
+repeats them seals them. Each is corrected at its source rather than quietly restated
+here.
+
+**The lintian count.** The decision on #137 headlines "three fixed, one overridden", and
+its own *Fixed, not justified* section lists two — the changelog and the manual page —
+with `statically-linked-binary` as the override. Three tags, two fixed, one overridden.
+Found by the review of this record and annotated on the decision rather than edited into
+it ([#137](https://github.com/davison/md-notes/issues/137#issuecomment-5744563625)); the
+first draft of this record repeated the headline and named two in the same sentence.
+
+**The length of the chroma hold-back comment.** QA's verdict describes it as fifteen
+lines ([#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141));
+the comment above `github.com/alecthomas/chroma/v2 v2.2.0` in `go.mod` is ten, and has
+been since [PR #148](https://github.com/davison/md-notes/pull/148) merged — counted at
+[`86e1c57`](https://github.com/davison/md-notes/commit/86e1c57), at the tag and on `main`.
+Everything else in that verdict's sentence, the seven token types included, is right. This
+record carries the counted figure.
+
+**`SHA256SUMS` covers three files, not four.** Corrected at both places that said
+otherwise, and set out under [Deviations and narrowings](#deviations-and-narrowings)
+([#141](https://github.com/davison/md-notes/issues/141#issuecomment-5744380512),
+[#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744388946)).
+
+A fourth correction belongs to the work rather than to the record, and is under
+[Decisions](#the-scroll-anchor-is-confined-by-scrubbing-raw-html-not-by-renaming-the-classes):
+the first version of the scroll-anchor decision claimed a confinement the code did not
+have, and was corrected on the task rather than edited
+([#139](https://github.com/davison/md-notes/issues/139#issuecomment-5733775405)).
 
 ## Captures adopted, and captures raised
 
