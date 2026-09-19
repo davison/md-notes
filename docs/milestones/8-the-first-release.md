@@ -584,11 +584,13 @@ and then takes both `node_modules` trees
 
 **The trade-off is an asymmetry in time.** `clean` no longer returns the tree to what
 `git clone` gives, so "clean and the bug goes away" does not cover a half-installed
-dependency tree. In exchange `clean` stays seconds and safe in the edit loop, where
-`clean && check` is the reflex: folding `node_modules` in would make the next `make check`
-re-run `pnpm install` for both workspaces, which on a bad network is minutes and offline
-is a failure. That is the line GNU's own convention draws between the two targets, and it
-is why the requirement asked for the question to be decided rather than assumed.
+dependency tree. In exchange `clean` stays a few milliseconds and safe in the edit loop,
+where `clean && check` is the reflex: folding `node_modules` in would make the next
+`make check` re-run `pnpm install` for both workspaces, which on a bad network is minutes
+and offline is a failure. Seconds to rebuild `ui/dist` against minutes and a network to
+rebuild `node_modules` is the asymmetry, and it is the line GNU's own convention draws
+between the two targets — which is why the requirement asked for the question to be
+decided rather than assumed.
 
 ### The store decisions, kept because they cost something to learn
 
