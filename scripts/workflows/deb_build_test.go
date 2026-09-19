@@ -616,19 +616,7 @@ func execStart(unit string) string {
 // pair, so a change to either side without the other fails here rather than at
 // `systemctl --user start mdn` on a stranger's machine.
 func TestTheInstallPrefixAndTheUnitAgree(t *testing.T) {
-	makefile, err := os.ReadFile(filepath.Join(repoRoot, "Makefile"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	prefix := ""
-	for _, line := range strings.Split(string(makefile), "\n") {
-		if rest, ok := strings.CutPrefix(line, "PREFIX ?="); ok {
-			prefix = strings.TrimSpace(rest)
-		}
-	}
-	if prefix == "" {
-		t.Fatal("the Makefile declares no `PREFIX ?=` default; `make install` and contrib/mdn.service have to agree on one, and this is half of it")
-	}
+	prefix := makefilePrefix(t)
 
 	unit, err := os.ReadFile(filepath.Join(repoRoot, "contrib", "mdn.service"))
 	if err != nil {
@@ -641,7 +629,7 @@ func TestTheInstallPrefixAndTheUnitAgree(t *testing.T) {
 	// The path, without whatever arguments follow it.
 	path, _, _ := strings.Cut(strings.TrimPrefix(line, "ExecStart="), " ")
 
-	// `make install` runs `install -Dm755 mdn $(PREFIX)/bin/mdn`.
+	// `make install` runs `install -Dm755 mdn $(DESTDIR)$(PREFIX)/bin/mdn`.
 	if want := prefix + "/bin/mdn"; path != want {
 		t.Errorf("contrib/mdn.service runs %q but `make install` puts the binary at %q (PREFIX ?= %s).\n"+
 			"These are the two strings the gate resolution on davison/md-notes#137 made equal; whichever one moved, the other has to move with it — or a from-source install gets a unit that cannot start it.",
