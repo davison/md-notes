@@ -33,11 +33,12 @@ version literal that has to be bumped by hand.
   `extension/public/manifest.json`, the committed one, carries no `version` key
   at all, because a literal there would be a second source and the second
   source is the one nobody remembers to bump.
-- An extension manifest's `version` takes only one to four dot-separated
-  integers, so the manifest carries the tag normalised: `v0.1.0` becomes
-  `0.1.0`. Anything that is not a clean release tag — an untagged build, a
-  `-dirty` tree, a `v0.1.0-3-gabc1234` describe string — becomes `0.0.0`, which
-  loads and is obviously not a release.
+- An extension manifest's `version` is Chromium's own rule, not a store's:
+  *"Required value 'version' is missing or invalid. It must be between 1-4
+  dot-separated integers each between 0 and 65536."* So the manifest carries the
+  tag normalised: `v0.1.0` becomes `0.1.0`. Anything that is not a clean release
+  tag — an untagged build, a `-dirty` tree, a `v0.1.0-3-gabc1234` describe
+  string — becomes `0.0.0`, which loads and is obviously not a release.
 - `scripts/relcheck` then refuses the release if the tag, the binary and the
   manifest do not all say the same thing. It runs inside `make release`, before
   the checksums are written, so a broken version chain fails the build rather
