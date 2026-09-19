@@ -99,7 +99,11 @@ func TestTheVersionAndTheChecksumsAreSubstituted(t *testing.T) {
 	license := filepath.Join(dir, "LICENSE")
 	write(t, license, "MIT, as it happens\n")
 	unit := filepath.Join(dir, "mdn.service")
-	write(t, unit, "[Service]\nExecStart=%h/.local/bin/mdn serve\n")
+	// The shape contrib/mdn.service has since the gate on davison/md-notes#137
+	// resolved: the packaged path, installed verbatim. All this test does with
+	// it is hash it, but a fixture that still carried the old ~/.local/bin line
+	// would read as though something here still rewrote it.
+	write(t, unit, "[Service]\nExecStart=/usr/bin/mdn serve\n")
 	out := filepath.Join(dir, "out")
 
 	if err := run([]string{
