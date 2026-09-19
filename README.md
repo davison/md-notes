@@ -85,7 +85,7 @@ make extension  # builds the browser extension to extension/dist and a zip
 make check      # vet, typecheck, tests, build
 make e2e        # browser checks for the UI, in headless Chromium
 make vuln       # scans dependencies for published vulnerabilities
-make install    # copies ./mdn to ~/.local/bin/mdn (PREFIX=... to change)
+make install    # copies ./mdn to /usr/bin/mdn; needs root (PREFIX=... to change)
 make release    # everything a release publishes, into dist/ (VERSION=v0.1.0)
 ```
 
@@ -107,8 +107,13 @@ check`, and it runs as its own CI job. The extension's own end-to-end
 suites (`pnpm --dir extension e2e`) share the same Playwright installation
 and additionally need `make extension`.
 
-The commands below assume `~/.local/bin` is on your PATH; otherwise run
-`./mdn` from the repository.
+`make install` installs system-wide, so it wants `sudo make install`, and it
+puts the binary where [contrib/mdn.service](contrib/mdn.service) expects it.
+`make install PREFIX=$HOME/.local` installs for one user instead and needs no
+root; the unit file's header says what that route then needs.
+
+The commands below assume the binary is on your PATH; otherwise run `./mdn`
+from the repository.
 
 ## Running
 
@@ -132,7 +137,9 @@ xdg-open http://localhost:7337/
 ```
 
 `mdn serve --root DIR --port N` overrides the file. To run it under systemd
-as a user service, see [contrib/mdn.service](contrib/mdn.service).
+as a user service, see [contrib/mdn.service](contrib/mdn.service) — the
+package installs that unit for you, and from source it is one `install` and
+`systemctl --user enable --now mdn`.
 
 `mdn token` prints the daemon's bearer token — what a browser extension
 presents to write a clipping — and `mdn token --rotate` replaces it, which
