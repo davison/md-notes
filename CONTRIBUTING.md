@@ -79,7 +79,7 @@ make install PREFIX=$PWD/dist/scratch   # ./dist/scratch/{bin,lib}/..., gitignor
 make install PREFIX=$HOME/.local        # ~/.local/{bin,lib}/..., the old default
 ```
 
-Both of those write the binary *and* the unit — under a prefix, to
+All three write the binary *and* the unit — under a prefix, to
 `$PREFIX/lib/systemd/user/mdn.service`.
 
 Installing does not start anything: the target's last lines are the
