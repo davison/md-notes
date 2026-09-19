@@ -32,6 +32,27 @@ const LIGHT_BG = "rgb(251, 251, 250)";
 const DARK_BG = "rgb(27, 27, 27)";
 
 /**
+ * The scrollbar tokens of each palette — `--scroll-thumb` then
+ * `--scroll-track`, which is the order `scrollbar-color` takes them in
+ * (davison/md-notes#157). Written out rather than read from the stylesheet,
+ * the same way the two backgrounds above are: a check that computed the
+ * expected value from the same declaration it is checking would pass on
+ * anything.
+ */
+const LIGHT_SCROLLBAR = "rgb(127, 127, 124) rgb(239, 239, 237)";
+const DARK_SCROLLBAR = "rgb(122, 122, 120) rgb(42, 42, 41)";
+
+/**
+ * Every box in the application that scrolls: the navigator, the rendered
+ * note, the search-and-tags pane — which is the box the search results
+ * scroll in — and, in edit mode, CodeMirror's own scroller. The rendered
+ * note and the editor are never in the page at the same time, so they are
+ * measured in two passes.
+ */
+const READING_SCROLLERS = [".nav", ".note-body", ".side"];
+const EDITING_SCROLLERS = [".nav", ".cm-scroller", ".side"];
+
+/**
  * Every control the stylesheet's tap-target block names, by its selector —
  * `ui/src/style.css`, the `@media (pointer: coarse), (hover: none),
  * (max-width: 60rem)` block. Each is a class rather than a position, which is
@@ -344,6 +365,103 @@ describe("the display settings and the tap targets", { skip: blocker ?? false },
         found[group].every((h) => h === 41.25),
         `${group} measured ${JSON.stringify(found[group])}`,
       );
+    }
+  });
+
+  /**
+   * The scrollbars (M8-R10, davison/md-notes#157). The computed properties
+   * rather than a screenshot: the bars the browser draws for itself are
+   * painted outside the DOM, and `scrollbar-width` and `scrollbar-color` are
+   * what the stylesheet has to say to them. The PR carries the pictures.
+   */
+  const scrollbars = (page, selectors) =>
+    page.evaluate(
+      (ss) =>
+        Object.fromEntries(
+          ss.map((s) => {
+            const el = document.querySelector(s);
+            if (!el) return [s, null];
+            const style = getComputedStyle(el);
+            return [s, { width: style.scrollbarWidth, color: style.scrollbarColor }];
+          }),
+        ),
+      selectors,
+    );
+
+  for (const [what, profile, extra, settings, want] of [
+    ["a light device", DESKTOP, { colorScheme: "light" }, {}, LIGHT_SCROLLBAR],
+    ["a dark device", DESKTOP, { colorScheme: "dark" }, {}, DARK_SCROLLBAR],
+    ["a dark device under the light override", DESKTOP, { colorScheme: "dark" }, { light: true }, LIGHT_SCROLLBAR],
+    // Thin, not gone: a stylus needs a bar it can see as much as a mouse
+    // does, and nothing in the tap-target block touches these.
+    ["a coarse pointer", COARSE_DESKTOP, { colorScheme: "light" }, {}, LIGHT_SCROLLBAR],
+  ]) {
+    it(`draws every scrollbar thin and in the palette on ${what}`, async () => {
+      const [page, close] = await context(profile, extra, settings);
+      try {
+        await openNote(page, fixture.url("projects/deep/nested.md"));
+        const reading = await scrollbars(page, READING_SCROLLERS);
+        for (const selector of READING_SCROLLERS) {
+          assert.deepEqual(reading[selector], { width: "thin", color: want }, selector);
+        }
+
+        // The editor's scroller is CodeMirror's own element, which no
+        // application rule names: it takes these from the universal rule
+        // like everything else, and that is the half of #157 that would
+        // otherwise be missed.
+        await page.click(".mode-toggle");
+        await page.waitForSelector(".cm-scroller");
+        const editing = await scrollbars(page, EDITING_SCROLLERS);
+        for (const selector of EDITING_SCROLLERS) {
+          assert.deepEqual(editing[selector], { width: "thin", color: want }, selector);
+        }
+      } finally {
+        await close();
+      }
+    });
+  }
+
+  /**
+   * And the bars are real: `scrollbar-width: thin` and the track colour
+   * where the stylesheet says they are. Headless Chromium is launched with
+   * `--hide-scrollbars`, which is why the suite's own browser cannot be
+   * asked this and one without that argument is opened here.
+   */
+  it("paints a thin scrollbar in the track colour where the note scrolls", async () => {
+    const bare = await playwright.chromium.launch({
+      headless: true,
+      ignoreDefaultArgs: ["--hide-scrollbars"],
+    });
+    try {
+      const ctx = await bare.newContext({ viewport: DESKTOP.viewport, colorScheme: "light" });
+      const page = await ctx.newPage();
+      await openNote(page, fixture.url("projects/deep/nested.md"));
+      const gutter = await page.evaluate(() => {
+        const el = document.querySelector(".note-body");
+        return { taken: el.offsetWidth - el.clientWidth, scrolls: el.scrollHeight > el.clientHeight };
+      });
+      assert.equal(gutter.scrolls, true, "the long fixture note overflows its pane");
+      // Thin, and drawn rather than hidden: a bar of some width is there,
+      // and it is narrower than the 15 px a default Chromium bar takes.
+      assert.ok(gutter.taken > 0 && gutter.taken < 15, `the bar takes ${gutter.taken} px`);
+
+      // The track's own colour, read off the pixels at the pane's edge.
+      const shot = (await page.locator(".note-body").screenshot()).toString("base64");
+      const edge = await page.evaluate(async (src) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${src}`;
+        await img.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx2d = canvas.getContext("2d");
+        ctx2d.drawImage(img, 0, 0);
+        const px = ctx2d.getImageData(img.width - 2, Math.round(img.height / 2), 1, 1).data;
+        return `rgb(${px[0]}, ${px[1]}, ${px[2]})`;
+      }, shot);
+      assert.equal(edge, "rgb(239, 239, 237)", "the pane's right edge is the track colour");
+    } finally {
+      await bare.close();
     }
   });
 });

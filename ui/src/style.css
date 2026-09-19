@@ -24,6 +24,15 @@
   --accent: #2a6db0;
   --pane: #ffffff;
   --error: #b3261e;
+  /* The scrollbars' own two tokens, measured rather than picked: the thumb
+     clears 3:1 — WCAG 1.4.11, non-text contrast — against --pane (4.02),
+     against --bg (3.88) and against its own track (3.49), so the bar is
+     visible on a pane, on the page and against the channel it slides in,
+     including on an e-ink panel that has no backlight to help it. The
+     track is a shade off --pane rather than --line, which is the weight
+     of a divider and too much for a gutter. */
+  --scroll-thumb: #7f7f7c;
+  --scroll-track: #efefed;
   color-scheme: light dark;
 }
 
@@ -43,6 +52,10 @@
     --line: #333331;
     --accent: #2a6db0;
     --pane: #202020;
+    /* The same three ratios in the dark scheme: 3.79 against --pane, 4.00
+       against --bg, 3.34 against the track. */
+    --scroll-thumb: #7a7a78;
+    --scroll-track: #2a2a29;
   }
 }
 
@@ -57,8 +70,31 @@
   color-scheme: light;
 }
 
+/*
+ * Every scrollbar in the application, in one place: the navigator, the note
+ * body, the search-and-tags pane, the drawer, the dialogs and CodeMirror's
+ * own `.cm-scroller`, none of which has to name a scrollbar of its own
+ * (davison/md-notes#157). `thin` narrows the bars; nothing here hides them,
+ * on a coarse pointer or anywhere else — a stylus needs a bar it can see as
+ * much as a mouse does — and the light override needs nothing, the two
+ * tokens being palette tokens like the rest.
+ *
+ * On the universal selector rather than on :root, which would be enough if
+ * both properties were inherited: `scrollbar-color` is, `scrollbar-width` is
+ * not — declared on :root alone, Chromium 153 computes `thin` on the root
+ * and `auto` on every pane, which is a full-width bar in the theme's
+ * colours. Measured, not assumed.
+ *
+ * The standard properties alone: Chromium has drawn both since 121, the
+ * extension's `minimum_chrome_version` is 116 and the browsers this runs in
+ * are current, so no `::-webkit-scrollbar` rule is needed — and one added
+ * later would be a deliberate choice, since a webkit rule on an element
+ * makes the browser ignore these two for it.
+ */
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
 }
 
 html,
