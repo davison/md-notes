@@ -13,7 +13,7 @@ on the releases page, reading the notes it generated, and pressing Publish.
 Everything in between follows from the tag — the version the binaries report,
 the version the extension manifest carries, the assets, the notes. Everything
 after follows from the publish: that press is what starts the workflows that
-put the release on the Chrome Web Store, the AUR and a `.deb`.
+put the release on the AUR and add the `.deb`s.
 
 That is the whole procedure. The rest of this page is what happens at each
 step, and how to be sure of it before you push.
@@ -33,11 +33,11 @@ version literal that has to be bumped by hand.
   `extension/public/manifest.json`, the committed one, carries no `version` key
   at all, because a literal there would be a second source and the second
   source is the one nobody remembers to bump.
-- The Chrome Web Store takes only one to four dot-separated integers, so the
-  manifest carries the tag normalised: `v0.1.0` becomes `0.1.0`. Anything that
-  is not a clean release tag — an untagged build, a `-dirty` tree, a
-  `v0.1.0-3-gabc1234` describe string — becomes `0.0.0`, which loads and is
-  obviously not a release.
+- An extension manifest's `version` takes only one to four dot-separated
+  integers, so the manifest carries the tag normalised: `v0.1.0` becomes
+  `0.1.0`. Anything that is not a clean release tag — an untagged build, a
+  `-dirty` tree, a `v0.1.0-3-gabc1234` describe string — becomes `0.0.0`, which
+  loads and is obviously not a release.
 - `scripts/relcheck` then refuses the release if the tag, the binary and the
   manifest do not all say the same thing. It runs inside `make release`, before
   the checksums are written, so a broken version chain fails the build rather
@@ -62,14 +62,26 @@ version literal that has to be bumped by hand.
 
 Nothing is published at that point, and nothing downstream has started.
 
-The assets are:
+A published release carries six assets. Four are the release workflow's, and
+are on the draft before anyone sees it; the two `.deb`s are added afterwards by
+`publish-deb.yml`, which runs on the publish:
 
-| asset | what it is |
-| --- | --- |
-| `mdn-<version>-linux-amd64` | the static daemon, x86-64 |
-| `mdn-<version>-linux-arm64` | the static daemon, aarch64 |
-| `mdn-extension-<version>.zip` | the unpacked extension, zipped |
-| `SHA256SUMS` | checksums of the three above |
+| asset | what it is | put there by |
+| --- | --- | --- |
+| `mdn-<version>-linux-amd64` | the static daemon, x86-64 | `release.yml` |
+| `mdn-<version>-linux-arm64` | the static daemon, aarch64 | `release.yml` |
+| `mdn-extension-<version>.zip` | the unpacked extension, zipped | `release.yml` |
+| `SHA256SUMS` | checksums of the three above | `release.yml` |
+| `md-notes_<pkgver>_amd64.deb` | the Debian package, x86-64 | `publish-deb.yml` |
+| `md-notes_<pkgver>_arm64.deb` | the Debian package, arm64 | `publish-deb.yml` |
+
+`SHA256SUMS` covers the three files built beside it and nothing else: the
+`.deb`s do not exist when it is written, and re-writing it afterwards would mean
+a second version of a file people may already have fetched. Each `.deb` carries
+the byte-identical binary from the release it was built for — `publish-deb.yml`
+checks the downloaded binaries against `SHA256SUMS` before nfpm wraps them — so
+the chain of custody runs through that file either way, and the packages'
+own digests are printed in the `publish-deb` run summary.
 
 `<version>` in those names is the tag verbatim, leading `v` and all:
 `mdn-v0.1.0-linux-amd64`, `mdn-extension-v0.1.0.zip`. Only the places that
@@ -109,14 +121,27 @@ workflow file on that event:
 
 | channel | workflow |
 | --- | --- |
-| Chrome Web Store | `.github/workflows/publish-webstore.yml` |
 | Arch User Repository | `.github/workflows/publish-aur.yml` |
 | Debian package | `.github/workflows/publish-deb.yml` |
 
-One file each, rather than one workflow with three jobs, so a channel that
-fails — a store review, an expired deploy key — can be re-run on its own from
-the Actions page against the same release, without cutting another tag or
-republishing anything.
+One file each, rather than one workflow with two jobs, so a channel that fails —
+an expired deploy key, a container image that has moved — can be re-run on its
+own from the Actions page against the same release, without cutting another tag
+or republishing anything.
+
+There were to have been three. The Chrome Web Store channel was withdrawn before
+the first release — the reasoning is on
+[#135](https://github.com/davison/md-notes/issues/135#issuecomment-5744118645) —
+and the extension is distributed as the release's own
+`mdn-extension-<version>.zip` instead, loaded unpacked. Nothing publishes it
+anywhere else.
+
+`publish-deb.yml` puts its two packages on the release with
+`gh release upload --clobber`, so a re-run replaces what the previous attempt
+uploaded rather than failing on a name that is already there. `--clobber`
+deletes the existing asset *before* it uploads the new one, so an upload that
+fails half way leaves neither: a re-run of the channel is the recovery, and
+there is nothing else to undo.
 
 ## Proving it before you push
 
@@ -157,8 +182,10 @@ existing.
 
 `gh release create` has no update mode — no `--clobber`, nothing — and a tag
 that already has a *published* Release is refused. What it does when a *draft*
-already stands under that tag is not established here: a draft holds no tag
-ref, so it may well leave a second draft rather than refuse. Either way the
+already stands under that tag is still not established: the first release did
+not need a re-run, so nothing has exercised it (see
+[What the first release showed](#what-the-first-release-showed)). A draft holds
+no tag ref, so it may well leave a second draft rather than refuse. Either way the
 move is the same, and it is the reason this is written as an instruction rather
 than a prediction: delete the draft first, from the releases page or with
 `gh release delete <tag>`, and only then re-run from the Actions page. Skip
@@ -179,20 +206,49 @@ there. Delete the Release only, re-run, and publish the new draft. If a channel
 workflow is what failed, do not touch the Release at all — re-run that channel's
 workflow from the Actions page, which is why each has a file of its own.
 
-## To settle at the first release
+## What the first release showed
 
-Two things on this page are read from `gh`'s documentation rather than measured,
-because measuring them means creating a real Release. The first release is the
-moment to look, and to correct this page in the same breath:
+[v0.1.0](https://github.com/davison/md-notes/releases/tag/v0.1.0) was tagged on
+2026-09-19. The tag's run
+([35460122576](https://github.com/davison/md-notes/actions/runs/35460122576))
+drafted the Release; the operator read the notes and published it at 18:11:59Z.
+What that settled, and what it did not:
 
-- **A re-run with a draft standing.** Does `gh release create` refuse, or does a
-  second draft appear under the same tag? The instruction above is safe under
-  either, but the sentence should say which.
-- **A draft's asset URLs before publication.** The published form is
-  `https://github.com/davison/md-notes/releases/download/<tag>/<asset>`, built
-  from the tag and the asset name; what a draft serves in the meantime, and
-  whether anything but the page's own links changes at the publish, was not
-  observed. The channel workflows read those URLs.
+**Settled.**
+
+- **The two acts work as written.** The publish fired `release: published`, and
+  both channel workflows started two seconds later —
+  [publish-aur](https://github.com/davison/md-notes/actions/runs/35460432264)
+  and
+  [publish-deb](https://github.com/davison/md-notes/actions/runs/35460432286).
+  A person pressing Publish is what the design needs, and it is what happened.
+- **The assets survive the publish.** All four the workflow attached to the
+  draft are on the published release, and the two `.deb`s joined them from the
+  channel run.
+- **The published URL form is the one written above.** `makepkg` inside
+  publish-aur's container fetched
+  `https://github.com/davison/md-notes/releases/download/v0.1.0/mdn-v0.1.0-linux-amd64`
+  from the PKGBUILD's `source_x86_64` and matched it against the checksum
+  `SHA256SUMS` carried, so the form is measured rather than inferred.
+- **A channel re-runs on its own.** `publish-deb` succeeded on the publish and
+  was then re-run against the same published release, deliberately rather than
+  in recovery; the second attempt succeeded too, re-uploading both packages over
+  the first attempt's. That is the re-run M8-R1 asks for, and it is what
+  `--clobber` is there for.
+- **The generated notes need a previous tag to be short.** With none, GitHub
+  generated notes listing every pull request in the repository's history. That
+  is one-off: the next release's notes span one tag to the next.
+
+**Still not settled.** Both of these need a mistake, or a deliberate rehearsal,
+that the first release did not supply:
+
+- **A re-run with a draft standing.** `gh release create` ran once. Whether it
+  refuses or leaves a second draft under the same tag is still unmeasured, and
+  the instruction above is still written to be safe under either.
+- **A draft's asset URLs before publication.** The draft stood for about three
+  minutes and nobody fetched an asset from it, so what a draft serves is still
+  unobserved. Nothing depends on it: no channel workflow
+  runs before the publish.
 
 ## Versions
 

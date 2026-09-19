@@ -292,6 +292,10 @@ URLs, shared to from the phone's share sheet, which the daemon turns into
 proper clips when the folder next syncs to a machine running it. That is a
 later milestone; today clipping is the browser extension's job, and the
 extension runs in a desktop browser ([The browser extension](extension.md)).
+It is not in any store: download `mdn-extension-<tag>.zip` from
+[the release page](https://github.com/davison/md-notes/releases/latest), unzip
+it into a folder of its own, and **Load unpacked** that folder — or build it
+from the repository, which is the same tree.
 That browser need not be on the daemon's own machine: point the extension's
 daemon URL at the `tailnet_host` name and a clip taken on another tailnet node
 lands in the notes root's `clips/`, and syncs on from there like any other
