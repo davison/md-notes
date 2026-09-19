@@ -637,8 +637,9 @@ that.
 
 ## The web UI
 
-A Preact application, three panes per root on a wide screen and a note with a
-drawer on a narrow one — see [On a phone](#on-a-phone) below. The browser tab names
+A Preact application, three panes per root on a wide screen, the same three in two
+columns on a narrower window — see [In a narrower window](#in-a-narrower-window) — and a
+note with a drawer on a phone — see [On a phone](#on-a-phone). The browser tab names
 what is on screen; [The browser tab](#the-browser-tab) below says how. The panes are:
 
 - **Navigator.** The markdown tree, with collapsible directories whose expansion is
@@ -758,6 +759,25 @@ several tabs are open. And a reader who edits their **own** `H1` sees the tab fo
 only when the rendered view next runs: their save does not replace the text under the
 editor, so nothing asks the daemon what the note is called now. Both are recorded in
 [the milestone four record](milestones/4-polish-phone-e-ink-and-the-bundle.md#known-gaps-at-the-boundary).
+
+### In a narrower window
+
+Between 960 and 1290 pixels of window width — a laptop screen, or a desktop window with
+something else beside it — the three panes are two columns: the navigator with the
+**Search & tags** pane underneath it on the left, each scrolling on its own, and the note
+taking everything that is not the navigator. Nothing moves into a drawer and no control
+changes; the side pane is a row rather than a column.
+
+The number is where all three panes fit without any of it coming out of the note: the
+navigator's 16rem, the note's 48rem reading width with the 2rem of padding either side of
+it, and the side pane's 18rem — 1290 pixels at the application's root font. At 1290 and
+above the side pane returns to its own column on the right, which is the layout that was
+there at every width above 960 before, and where the note column was the one that paid:
+at 1100 pixels it left the note 530 pixels of an intended 720.
+
+Between 960 and 1020 pixels the note is still narrower than its reading width, because a
+16rem navigator and 48rem of text do not fit in less than that. It gets every pixel that
+is not the navigator, which is 270 more than it used to have.
 
 ### On a phone
 
@@ -879,12 +899,18 @@ that device end to end, including the two ways to reach your notes from one.
 ### What holds these numbers
 
 The figures in the two sections above are not only documented, they are measured on
-every push. `make e2e` runs a suite of 54 checks under `ui/e2e` in headless Chromium
+every push. `make e2e` runs a suite of 61 checks under `ui/e2e` in headless Chromium
 against the built daemon on a temporary root, and CI runs it as a job of its own: the
 pane rectangles at four phone profiles and a desktop control, the 960-pixel
-breakpoint walked at 959, 960 and 961, the drawer's geometry and all four of its
-close paths, the tag chip, the 40-pixel targets under a coarse pointer with the
-mouse-driven window's density left alone, the light override applied with the
+breakpoint walked at 959, 960 and 961, the 1290-pixel one walked at 1289 and 1290 —
+the side pane under the navigator below it, a column of its own at it, and the note
+exactly at its 720-pixel reading width either way — the drawer's geometry and all four
+of its close paths, the tag chip, the 40-pixel targets under a coarse pointer with the
+mouse-driven window's density left alone, the scrollbars' computed width and colour on
+the navigator, the note, the search pane and the editor's own scroller in both schemes,
+under the light override and under a coarse pointer, with the thin bar itself measured
+in a browser that draws one and its track colour read off the pane's edge pixels, the
+light override applied with the
 application bundle blocked — so nothing but the inline boot script can have applied
 it — the flash suppressed by the setting and by `prefers-reduced-motion`, and a
 second page load that fetches no asset bytes — that last one twice, once on the
