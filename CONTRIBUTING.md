@@ -74,15 +74,19 @@ dpkg's back (`dpkg -V md-notes` then reports it modified) and a later
 your own instead, which is also how to try an install without root:
 
 ```
-make install DESTDIR=$PWD/dist/scratch  # ./dist/scratch/usr/..., gitignored
-make install PREFIX=$PWD/dist/scratch   # ./dist/scratch/bin/mdn, gitignored
-make install PREFIX=$HOME/.local        # ~/.local/bin/mdn, the old default
+make install DESTDIR=$PWD/dist/scratch  # ./dist/scratch/usr/{bin,lib}/..., gitignored
+make install PREFIX=$PWD/dist/scratch   # ./dist/scratch/{bin,lib}/..., gitignored
+make install PREFIX=$HOME/.local        # ~/.local/{bin,lib}/..., the old default
 ```
+
+Both of those write the binary *and* the unit — under a prefix, to
+`$PREFIX/lib/systemd/user/mdn.service`.
 
 Installing does not start anything: the target's last lines are the
 `systemctl --user daemon-reload` and `systemctl --user enable --now mdn` for
 you to run, because `systemctl --user` under `sudo` is root's session and
-cannot enable a user unit for you.
+cannot enable a user unit for you. A `DESTDIR` install says it staged instead,
+and leaves those two lines out: nothing is installed for them to enable.
 
 Under any prefix but `/usr`, `contrib/mdn.service` needs a drop-in pointing
 `ExecStart` at the binary you installed, and under a prefix systemd does not
