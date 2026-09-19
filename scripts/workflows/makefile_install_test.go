@@ -250,10 +250,17 @@ func TestCleanReportsWhatItCannotRemove(t *testing.T) {
 	write("ui/dist/.gitkeep", "", 0o644)
 	write("ui/dist/index.html", "<!doctype html>", 0o644)
 	write("extension/dist/manifest.json", "{}", 0o644)
+	// The zip is inside the locked directory too, and deliberately: it is the
+	// *second* path the recipe attempts, so locking it is what makes a
+	// die-on-first-failure clean visibly different from this one. With only
+	// extension/dist locked — the last path — a recipe that stopped at the
+	// first failure would still have removed everything else, and this test
+	// passed against both implementations (the review of PR #166, finding 1).
+	write("extension/mdn-extension.zip", "PK", 0o644)
 
 	// Stands in for the root-owned leftovers of an older `sudo make`: rm needs
-	// write permission on the *parent*, so a read-only extension/ makes
-	// extension/dist undeletable without being undeletable by root.
+	// write permission on the *parent*, so a read-only extension/ makes both
+	// of those undeletable without being undeletable by root.
 	locked := filepath.Join(tree, "extension")
 	if err := os.Chmod(locked, 0o555); err != nil {
 		t.Fatal(err)
@@ -262,13 +269,34 @@ func TestCleanReportsWhatItCannotRemove(t *testing.T) {
 
 	out, err := runMake(t, tree, "clean")
 	if err == nil {
-		t.Fatalf("`make clean` succeeded with extension/dist undeletable; it has to fail, having said so:\n%s", out)
+		t.Fatalf("`make clean` succeeded with extension/ read-only; it has to fail, having said so:\n%s", out)
 	}
-	if !strings.Contains(out, "extension/dist") {
-		t.Errorf("`make clean` does not name the path it could not remove:\n%s", out)
+	// Both survivors, read out of the report itself rather than found anywhere
+	// in the output: the old recipe echoed `rm -f mdn extension/mdn-extension.zip`
+	// before failing on it, so a plain substring match would take the echo of a
+	// command for the report of its failure.
+	reported := map[string]bool{}
+	lines := strings.Split(out, "\n")
+	for i, line := range lines {
+		if !strings.Contains(line, "could not remove:") {
+			continue
+		}
+		for _, entry := range lines[i+1:] {
+			if !strings.HasPrefix(entry, "  ") || strings.TrimSpace(entry) == "" {
+				break
+			}
+			reported[strings.TrimSpace(entry)] = true
+		}
+	}
+	for _, survivor := range []string{"extension/mdn-extension.zip", "extension/dist"} {
+		if !reported[survivor] {
+			t.Errorf("`make clean` does not report %s among the paths it could not remove:\n%s", survivor, out)
+		}
 	}
 
-	// Everything else went, which is the half a die-on-first clean gets wrong.
+	// Everything else went, which is the half a die-on-first clean gets wrong:
+	// the zip is attempted second, so a recipe that stops there leaves dist/
+	// and ui/dist/index.html behind.
 	for _, gone := range []string{"mdn", "dist", "ui/dist/index.html"} {
 		if _, err := os.Stat(filepath.Join(tree, gone)); !os.IsNotExist(err) {
 			t.Errorf("`make clean` stopped before removing %s", gone)
