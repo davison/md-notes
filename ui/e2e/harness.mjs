@@ -238,6 +238,29 @@ export const COARSE_DESKTOP = { name: "desktop, coarse pointer", viewport: { wid
 /** The narrow breakpoint, in CSS pixels: 60rem against the initial 16 px font. */
 export const BREAKPOINT = 960;
 
+/**
+ * The width at which the three-column layout fits without taking any of it
+ * from the note (davison/md-notes#156): the navigator's 16rem, the note
+ * column at its reading width, and the side pane's 18rem — 86rem against the
+ * application's 15 px root font, so 1290 CSS pixels. Unlike BREAKPOINT this
+ * one is in the stylesheet in pixels, for the reason the rule's comment
+ * gives: the two units do not mean the same thing in a media query.
+ */
+export const THREE_COLUMN = 1290;
+
+/** The rendered note's reading width, `.note-article`'s 48rem at 15 px. */
+export const READING_WIDTH = 720;
+
+/** That, plus the 2rem `.note-body` pads it with either side: the column. */
+export const NOTE_COLUMN = READING_WIDTH + 60;
+
+/**
+ * A window between the drawer breakpoint and THREE_COLUMN — a laptop, or a
+ * desktop window with something else beside it. The height is the desktop
+ * control's, so the only thing that differs is the width.
+ */
+export const MIDDLE = { name: "middle window", viewport: { width: 1100, height: 900 } };
+
 /** The tap-target floor the e-ink task set, in CSS pixels. */
 export const TAP_TARGET = 40;
 
