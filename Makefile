@@ -7,7 +7,15 @@ DIST ?= dist
 HOST_ARCH := $(shell go env GOHOSTARCH)
 
 .PHONY: all build ui ui-deps extension extension-dist extension-deps test vet check e2e vuln release install clean
-PREFIX ?= $(HOME)/.local
+
+# A system-wide install is the default, so that `make install` and the .deb
+# put the binary in the same place and contrib/mdn.service points at one path
+# rather than at whichever route the reader took (davison/md-notes#137).
+# Set rather than left empty: an empty default would make a bare
+# `make install` write to /bin, which is a symlink to /usr/bin on a merged-usr
+# system and a different directory on anything else, and it would leave the
+# unit's ExecStart true only by accident.
+PREFIX ?= /usr
 
 all: build
 
@@ -117,7 +125,13 @@ release: ui extension-deps
 	go run ./scripts/relcheck -version '$(VERSION)' -binary $(DIST)/mdn-$(VERSION)-linux-$(HOST_ARCH) -manifest $(DIST)/mdn-extension-$(VERSION).zip
 	cd $(DIST) && sha256sum mdn-* > SHA256SUMS
 
-## install: copy the binary to $(PREFIX)/bin (default ~/.local/bin)
+## install: copy the binary to $(PREFIX)/bin (default /usr/bin)
+# Needs root at the default prefix: `sudo make install`. It is what
+# contrib/mdn.service expects, and the same path the .deb installs to.
+#
+# PREFIX=$$HOME/.local restores the old per-user install and needs no root;
+# contrib/mdn.service then wants a drop-in pointing ExecStart at it, which its
+# header spells out.
 install: build
 	install -Dm755 mdn $(PREFIX)/bin/mdn
 
