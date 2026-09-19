@@ -123,10 +123,10 @@ red without the tree having changed, and it fails when the network is away. A
 red scan means something was published, not that the build broke.
 
 `make e2e` builds the daemon and drives it through headless Chromium — the
-phone layout, the drawer, the display settings, the tap targets, the asset
-cache, creating and deleting a note, the navigator's two orders, removing a
-root, the installable app and the service worker's cache name: eight suites,
-54 tests. It is CI's second job.
+phone layout, the drawer, the middle-width layout, the display settings and
+the scrollbars, the tap targets, the asset cache, creating and deleting a
+note, the navigator's two orders, removing a root, the installable app and the
+service worker's cache name: eight suites, 61 tests. It is CI's second job.
 
 The extension has a browser suite of its own, which CI does not run, because
 it needs both the extension and the daemon built:
