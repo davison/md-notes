@@ -2,7 +2,7 @@
 
 md-notes is a local service that turns folders of markdown files into a notes
 application in the browser. This page describes what exists and works today, at the
-end of [milestone seven](milestones/7-roots-recency-and-the-installable-app.md): the
+end of [milestone eight](milestones/8-the-first-release.md): the
 daemon and the rendered viewer from
 [milestone one](milestones/1-daemon-and-rendered-viewer.md), the editor from
 [milestone two](milestones/2-editor-autosave-and-live-update.md), the browser half
@@ -10,7 +10,8 @@ from [milestone three](milestones/3-clipper-authentication-and-tailnet.md), the
 polish milestone four put on all three, the create and delete verbs milestone
 five added to them, the tailnet clipping and clipper repairs of
 [milestone six](milestones/6-tailnet-clipping-and-the-m5-backlog.md), and what
-milestone seven did to roots, to the navigator and to installing the app on a phone.
+milestone seven did to roots, to the navigator and to installing the app on a phone,
+all of it now carrying a version number and installable from a package.
 Notes are created, edited and deleted in the app; renaming one is still done with other
 tools.
 
@@ -52,6 +53,25 @@ name ([Roots](#roots)). The navigator's tree, alphanumeric since milestone one, 
 a phone reaching the daemon over the tailnet offers to install it and the installed app
 opens in its own window — and opens with no daemon behind it, saying so rather than
 showing the browser's error page ([Installing the app](#installing-the-app)).
+
+Milestone eight gave all of it a version and a way in.
+[v0.1.0](https://github.com/davison/md-notes/releases/tag/v0.1.0) is cut from a tag,
+and the daemon installs from the Arch User Repository or from a `.deb` rather than out
+of a working copy; the browser extension is a zip on the same release page, loaded
+unpacked, the Chrome Web Store channel having been withdrawn before the first release
+([#135](https://github.com/davison/md-notes/issues/135#issuecomment-5744118645)). The
+[README's installation section](../README.md#installing) has the commands and
+[Cutting a release](releasing.md) the machinery. The same milestone took the things a
+first public release should not carry: a note's own HTML can no longer wear the
+renderer's structural classes or its `data-line` marker, so it cannot plant a decoy
+scroll target ([The web UI](#the-web-ui)); a directory the daemon may not read is
+reported as that rather than as the kernel's watch limit
+([When coverage is limited](#when-coverage-is-limited)); every dependency is on its
+current release or held back for a reason recorded in the file that holds it, with
+`govulncheck` and `pnpm audit` in CI; and between the drawer breakpoint and the width
+the three-column layout needs, the search and tag pane sits under the navigator so the
+note keeps its reading width, with thin scrollbars in the theme's own colours
+throughout ([In a narrower window](#in-a-narrower-window)).
 
 The browser half is a Chromium extension that clips a readable page or a selection
 into the notes root as markdown, and opens a local markdown file in the app instead
@@ -121,8 +141,9 @@ name the daemon answers to, for requests a `tailscale serve` proxy forwards to t
 loopback port; it is empty by default, and everything under it must authenticate.
 See [Reaching the daemon over the tailnet](#reaching-the-daemon-over-the-tailnet).
 `contrib/mdn.service` is a systemd user unit that runs `/usr/bin/mdn serve`, which
-is where both `make install` and the `.deb` put the binary; both install the unit
-itself to `/usr/lib/systemd/user/mdn.service` as well, and leave
+is where `make install`, the `.deb` and the AUR package all put the binary; all
+three install the unit itself to `/usr/lib/systemd/user/mdn.service` as well — the
+two packages install that file verbatim — and all three leave
 `systemctl --user enable --now mdn` to you. `make install` copies what
 `make build` already made and refuses if it is not there, so build first; a
 per-user install points the unit elsewhere with a drop-in, as the unit's own

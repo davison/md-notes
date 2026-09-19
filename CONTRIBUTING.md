@@ -284,21 +284,24 @@ silently unstarted.
 
 Publishing emits `release: published`, and each publishing channel is a
 workflow file of its own on that event, so one that fails can be re-run alone
-from the Actions page without cutting another tag. The channels are the
-Chrome Web Store, the Arch User Repository and a `.deb` — they are what the
-current release milestone,
-[#133](https://github.com/davison/md-notes/issues/133), adds, in
-[#135](https://github.com/davison/md-notes/issues/135),
-[#136](https://github.com/davison/md-notes/issues/136) and
-[#137](https://github.com/davison/md-notes/issues/137). Until those land, a
-published Release is the whole of it: the binaries, the extension zip and the
-checksums on the release page.
+from the Actions page without cutting another tag. There are two: the Arch User
+Repository ([#136](https://github.com/davison/md-notes/issues/136)) and the
+`.deb` for amd64 and arm64
+([#137](https://github.com/davison/md-notes/issues/137)), both added by the
+release milestone [#133](https://github.com/davison/md-notes/issues/133). A
+third, the Chrome Web Store, was withdrawn before the first release
+([#135](https://github.com/davison/md-notes/issues/135#issuecomment-5744118645));
+the extension is distributed as the release's own zip, loaded unpacked.
+
+So a published release carries six assets: the two binaries, the extension zip
+and `SHA256SUMS` from the release workflow, and a `.deb` per architecture from
+the channel that runs on the publish.
 
 `make release VERSION=v0.1.0` does locally everything the workflow's build
 step does, so none of this has to be tried for the first time on a real tag.
 [docs/releasing.md](docs/releasing.md) is the full account: where the version
 comes from, what the tag runs, what the assets are called, how to re-run a
-release, and what to check at the first one.
+release, and what the first one showed.
 
 ## Licence
 
