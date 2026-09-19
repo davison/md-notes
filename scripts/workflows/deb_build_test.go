@@ -370,17 +370,18 @@ func TestOnlyAReleaseVersionIsPackaged(t *testing.T) {
 	})
 }
 
-// TestTheStagedUnitRunsThePackagedBinary pins the one line of
-// contrib/mdn.service the package changes, and pins that it is the only one.
+// TestThePackagedUnitIsTheRepositorysUnit: the package ships
+// contrib/mdn.service, byte for byte, and that file runs the binary the
+// package installs.
 //
-// That file runs %h/.local/bin/mdn, which is right for the `make install`
-// route its header documents and wrong for a package, which puts the binary on
-// /usr/bin. Shipped verbatim the unit fails `systemd-analyze verify` even with
-// the package installed — the gate raised on davison/md-notes#137, where the
-// measurement is. If this test fails because contrib/mdn.service gained a
-// second ExecStart or lost its Install section, the package's unit needs
-// looking at, not this assertion.
-func TestTheStagedUnitRunsThePackagedBinary(t *testing.T) {
+// It did not always. The packaging used to rewrite the ExecStart, because the
+// unit ran %h/.local/bin/mdn and a package cannot — the gate raised on
+// davison/md-notes#137. The operator resolved it as option (b): `make install`
+// installs system-wide by default and the unit runs /usr/bin/mdn, so the two
+// routes agree on one path and the packaging has nothing left to change. This
+// test is what keeps that true from the package's side — a byte-for-byte copy
+// is a claim worth checking precisely because it looks like it cannot fail.
+func TestThePackagedUnitIsTheRepositorysUnit(t *testing.T) {
 	invocations, stderr, err := runBuild(t, "v0.1.0", map[string]string{"amd64": "a", "arm64": "b"})
 	if err != nil {
 		t.Fatalf("build.sh failed: %v\n%s", err, stderr)
@@ -394,31 +395,13 @@ func TestTheStagedUnitRunsThePackagedBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(string(staged), "\nExecStart=/usr/bin/mdn serve\n") {
-		t.Errorf("the packaged unit does not run the packaged binary:\n%s", staged)
+	if !bytes.Equal(staged, source) {
+		t.Errorf("the packaged unit is not contrib/mdn.service verbatim:\n--- packaged ---\n%s\n--- contrib ---\n%s", staged, source)
 	}
-
-	// Every other line survives. The unit's hardening, its Restart policy and
-	// its WantedBy are the reason the file is worth deriving from rather than
-	// writing out again here.
-	stagedLines := strings.Split(string(staged), "\n")
-	sourceLines := strings.Split(string(source), "\n")
-	if len(stagedLines) != len(sourceLines) {
-		t.Fatalf("the packaged unit has %d lines and contrib/mdn.service has %d: only ExecStart should differ",
-			len(stagedLines), len(sourceLines))
-	}
-	changed := 0
-	for i := range stagedLines {
-		if stagedLines[i] != sourceLines[i] {
-			changed++
-			if !strings.HasPrefix(sourceLines[i], "ExecStart=") {
-				t.Errorf("line %d differs from contrib/mdn.service and is not the ExecStart:\n  was: %s\n  now: %s",
-					i+1, sourceLines[i], stagedLines[i])
-			}
-		}
-	}
-	if changed != 1 {
-		t.Errorf("%d lines differ from contrib/mdn.service, want exactly 1", changed)
+	// Said separately, because the equality above would be just as happy with
+	// two files that agree on a path the package does not install to.
+	if got := execStart(string(staged)); got != "ExecStart=/usr/bin/mdn serve" {
+		t.Errorf("the packaged unit runs %q, want ExecStart=/usr/bin/mdn serve — the path `make install` and this package both use", got)
 	}
 }
 
@@ -544,51 +527,48 @@ func copyFile(t *testing.T, from, to string) {
 	}
 }
 
-// TestTheStagedUnitKeepsTheRestOfTheExecStartLine. The packaging replaces the
-// path the unit runs, and only the path.
+// TestAUnitThePackageCannotStartIsRefused is the other half, from the
+// repository's side: if contrib/mdn.service ever stops running the path this
+// package installs to, the build stops rather than shipping a unit that
+// cannot start.
 //
-// contrib/mdn.service runs `%h/.local/bin/mdn serve` today and nothing else,
-// so a substitution that rewrote the whole line would look correct for as long
-// as that stayed true — and then, the day the unit gained a flag, would drop
-// it, silently, in the .deb only: the AUR package rewrites the same line by
-// anchoring on the old path and keeping the rest (davison/md-notes#136), so
-// the two channels would start the daemon differently while every test stayed
-// green. That divergence is the thing the gate on davison/md-notes#137 was
-// raised about, so it is worth a test of its own rather than an assertion
-// about the file as it happens to be.
-func TestTheStagedUnitKeepsTheRestOfTheExecStartLine(t *testing.T) {
-	for _, tc := range []struct{ name, unit, want string }{
-		{
-			name: "a flag after the subcommand survives",
-			unit: "ExecStart=%h/.local/bin/mdn serve --port 7337",
-			want: "ExecStart=/usr/bin/mdn serve --port 7337",
-		},
-		{
-			name: "so does more than one, specifier and all",
-			unit: "ExecStart=%h/.local/bin/mdn serve --port 7337 --root %h/notes",
-			want: "ExecStart=/usr/bin/mdn serve --port 7337 --root %h/notes",
-		},
-		{
-			name: "the unit as it stands today",
-			unit: "ExecStart=%h/.local/bin/mdn serve",
-			want: "ExecStart=/usr/bin/mdn serve",
-		},
+// This is the regression the gate on davison/md-notes#137 was raised over,
+// standing the other way round. Under option (a) the packaging rewrote the
+// ExecStart, and the risk was that the rewrite would quietly drop part of the
+// line; under option (b), which the operator chose, the packaging copies the
+// file, and the risk is that the file drifts back to a home-directory path
+// and the copy ships it. A `make install` that changed its default prefix
+// again, or an edit to the unit's header instructions, is exactly how that
+// would happen — and it would fail at `systemctl --user start mdn` on a
+// stranger's machine, which is the worst place to find out.
+func TestAUnitThePackageCannotStartIsRefused(t *testing.T) {
+	for _, tc := range []struct{ name, execStart string }{
+		{"the home-directory path the unit used to carry", "ExecStart=%h/.local/bin/mdn serve"},
+		{"another prefix entirely", "ExecStart=/usr/local/bin/mdn serve"},
+		{"the right path with an argument appended", "ExecStart=/usr/bin/mdn serve --port 7337"},
+		{"no ExecStart at all", "Restart=on-failure"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			unit := "[Unit]\nDescription=mdn\n\n[Service]\n" + tc.unit + "\nRestart=on-failure\n"
-			invocations, stderr, err := runBuildAgainstUnit(t, "v0.1.0",
+			unit := "[Unit]\nDescription=mdn\n\n[Service]\n" + tc.execStart + "\n"
+			invocations, _, err := runBuildAgainstUnit(t, "v0.1.0",
 				map[string]string{"amd64": "a", "arm64": "b"}, unit)
-			if err != nil {
-				t.Fatalf("build.sh failed: %v\n%s", err, stderr)
+			if err == nil {
+				t.Errorf("a unit running %q was packaged, want the build refused: this package installs the binary at /usr/bin/mdn and nothing else starts it", tc.execStart)
 			}
-			staged, err := os.ReadFile(filepath.Join(invocations[0].staging, "mdn.service"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := execStart(string(staged)); got != tc.want {
-				t.Errorf("the packaged unit runs\n  %s\nwant\n  %s\nonly the binary path is the package's to change", got, tc.want)
+			if len(invocations) != 0 {
+				t.Errorf("the build was refused but still packaged %d times", len(invocations))
 			}
 		})
+	}
+
+	// And the unit as the repository holds it goes through.
+	unit, err := os.ReadFile(filepath.Join(repoRoot, "contrib", "mdn.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr, err := runBuildAgainstUnit(t, "v0.1.0",
+		map[string]string{"amd64": "a", "arm64": "b"}, string(unit)); err != nil {
+		t.Fatalf("contrib/mdn.service itself was refused: %v\n%s", err, stderr)
 	}
 }
 

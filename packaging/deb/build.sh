@@ -86,35 +86,26 @@ debian_version() {
 	printf '%s' "${tag#v}"
 }
 
-# stage_unit writes contrib/mdn.service into the staging directory with its
-# ExecStart pointed at the packaged binary.
+# stage_unit puts contrib/mdn.service in the staging directory.
 #
-# contrib/mdn.service runs %h/.local/bin/mdn, which is right for the
-# `make install` route its own header documents and wrong for a package, which
-# puts the binary on /usr/bin and nothing in the user's home. Shipped verbatim
-# the unit fails `systemd-analyze verify` even with the package installed, and
-# `systemctl --user start mdn` fails the same way — measured on the gate raised
-# at davison/md-notes#137. The packaged unit is therefore derived from that
-# file rather than copied from it, and the path is the only difference.
+# Unchanged, byte for byte. It used to be rewritten here: that file ran
+# %h/.local/bin/mdn, which a package cannot, so the packaging substituted the
+# path — the gate raised on davison/md-notes#137. The operator resolved that
+# gate as option (b): `make install` now installs system-wide by default and
+# contrib/mdn.service runs /usr/bin/mdn directly, so there is nothing left to
+# substitute and the package ships the file as the repository holds it. A
+# per-user install points the unit at its own binary with a drop-in, which the
+# unit's header spells out.
 #
-# The path, and not the line. Replacing the whole line would look identical
-# today, when the unit runs `mdn serve` and nothing more, and would drop
-# whatever was added the day a flag appeared — in this package only, because
-# the AUR package rewrites the same line by anchoring on the old path
-# (davison/md-notes#136). The two channels would then start the daemon
-# differently with nothing to say so. The expression here is that one, so the
-# two agree by construction; scripts/workflows/deb_build_test.go holds a unit
-# carrying a flag against it.
+# So the copy is the whole of it, and the check below is that the file really
+# does run the path this package installs to — if contrib/mdn.service ever
+# goes back to a home-directory path, the package would otherwise ship a unit
+# that cannot start, which is exactly what the gate was about.
 stage_unit() {
 	local src="$REPO/contrib/mdn.service" dst="$1"
-	grep -q '^ExecStart=' "$src" || die "$src has no ExecStart= line to rewrite"
-	sed 's|^ExecStart=%h/\.local/bin/mdn |ExecStart=/usr/bin/mdn |' "$src" >"$dst"
-	# A prefix, because everything after the binary is the unit's business. If
-	# contrib/mdn.service ever stops running the binary from ~/.local/bin the
-	# substitution matches nothing, and this is what says so rather than
-	# shipping a unit that points into a home directory.
-	grep -q '^ExecStart=/usr/bin/mdn ' "$dst" ||
-		die "the ExecStart rewrite did not take — is $src still running %h/.local/bin/mdn?"
+	grep -qx 'ExecStart=/usr/bin/mdn serve' "$src" ||
+		die "$src does not run /usr/bin/mdn serve, which is where this package installs the binary"
+	install -m 0644 "$src" "$dst"
 }
 
 # stage_changelog writes the Debian changelog Policy 12.7 asks for.
