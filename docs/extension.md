@@ -5,12 +5,53 @@ It is the browser half of md-notes: it opens local markdown files in the app
 instead of letting the browser render them as plain text, and it clips a web
 page or a selection into the notes root as markdown.
 
-This page covers building it, loading it, the file URL permission, the token,
+This page covers installing it, building it, the file URL permission, the token,
 clipping, and every permission it asks for.
 
-## Building
+## Installing it
 
-The extension is built from the repository, alongside the daemon:
+The extension is not in any store. It ships as an asset on every release —
+`mdn-extension-<tag>.zip`, beside the daemon binaries on
+[the release page](https://github.com/davison/md-notes/releases/latest) — and is
+loaded unpacked from a folder on disk.
+
+Download the zip and unzip it into a folder of its own. It has no top-level
+directory inside it, so unzipping it where you stand scatters a dozen files
+across that directory; `-d` is what keeps them together:
+
+```
+curl -fsSLO https://github.com/davison/md-notes/releases/download/v0.1.0/mdn-extension-v0.1.0.zip
+unzip -d mdn-extension-v0.1.0 mdn-extension-v0.1.0.zip
+```
+
+`SHA256SUMS` on the same page covers that zip, if you want to check it:
+
+```
+curl -fsSLO https://github.com/davison/md-notes/releases/download/v0.1.0/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
+```
+
+Then load the unzipped folder. Brave is Chromium, so the Chrome flow applies
+unchanged:
+
+1. Open `brave://extensions`.
+2. Turn on **Developer mode** (top right).
+3. Click **Load unpacked** and choose the folder you unzipped.
+4. The extension appears as **md-notes**. Pin it to the toolbar if you want
+   the badge visible.
+
+The same steps work in Chrome and Chromium at `chrome://extensions`.
+
+Nothing updates it afterwards: a store listing is what would have brought
+updates, and there is none. A later release is a later zip, unzipped over the
+same folder or into a new one, followed by the reload arrow on the extension's
+card — or **Load unpacked** again if the folder moved. The version the browser
+shows on the card is the release's, stamped into the manifest at build time.
+
+## Building it from source
+
+The developer route, and where the release's zip comes from. The extension is
+built from the repository, alongside the daemon:
 
 ```
 make extension
@@ -19,27 +60,16 @@ make extension
 That produces two things:
 
 - `extension/dist/` — the unpacked extension, which is what you load into a
-  browser during normal use.
+  browser with **Load unpacked**, exactly as above.
 - `extension/mdn-extension.zip` — the same tree zipped, for copying to another
-  machine or uploading.
+  machine. The release's asset is this zip, built by the release workflow and
+  named for the tag.
 
 `make check` typechecks the extension, runs its unit tests and builds it, so a
 broken extension fails CI like anything else.
 
-## Loading it in Brave
-
-Brave is Chromium, so the Chrome flow applies unchanged.
-
-1. Open `brave://extensions`.
-2. Turn on **Developer mode** (top right).
-3. Click **Load unpacked** and choose `extension/dist` from this repository.
-4. The extension appears as **md-notes**. Pin it to the toolbar if you want
-   the badge visible.
-
 Rebuilding (`make extension`) rewrites `extension/dist` in place; press the
 reload arrow on the extension's card afterwards to pick the new build up.
-
-The same steps work in Chrome and Chromium at `chrome://extensions`.
 
 ## Allowing access to file URLs
 
@@ -66,10 +96,9 @@ options**):
 - **Token** — the installation's bearer token, printed by `mdn token`. Paste
   it and save.
 
-> **Not yet.** The extension is loaded unpacked from this repository; it is
-> not in any store. The inbox clipper for URLs shared from a phone is later
-> work and is not here. Everything else on this page works against a daemon
-> built from `main`.
+The inbox clipper for URLs shared from a phone is later work and is not here;
+everything else on this page works today, against a released daemon or one built
+from `main`.
 
 **Test connection** asks the daemon for its roots and says what came back.
 
