@@ -150,6 +150,8 @@ func TestNothingReachesTheAURUntilItHasBeenBuilt(t *testing.T) {
 		{"namcap ./*.pkg.tar.zst", "M8-R3 asks for namcap over the built package"},
 		{"pacman -U", "the built package is installed"},
 		{"mdn version", "the installed binary reports the release's version"},
+		{"cmp -s \"$unit\" \"$unit_source\"", "the package installs the tagged tree's unit verbatim (davison/md-notes#137), so the check is equality with it"},
+		{"systemd-analyze --user verify", "and that systemd accepts the unit it installed"},
 		{"sudo -u builder", "makepkg refuses to run as root, and should"},
 	} {
 		if !strings.Contains(verify, want.fragment) {

@@ -89,8 +89,9 @@ podman run --rm -v "$PWD:/work:ro,Z" -w /work archlinux:latest \
 It builds with `makepkg -s` as a non-root user, diffs `.SRCINFO` against what
 `makepkg --printsrcinfo` writes from the rendered `PKGBUILD`, runs `namcap`
 over both the `PKGBUILD` and the built package and fails on any `E:` line,
-installs the package, checks `mdn version` against the tag and that the unit
-starts `/usr/bin/mdn`, then removes it and checks nothing survived. It
+installs the package, checks `mdn version` against the tag, that the installed
+unit is `contrib/mdn.service` byte for byte and that systemd reads it without
+complaint, then removes it and checks nothing survived. It
 refuses to run outside a container, because installing and removing packages
 on a machine somebody uses is not a test.
 

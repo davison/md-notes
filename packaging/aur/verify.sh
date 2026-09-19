@@ -18,13 +18,15 @@
 # this PKGBUILD — the AUR reads the package's version from .SRCINFO alone, and
 # a stale one shows the wrong version forever; that the package builds; that
 # namcap has nothing to say about either the PKGBUILD or the built package;
-# that installing it puts the release's own binary on PATH, the unit where
-# systemd --user looks for it and the licence where pacman expects it; and that
-# removing it leaves nothing behind.
+# that installing it puts the release's own binary on PATH, the tagged tree's
+# unit — byte for byte, and one systemd reads without complaint — where
+# systemd --user looks for it, and the licence where pacman expects it; and
+# that removing it leaves nothing behind.
 set -euo pipefail
 
 version=${1:?the release tag the package must report, e.g. v0.1.0}
 packaging=${2:-packaging/aur}
+unit_source=${3:-contrib/mdn.service}
 
 # This installs packages, installs the built package and removes it again. In a
 # container that is a clean room; on a real machine it is somebody's system,
@@ -82,23 +84,23 @@ fi
 echo "mdn version: $installed"
 
 unit=/usr/lib/systemd/user/mdn.service
-grep -q '^ExecStart=/usr/bin/mdn serve$' "$unit" ||
-	{ echo "$unit does not start the packaged binary:" >&2; cat "$unit" >&2; exit 1; }
-# The source tree's unit is written for `make install` and its header says to
-# copy the file into ~/.config and put the binary in ~/.local/bin. That header
-# is the first thing `systemctl --user cat mdn` shows, so the package replaces
-# it; this is the check that it did.
-if grep -q 'local/bin' "$unit"; then
-	echo "$unit still tells the reader to install the binary by hand:" >&2
-	cat "$unit" >&2
+# The package installs the unit verbatim (davison/md-notes#137), so the test is
+# equality with the file in the tagged tree — which is what makepkg downloaded
+# and checked the sha256 of, and what this checkout holds. Byte for byte says
+# more than a grep for one line: a header that drifted, a directive dropped in
+# packaging, a stray newline would all show here.
+if ! cmp -s "$unit" "$unit_source"; then
+	echo "$unit is not $unit_source:" >&2
+	diff -u "$unit_source" "$unit" >&2 || true
 	exit 1
 fi
 test -s /usr/share/licenses/md-notes-bin/LICENSE
-# systemd's own reading of the unit, which catches what the greps above cannot:
-# a bad directive, a missing [Install]. In a container the only obstacle is the
-# runtime directory — without XDG_RUNTIME_DIR it fails with "Failed to lookup
-# RuntimeDirectory path" and never looks at the file; with it set, it reads the
-# unit and says nothing.
+# systemd's own reading of the unit. The comparison above says the package did
+# not change the file; this says the file is one systemd accepts — a bad
+# directive, a missing [Install], an ExecStart pointing nowhere. In a container
+# the only obstacle is the runtime directory: without XDG_RUNTIME_DIR it fails
+# with "Failed to lookup RuntimeDirectory path" and never looks at the file;
+# with it set, it reads the unit and says nothing.
 XDG_RUNTIME_DIR=/run systemd-analyze --user verify "$unit"
 pacman -Qi md-notes-bin | grep -E '^(Name|Version|Depends On|Optional Deps|Provides|Conflicts With)'
 

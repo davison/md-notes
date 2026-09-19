@@ -303,22 +303,13 @@ sha256sums_aarch64=('{{.SumARM64}}')
 
 package() {
 	install -Dm755 "$srcdir/md-notes-$pkgver-mdn" "$pkgdir/usr/bin/mdn"
-	# The unit in the source tree is written for ` + "`make install`" + `: it starts the
-	# binary from ~/.local/bin and its header says to copy the file there by
-	# hand. Both are wrong for a package, so the ExecStart is rewritten and the
-	# header replaced — the comments are the first thing
-	# ` + "`systemctl --user cat mdn`" + ` shows.
-	{
-		printf '# Installed by the md-notes-bin package.\n'
-		printf '#   systemctl --user enable --now mdn\n'
-		printf '# The daemon reads ~/.config/mdn/config.yml and needs a notes_root in it.\n'
-		# The range starts at the first line that is not a comment, so what is
-		# dropped is the header block and the blank line after it — a comment
-		# further down, inside a section, is inside the range and survives.
-		sed -e '/^[^#]/,$!d' \
-			-e 's|^ExecStart=%h/\.local/bin/mdn |ExecStart=/usr/bin/mdn |' \
-			"$srcdir/md-notes-$pkgver-mdn.service"
-	} | install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/user/mdn.service"
+	# Verbatim, byte for byte, from the tag: the unit starts /usr/bin/mdn,
+	# which is where this package puts the binary, and its header is written
+	# for the reader who installed the package — including the drop-in for a
+	# local prefix. davison/md-notes#137 settled that; verify.sh compares the
+	# installed file with the one in the tagged tree.
+	install -Dm644 "$srcdir/md-notes-$pkgver-mdn.service" \
+		"$pkgdir/usr/lib/systemd/user/mdn.service"
 	install -Dm644 "$srcdir/md-notes-$pkgver-LICENSE" \
 		"$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
