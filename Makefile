@@ -1,12 +1,13 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 EXTENSION_ZIP := extension/mdn-extension.zip
+UNIT := contrib/mdn.service
 DIST ?= dist
 # The release runs one of the binaries it just built to check what version
 # it reports, so it builds on a host that can run one of its own targets.
 HOST_ARCH := $(shell go env GOHOSTARCH)
 
-.PHONY: all build ui ui-deps extension extension-dist extension-deps test vet check e2e vuln release install clean
+.PHONY: all build ui ui-deps extension extension-dist extension-deps test vet check e2e vuln release install clean distclean
 
 # A system-wide install is the default, so that `make install` and the .deb
 # put the binary in the same place and contrib/mdn.service points at one path
@@ -125,20 +126,82 @@ release: ui extension-deps
 	go run ./scripts/relcheck -version '$(VERSION)' -binary $(DIST)/mdn-$(VERSION)-linux-$(HOST_ARCH) -manifest $(DIST)/mdn-extension-$(VERSION).zip
 	cd $(DIST) && sha256sum mdn-* > SHA256SUMS
 
-## install: copy the binary to $(PREFIX)/bin (default /usr/bin)
-# Needs root at the default prefix: `sudo make install`. It is what
-# contrib/mdn.service expects, and the same path the .deb installs to.
+## install: copy the built ./mdn and the unit into $(DESTDIR)$(PREFIX) (default /usr)
+# Installs and nothing else. It has no prerequisite — deliberately: while it
+# depended on `build`, `sudo make install` re-ran `pnpm install` and `go build`
+# as root, with root's empty caches, downloading the toolchain again and
+# leaving root-owned files in the checkout (davison/md-notes#163). Build as
+# yourself, then install:
+#
+#     make build
+#     sudo make install
+#
+# It refuses, having copied nothing, when either payload is missing. The two
+# destinations are the two paths the .deb installs (packaging/deb/nfpm.yaml),
+# so the from-source route and the package agree on the unit as well as on the
+# binary, and the unit goes in byte for byte either way.
+#
+# DESTDIR relocates both for a staged install, which is also how to try the
+# whole thing without root:
+#
+#     make install DESTDIR=$$PWD/dist/scratch
 #
 # PREFIX=$$HOME/.local restores the old per-user install and needs no root;
 # contrib/mdn.service then wants a drop-in pointing ExecStart at it, which its
 # header spells out.
-install: build
-	install -Dm755 mdn $(PREFIX)/bin/mdn
+#
+# It prints the two `systemctl --user` lines rather than running them: under
+# sudo, `systemctl --user` is root's session, not the session a user unit has
+# to run in, so enabling it is the invoking user's step and saying so at the
+# terminal is the most this target can honestly do (davison/md-notes#164).
+install:
+	@test -f mdn || { echo 'make install: ./mdn is not here — run `make build` first; install does not build.' >&2; exit 1; }
+	@test -f $(UNIT) || { echo 'make install: $(UNIT) is not here — run make install from the repository root.' >&2; exit 1; }
+	install -Dm755 mdn $(DESTDIR)$(PREFIX)/bin/mdn
+	install -Dm644 $(UNIT) $(DESTDIR)$(PREFIX)/lib/systemd/user/mdn.service
+	@echo
+	@echo 'Installed $(DESTDIR)$(PREFIX)/bin/mdn'
+	@echo '      and $(DESTDIR)$(PREFIX)/lib/systemd/user/mdn.service'
+	@echo
+	@echo 'Now, as the user who will run the daemon (not root):'
+	@echo
+	@echo '    systemctl --user daemon-reload'
+	@echo '    systemctl --user enable --now mdn'
 
+# What `build`, `extension` and `release` write, and nothing else. ui/dist is
+# emptied rather than removed: its .gitkeep is tracked.
+CLEAN_PATHS := mdn $(EXTENSION_ZIP) $(DIST) extension/dist
+
+## clean: remove what build, extension and release produce
+# Every path is attempted and whatever is left is named at the end, rather than
+# the first `rm` failure stopping the rest: a tree with root-owned leftovers in
+# it — from a `sudo make` of a version older than davison/md-notes#164 — should
+# tell the operator everything they have to go and remove, in one run. It still
+# exits nonzero, because the tree is not clean.
+#
+# node_modules is distclean's: it is a lockfile-keyed cache of other people's
+# code, minutes and a network to rebuild, and `clean && check` has to stay a
+# thing you can do offline (the decision is on davison/md-notes#164).
 clean:
-	rm -f mdn $(EXTENSION_ZIP)
-	rm -rf $(DIST)
-	mkdir -p ui/dist
-	find ui/dist -mindepth 1 ! -name .gitkeep -delete
-	touch ui/dist/.gitkeep
-	rm -rf extension/dist
+	@left=''; \
+	for p in $(CLEAN_PATHS); do \
+		rm -rf "$$p" 2>/dev/null; \
+		if [ -e "$$p" ]; then left="$$left $$p"; fi; \
+	done; \
+	if [ -d ui/dist ]; then \
+		find ui/dist -mindepth 1 -maxdepth 1 ! -name .gitkeep -exec rm -rf {} + 2>/dev/null; \
+		if [ -n "$$(find ui/dist -mindepth 1 -maxdepth 1 ! -name .gitkeep -print -quit 2>/dev/null)" ]; then left="$$left ui/dist"; fi; \
+	fi; \
+	mkdir -p ui/dist 2>/dev/null; touch ui/dist/.gitkeep 2>/dev/null; \
+	if [ -n "$$left" ]; then \
+		echo 'make clean: could not remove:' >&2; \
+		for p in $$left; do echo "  $$p" >&2; done; \
+		echo 'Root-owned, from a `sudo make` of an older tree? Remove them as root — `make install` no longer builds anything, so nothing here will be root-owned again.' >&2; \
+		exit 1; \
+	fi
+
+## distclean: clean, and the two pnpm dependency trees as well
+# The next build then re-runs `pnpm install` for both workspaces, which needs
+# the network.
+distclean: clean
+	rm -rf ui/node_modules extension/node_modules
