@@ -15,8 +15,8 @@ M8-R1, M8-R3, M8-R4, M8-R6, M8-R7, M8-R9 and M8-R10 satisfied, M8-R5 **not** sat
 two false claims in `CONTRIBUTING.md`'s release section and a third, smaller one beside
 them, and M8-R8 untestable until this record merges
 ([#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141)).
-M8-R2 was struck before the release and carries no verdict; M8-R11 was added after it and
-has its own task still open. Both of M8-R5's claims are corrected in the pull request
+M8-R2 was struck before the release and carries no verdict; M8-R11 was added after it, is
+merged, and is awaiting a verdict of its own. Both of M8-R5's claims are corrected in the pull request
 that carries this record, on the coordinator's disposition
 ([#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744425314)).
 
@@ -129,6 +129,18 @@ installed and removed in an `archlinux:latest` container before anything leaves 
 runner, then pushed to the AUR by `publish-aur.yml`. Adopts
 [#131](https://github.com/davison/md-notes/issues/131).
 
+**`make install` only installs, and `make clean` only cleans**
+([#164](https://github.com/davison/md-notes/issues/164),
+[PR #166](https://github.com/davison/md-notes/pull/166), merged at
+[`edb2099`](https://github.com/davison/md-notes/commit/edb2099) on 2026-09-19).
+The last thing the milestone found, and it was the operator who found it, by
+following the README's own install route on the v0.1.0 tree: `install` depended on
+`build`, so under `sudo` it re-ran `pnpm install` and `go build` with root's empty
+caches and left root-owned files in the checkout. It now copies what `make build`
+already made and refuses when that is not there, and `clean` removes exactly what
+the build targets write. Adopts
+[#163](https://github.com/davison/md-notes/issues/163).
+
 **This record and the documentation** ([#141](https://github.com/davison/md-notes/issues/141),
 [PR #165](https://github.com/davison/md-notes/pull/165)).
 
@@ -210,7 +222,7 @@ tests, the extension's suite 3 suites and 28 tests.
 | M8-R8 | Documentation and record: the README's installation section, the extension and sync pages, the roadmap row, and this record | This task; the pull request carrying this record is what delivers it | [Untestable at the verdict](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — QA graded it against `main` before this task had a pull request, where none of it exists. A superseding verdict is owed once it merges. The two things QA named for whoever wrote it — `docs/releasing.md`'s store row and its four-asset table — are both done |
 | M8-R9 | No reachable known vulnerability, every direct dependency current or held back with a reason, lockfiles updated, scanners in CI | The vulnerable module was taken to its current release rather than to the first fixed one; chroma alone is held, with a ten-line comment in `go.mod` saying which seven token types v2.27.0 stops styling ([#147](https://github.com/davison/md-notes/issues/147#issuecomment-5734015503)) | [Satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — `make vuln` exit 0 on the tagged tree, and the **published arm64 binary's own build metadata** records `golang.org/x/net v0.59.0`, so the artefact on the page is the scanned one; the release run's `check` job shows the scan step succeeding |
 | M8-R10 | The side pane under the navigator between the drawer breakpoint and the three-column width, the reading width kept, and thin themed scrollbars in both schemes and under the e-ink override | The threshold is 1290 px, computed from the stylesheet's own widths and confirmed either side of it; the scrollbar colours were chosen against WCAG 1.4.11 rather than by eye ([#158](https://github.com/davison/md-notes/issues/158#issuecomment-5742041075), [#158](https://github.com/davison/md-notes/issues/158#issuecomment-5742043518)) | [Satisfied](https://github.com/davison/md-notes/issues/133#issuecomment-5744412141) — measured against the release binary's own embedded UI, walking the viewport, and with Chromium launched **without** `--hide-scrollbars`, which the shipped suite cannot do for itself; the recorded table reproduces to the pixel, and the scrollbar properties compute on `.cm-scroller` in all four states including a coarse pointer |
-| M8-R11 | `make install` only installs, and refuses when what it would install is not built; `make clean` only cleans | Added after the release, on the operator's first `sudo make install` of the v0.1.0 tree ([#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744342213)) | No verdict in this pass by design; task [#164](https://github.com/davison/md-notes/issues/164) is open and gets its own when its pull request merges |
+| M8-R11 | `make install` only installs, and refuses when what it would install is not built; `make clean` only cleans | Added after the release, on the operator's first `sudo make install` of the v0.1.0 tree ([#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744342213)). `install` prints the two `systemctl --user` lines rather than running them, and `node_modules` belongs to a new `distclean` — the two questions the requirement asked the task to decide ([#164](https://github.com/davison/md-notes/issues/164#issuecomment-5744368538), [#164](https://github.com/davison/md-notes/issues/164#issuecomment-5744368662)) | Outside this QA pass by design. [PR #166](https://github.com/davison/md-notes/pull/166) is merged at [`edb2099`](https://github.com/davison/md-notes/commit/edb2099) and the requirement is **awaiting its verdict** |
 
 ## The human gates
 
@@ -545,6 +557,39 @@ never recorded anywhere. It now asks for an issue for anything with a decision i
 welcomes a typo or a dead link as a pull request on its own
 ([#138](https://github.com/davison/md-notes/issues/138#issuecomment-5734703429)).
 
+### `make install` prints the `systemctl` lines; it does not run them
+
+The operator's requirement said install should "install the files to the correct
+locations and start daemons", and the second half cannot be the Makefile's under `sudo`:
+the unit is a *user* unit, and the only session `systemctl --user` can reach from there is
+root's, which is not the session the daemon has to run in. So the target ends by printing
+the two lines with the words "not root" above them
+([#164](https://github.com/davison/md-notes/issues/164#issuecomment-5744368538)).
+
+**Rejected:** running them from the recipe under `SUDO_USER`, which needs the target
+user's session bus and fails or misfires in exactly the cases — a bare root shell, `su`,
+a container — where the reader most needs a clear answer. **The trade-off:** the install
+is not literally complete when the command returns, and a script wrapping it still runs
+those two lines itself; against that, the terminal says what is left at the moment the
+reader is looking at it, and it is the same instruction the unit header and the `.deb`'s
+description already carry.
+
+### `clean` takes the build outputs; `node_modules` is `distclean`'s
+
+`clean` removes `./mdn`, the contents of `ui/dist`, `extension/dist`, the extension zip
+and `dist/` — exactly what `build`, `extension` and `release` write — and names what it
+could not remove rather than stopping at the first failure. A new `distclean` runs `clean`
+and then takes both `node_modules` trees
+([#164](https://github.com/davison/md-notes/issues/164#issuecomment-5744368662)).
+
+**The trade-off is an asymmetry in time.** `clean` no longer returns the tree to what
+`git clone` gives, so "clean and the bug goes away" does not cover a half-installed
+dependency tree. In exchange `clean` stays seconds and safe in the edit loop, where
+`clean && check` is the reflex: folding `node_modules` in would make the next `make check`
+re-run `pnpm install` for both workspaces, which on a bad network is minutes and offline
+is a failure. That is the line GNU's own convention draws between the two targets, and it
+is why the requirement asked for the question to be decided rather than assumed.
+
 ### The store decisions, kept because they cost something to learn
 
 The channel is gone, but three of its choices are the kind that will be faced again.
@@ -614,6 +659,16 @@ and corrected on both
 ([#141](https://github.com/davison/md-notes/issues/141#issuecomment-5744380512),
 [#133](https://github.com/davison/md-notes/issues/133#issuecomment-5744388946)). The point
 the hand-off was making is unchanged: the two `.deb`s are not covered by it.
+
+**A test reported as red-against-old was green against old.** #164's plan said four new
+tests failed against the pre-task `Makefile`; one of them,
+`TestCleanReportsWhatItCannotRemove`, passed against both and so pinned nothing. Its
+fixture locked only `extension/dist`, the last path the old recipe attempted, so a
+die-on-first-failure `clean` had already removed everything the test went on to assert
+was gone. The review of [PR #166](https://github.com/davison/md-notes/pull/166#issuecomment-5744477427)
+caught it and measured it; the fixture now locks a path both recipes reach second, and the
+plan was corrected to say which tests were red rather than all of them
+([#164](https://github.com/davison/md-notes/issues/164#issuecomment-5744515213)).
 
 **One recorded measurement is a tag stale.** The #137 decision records three
 `I: spelling-error-in-binary` tags from lintian on `ubuntu:24.04`; QA measured two today,
@@ -709,7 +764,7 @@ Adopted and closed by this milestone:
 | [#146](https://github.com/davison/md-notes/issues/146) | [#147](https://github.com/davison/md-notes/issues/147) | GO-2025-3595 reachable through the sanitiser, and nothing scanning dependencies |
 | [#156](https://github.com/davison/md-notes/issues/156) | [#158](https://github.com/davison/md-notes/issues/158) | The side pane narrowing the note at middle widths |
 | [#157](https://github.com/davison/md-notes/issues/157) | [#158](https://github.com/davison/md-notes/issues/158) | Browser-default scrollbars |
-| [#163](https://github.com/davison/md-notes/issues/163) | [#164](https://github.com/davison/md-notes/issues/164) | `sudo make install` rebuilding everything as root. Open at the time of writing |
+| [#163](https://github.com/davison/md-notes/issues/163) | [#164](https://github.com/davison/md-notes/issues/164) | `sudo make install` rebuilding everything as root, found by the operator following the README's own install route on the v0.1.0 tree |
 
 [#130](https://github.com/davison/md-notes/issues/130), the Chrome Web Store capture,
 closed as not planned with the channel.
