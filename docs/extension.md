@@ -13,8 +13,10 @@ every permission it asks for, and building it from source.
 This is the way to install it. Brave, Chrome and any other Chromium browser
 with the store enabled:
 
-1. Open the **md-notes** listing in the Chrome Web Store and press **Add to
-   Chrome** — Brave says the same thing and installs it in the same place.
+1. Open the listing —
+   <https://chromewebstore.google.com/detail/cefjbjkkddbahpcfapmfechniahpdgaj> —
+   and press **Add to Chrome**. Brave says the same thing and installs it in
+   the same place.
 2. Pin it to the toolbar if you want the badge visible.
 3. Give it the daemon URL and the token, below. Nothing works until you do:
    the extension talks to a daemon you run, and only to that.
@@ -29,11 +31,16 @@ and the justification for each permission are in
 [`extension/store/`](../extension/store), so what the store says about this
 extension is in the repository rather than only in a web form.
 
-> **The listing's address.** The store item is created by hand once, and its id
-> — the last segment of the listing's URL — is recorded on
-> [davison/md-notes#135](https://github.com/davison/md-notes/issues/135). Until
-> that has happened there is nothing to link to here and the developer route
-> below is the only one. This note goes when the link arrives.
+> **In review.** The listing was submitted on 2026-09-19 and the store's first
+> review takes days. Until it passes, that address is the item's and the page
+> will not show you anything to install; build it and load it unpacked, below,
+> in the meantime. This note goes when the listing is live.
+
+The address is the item's id — `cefjbjkkddbahpcfapmfechniahpdgaj`, recorded on
+[davison/md-notes#135](https://github.com/davison/md-notes/issues/135) — with no
+name in front of it. The store redirects that to a canonical URL carrying a slug
+of the listing's name, and the id is the half that does not change, so it is the
+form to link and to write down.
 
 The privacy policy the listing points at is [`docs/privacy.md`](privacy.md) in
 this repository: page content goes only to the daemon URL you configured, the

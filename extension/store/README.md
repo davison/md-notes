@@ -42,12 +42,19 @@ two identifiers the V2 API addresses the item by. Those are the operator's, and
 | `CHROME_WEBSTORE_CLIENT_SECRET` | secret | OAuth client secret |
 | `CHROME_WEBSTORE_REFRESH_TOKEN` | secret | OAuth refresh token |
 | `CHROME_WEBSTORE_PUBLISHER_ID` | variable | the publisher, from the dashboard's **Publisher > Settings** |
-| `CHROME_WEBSTORE_ITEM_ID` | variable | the item, the last segment of its store URL |
+| `CHROME_WEBSTORE_ITEM_ID` | variable | the item, the last segment of its store URL — `cefjbjkkddbahpcfapmfechniahpdgaj`, set |
 
 The two identifiers are variables rather than secrets: neither grants anything
 without the three secrets, and a secret is masked out of the run log at exactly
 the line that would say which item was uploaded to. davison/md-notes#135 carries
-how each one is made.
+how each one is made, and which of them are in place: as of 2026-09-19 the item
+exists and its id is set, and the publisher id and the three secrets are not
+there yet, so the workflow's preflight will refuse by name until they are.
+
+The listing is at
+<https://chromewebstore.google.com/detail/cefjbjkkddbahpcfapmfechniahpdgaj>,
+which the store redirects to a URL carrying a slug of the listing's name. The id
+is the half that does not change; link that form.
 
 ## Regenerating the screenshots
 
