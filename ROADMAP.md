@@ -9,3 +9,4 @@
 | M5 | Create and delete notes, a deterministic watch test, browser checks in CI | [#74](https://github.com/davison/md-notes/issues/74) | [Done](docs/milestones/5-create-and-delete-notes.md) |
 | M6 | Clipping over the tailnet, clipper conversion fixes, and the M5 backlog | [#96](https://github.com/davison/md-notes/issues/96) | [Done](docs/milestones/6-tailnet-clipping-and-the-m5-backlog.md) |
 | M7 | No root registered by accident, a navigator sorted by recency, and an installable app | [#114](https://github.com/davison/md-notes/issues/114) | [Done](docs/milestones/7-roots-recency-and-the-installable-app.md) |
+| M8 | The first release: a tag, two daemon channels and a release page | [#133](https://github.com/davison/md-notes/issues/133) | [Done](docs/milestones/8-the-first-release.md) |
