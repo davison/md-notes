@@ -103,8 +103,14 @@ debian_version() {
 # that cannot start, which is exactly what the gate was about.
 stage_unit() {
 	local src="$REPO/contrib/mdn.service" dst="$1"
-	grep -qx 'ExecStart=/usr/bin/mdn serve' "$src" ||
-		die "$src does not run /usr/bin/mdn serve, which is where this package installs the binary"
+	# The path, and only the path. An exact-line match was here first and was
+	# stricter than this comment: it refused a unit reading
+	# `ExecStart=/usr/bin/mdn serve --port 7337`, which this package starts
+	# perfectly well, so a flag added to the unit would have turned into a red
+	# `make check` blaming the path. What is guarded is the path, because that
+	# is the only part of the line a package can be wrong about.
+	grep -qE '^ExecStart=/usr/bin/mdn($| )' "$src" ||
+		die "$src does not run /usr/bin/mdn, which is where this package installs the binary"
 	install -m 0644 "$src" "$dst"
 }
 
