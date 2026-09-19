@@ -211,6 +211,32 @@ func TestTailnetRequiresAuthentication(t *testing.T) {
 	}
 }
 
+// The login page draws the same scrollbars the application does (M8-R10).
+// It is served from this file with its own inline copy of the palette, so
+// the stylesheet under ui/ cannot reach it: without these declarations it
+// is the one page in the daemon left with the browser's default 15 px grey
+// bar, which the review of PR #159 measured at 750x340 — the project's own
+// iPhone 14 landscape profile, where this page scrolls.
+func TestLoginPageThemesItsScrollbars(t *testing.T) {
+	ts, _ := newTailnetServer(t)
+	body := readAll(t, tdo(t, ts, "GET", loginPath, "", navigation()).Body)
+	for _, want := range []string{
+		// Both properties, on the universal selector: Chromium inherits
+		// scrollbar-color and does not inherit scrollbar-width, so a
+		// declaration on :root alone leaves every scrolling box at auto.
+		"scrollbar-width: thin",
+		"scrollbar-color: var(--scroll-thumb) var(--scroll-track)",
+		// And a value for the two tokens in each scheme, in the same
+		// colours ui/src/style.css uses, so the two pages agree.
+		"--scroll-thumb:#7f7f7c; --scroll-track:#efefed",
+		"--scroll-thumb:#7a7a78; --scroll-track:#2a2a29",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the login page lacks %q:\n%s", want, body)
+		}
+	}
+}
+
 // The login page must not carry Referrer-Policy: no-referrer. A document
 // with that policy makes the browser send `Origin: null` on the form it
 // posts — Fetch, "append the Origin header" — which the cross-origin
