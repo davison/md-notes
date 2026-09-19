@@ -85,7 +85,8 @@ make extension  # builds the browser extension to extension/dist and a zip
 make check      # vet, typecheck, tests, build
 make e2e        # browser checks for the UI, in headless Chromium
 make vuln       # scans dependencies for published vulnerabilities
-make install    # copies ./mdn to /usr/bin/mdn; needs root (PREFIX=... to change)
+make install    # installs what make build made; needs root (PREFIX=... to change)
+make clean      # removes what build, extension and release produce
 make release    # everything a release publishes, into dist/ (VERSION=v0.1.0)
 ```
 
@@ -107,13 +108,35 @@ check`, and it runs as its own CI job. The extension's own end-to-end
 suites (`pnpm --dir extension e2e`) share the same Playwright installation
 and additionally need `make extension`.
 
-`make install` installs system-wide, so it wants `sudo make install`, and it
-puts the binary where [contrib/mdn.service](contrib/mdn.service) expects it.
+`make install` copies and nothing else: it installs the `./mdn` that
+`make build` already made, and [contrib/mdn.service](contrib/mdn.service)
+beside it, to the two paths the `.deb` uses — `/usr/bin/mdn` and
+`/usr/lib/systemd/user/mdn.service`. It never runs pnpm or go, so build as
+yourself and install as root:
+
+```
+make build
+sudo make install
+```
+
+With either file missing it refuses in one line and copies nothing, pointing
+at `make build`. It ends by printing the two `systemctl --user` lines for you
+to run: enabling a *user* unit is not something root can do on your behalf,
+because `systemctl --user` under `sudo` is root's own session.
+
 `make install PREFIX=$HOME/.local` installs for one user instead and needs no
-root; the unit file's header says what that route then needs. Use a prefix of
-your own if the `md-notes` package is installed too: both put the binary at
-`/usr/bin/mdn`, so installing over it leaves dpkg's record wrong and an
-`apt remove` later takes your build with it.
+root; the unit file's header says what that route then needs.
+`make install DESTDIR=$PWD/dist/scratch` stages the same two files under
+`dist/scratch/`, which is how to see what an install would write without
+writing it. Use a prefix of your own if the `md-notes` package is installed
+too: both put the binary at `/usr/bin/mdn`, so installing over it leaves
+dpkg's record wrong and an `apt remove` later takes your build with it.
+
+`make clean` removes what `build`, `extension` and `release` produce — the
+binary, `ui/dist`, `extension/dist`, the extension zip and `dist/` — and says
+which of them it could not remove rather than stopping at the first.
+`make distclean` does that and removes `ui/node_modules` and
+`extension/node_modules` as well, so the next build re-runs `pnpm install`.
 
 The commands below assume the binary is on your PATH; otherwise run `./mdn`
 from the repository.
@@ -141,8 +164,9 @@ xdg-open http://localhost:7337/
 
 `mdn serve --root DIR --port N` overrides the file. To run it under systemd
 as a user service, see [contrib/mdn.service](contrib/mdn.service) — the
-package installs that unit for you, and from source it is one `install` and
-`systemctl --user enable --now mdn`.
+package installs that unit for you, `sudo make install` installs it to the
+same path, and either way you finish with `systemctl --user daemon-reload`
+and `systemctl --user enable --now mdn`.
 
 `mdn token` prints the daemon's bearer token — what a browser extension
 presents to write a clipping — and `mdn token --rotate` replaces it, which
