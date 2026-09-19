@@ -87,6 +87,7 @@ make e2e        # browser checks for the UI, in headless Chromium
 make vuln       # scans dependencies for published vulnerabilities
 make install    # installs what make build made; needs root (PREFIX=... to change)
 make clean      # removes what build, extension and release produce
+make distclean  # clean, and both node_modules trees as well
 make release    # everything a release publishes, into dist/ (VERSION=v0.1.0)
 ```
 
@@ -127,8 +128,10 @@ because `systemctl --user` under `sudo` is root's own session.
 `make install PREFIX=$HOME/.local` installs for one user instead and needs no
 root; the unit file's header says what that route then needs.
 `make install DESTDIR=$PWD/dist/scratch` stages the same two files under
-`dist/scratch/`, which is how to see what an install would write without
-writing it. Use a prefix of your own if the `md-notes` package is installed
+`dist/scratch/`, which is how to see exactly what an install would write
+without writing it anywhere the system reads — it says it staged, and leaves
+out the `systemctl --user` lines, because nothing has been installed to
+enable. Use a prefix of your own if the `md-notes` package is installed
 too: both put the binary at `/usr/bin/mdn`, so installing over it leaves
 dpkg's record wrong and an `apt remove` later takes your build with it.
 
