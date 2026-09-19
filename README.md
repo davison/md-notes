@@ -32,7 +32,10 @@ mangle, the refusals say what is wrong, and the note bar and the
 deleted-on-disk banner do what they promise. Milestone seven closed the way a
 root could be registered by accident and left there, gave the navigator a
 last-modified order beside its alphanumeric one, and made the UI an app a phone can
-install from the tailnet name. The inbox is still ahead.
+install from the tailnet name. Milestone eight made the whole of it something a
+stranger can install: a tag cuts a versioned release, the daemon is published to
+the Arch User Repository and as a `.deb`, and the extension ships as a zip on the
+release page. The inbox is still ahead.
 
 - **Daemon.** One static Go binary. Serves the web UI, watches one or more
   root folders, renders markdown server-side, shells out to ripgrep for
@@ -73,11 +76,83 @@ install from the tailnet name. The inbox is still ahead.
   [docs/e-ink.md](docs/e-ink.md) covers a Boox Note Air 3 and the two ways
   to reach your notes from one.
 
-## Building
+## Installing
 
-Requires Go and pnpm to build, and ripgrep (`rg`) on PATH at runtime: the
-navigator, search and the tag panel all run through it, which is what keeps
-gitignored and hidden files out of the tree and out of results.
+The daemon ships on two channels; the browser extension is an asset on the same
+release. The commands below name [v0.1.0](https://github.com/davison/md-notes/releases/tag/v0.1.0),
+the first release — [the releases page](https://github.com/davison/md-notes/releases/latest)
+has the current one.
+
+**Arch, from the AUR.**
+[`md-notes-bin`](https://aur.archlinux.org/packages/md-notes-bin) installs the
+released binary, the systemd user unit and the licence, and depends on ripgrep:
+
+```
+paru -S md-notes-bin      # or any other AUR helper
+```
+
+It is a `-bin` package because it installs a prebuilt binary rather than
+compiling one, and the AUR asks for the suffix when it does;
+[packaging/aur/README.md](packaging/aur/README.md) has the rest.
+
+**Debian and Ubuntu, from the release page.** Every release carries a `.deb` for
+amd64 and arm64:
+
+```
+curl -fsSLO https://github.com/davison/md-notes/releases/download/v0.1.0/md-notes_0.1.0_amd64.deb
+sudo apt install ./md-notes_0.1.0_amd64.deb
+```
+
+The leading `./` is what tells apt the argument is a file rather than the name of
+a package in a repository. It installs `/usr/bin/mdn`, the unit as
+`/usr/lib/systemd/user/mdn.service` and the licence, and pulls ripgrep in. No apt
+repository is hosted, so an upgrade is those two lines again with a later
+version.
+
+Either package leaves the daemon to be started as your own user, not as root,
+once `~/.config/mdn/config.yml` exists — see [Running](#running):
+
+```
+systemctl --user enable --now mdn
+```
+
+**The browser extension, from the same release page.** There is no store
+listing. Download `mdn-extension-v0.1.0.zip`, unzip it into a folder of its own
+— the zip has no top-level directory of its own, so unzipping it where you stand
+scatters a dozen files — and load that folder unpacked:
+
+```
+curl -fsSLO https://github.com/davison/md-notes/releases/download/v0.1.0/mdn-extension-v0.1.0.zip
+unzip -d mdn-extension-v0.1.0 mdn-extension-v0.1.0.zip
+```
+
+Then `brave://extensions` (or `chrome://extensions`), **Developer mode** on,
+**Load unpacked**, and choose that folder. Nothing updates it: a later release is
+a later zip, loaded the same way.
+[docs/extension.md](docs/extension.md) covers the token, clipping, opening local
+files, and every permission it asks for.
+
+**Checking what you downloaded.** `SHA256SUMS` on the release page covers the
+three files the release workflow built — the two binaries and the extension zip:
+
+```
+curl -fsSLO https://github.com/davison/md-notes/releases/download/v0.1.0/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
+```
+
+The two `.deb`s are uploaded after the release is published, by a workflow of
+their own, and are not in that file.
+
+The daemon can also be taken bare: `mdn-v0.1.0-linux-amd64` and
+`mdn-v0.1.0-linux-arm64` on the release page are the static binary, needing only
+ripgrep on PATH and a configuration file.
+
+## Building from source
+
+The developer route, and where the released binaries come from. Requires Go and
+pnpm to build, and ripgrep (`rg`) on PATH at runtime: the navigator, search and
+the tag panel all run through it, which is what keeps gitignored and hidden
+files out of the tree and out of results.
 
 ```
 make build      # builds the UI and the static ./mdn binary
@@ -317,10 +392,12 @@ has the details.
 
 ## Browser extension
 
-`make extension` builds a Chromium Manifest V3 extension into
-`extension/dist`, loadable unpacked in Brave from `brave://extensions` with
-**Developer mode** on. Paste the token from `mdn token` into its options page
-and it does two things.
+A Chromium Manifest V3 extension, distributed as `mdn-extension-<tag>.zip` on
+the release page: unzip it and load the folder unpacked from
+`brave://extensions` with **Developer mode** on, as
+[Installing](#installing) describes. `make extension` builds the same tree into
+`extension/dist` for a developer to load instead. Paste the token from
+`mdn token` into its options page and it does two things.
 
 **Clipping.** **Clip page** and **Clip selection**, from the toolbar button or
 the page's right-click menu, turn the readable article — or just the selection
@@ -389,6 +466,26 @@ offers to install it over the tailnet, the installed app opens in its own window
 and with the daemon unreachable it opens anyway and says so instead of showing the
 browser's error page — [docs/sync.md](docs/sync.md#installing-it-on-the-phone) has
 the steps.
+
+Milestone eight is the one that made it installable, and
+[v0.1.0](https://github.com/davison/md-notes/releases/tag/v0.1.0) is out. A tag
+runs the same checks every commit runs, builds the static daemon for amd64 and
+arm64 and the extension zip, writes `SHA256SUMS` and leaves a draft Release; the
+operator reads the generated notes and presses Publish, and that press is what
+pushes `md-notes-bin` to the Arch User Repository and uploads a `.deb` for each
+architecture. The Chrome Web Store was to have been the third channel and was
+withdrawn: its API needs an OAuth app in production behind a domain the operator
+would have to own and verify, which is disproportionate for a free extension with
+a handful of users, so the extension is a release asset and is loaded unpacked.
+The milestone also gave the repository a [CONTRIBUTING.md](CONTRIBUTING.md) and
+took the backlog a first public release should not ship with: a note's own HTML
+can no longer forge the renderer's scroll anchor, the login throttle's comment
+says what the code does and this page names the proxy headers the backstop
+actually checks, a directory the daemon cannot read is reported as that rather
+than as the kernel's watch limit, every dependency is current or held back for a
+recorded reason with `govulncheck` and `pnpm audit` in CI, and the search and tag
+pane sits under the navigator at middle widths while every scrollbar takes the
+theme's colours.
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
 today, [docs/extension.md](docs/extension.md) the extension,
 [docs/e-ink.md](docs/e-ink.md) the e-ink tablet, and the milestone
@@ -399,7 +496,8 @@ records
 [four](docs/milestones/4-polish-phone-e-ink-and-the-bundle.md),
 [five](docs/milestones/5-create-and-delete-notes.md),
 [six](docs/milestones/6-tailnet-clipping-and-the-m5-backlog.md),
-[seven](docs/milestones/7-roots-recency-and-the-installable-app.md))
+[seven](docs/milestones/7-roots-recency-and-the-installable-app.md),
+[eight](docs/milestones/8-the-first-release.md))
 record the decisions behind them. The inbox, which turns URLs shared from a
 phone into clips, follows in a later milestone. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
