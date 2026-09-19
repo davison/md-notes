@@ -377,9 +377,13 @@ var loginPage = template.Must(template.New("login").Parse(`<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>md-notes</title>
 <style>
-:root { --bg:#fbfbfa; --fg:#1f1f1f; --muted:#6b6b6b; --line:#e2e2df; --accent:#2a6db0; --pane:#fff; --error:#b3261e; color-scheme: light dark; }
-@media (prefers-color-scheme: dark) { :root { --bg:#1b1b1b; --fg:#e6e6e3; --muted:#9a9a96; --line:#333331; --accent:#7fb0e6; --pane:#202020; --error:#f2b8b5; } }
-* { box-sizing: border-box; }
+:root { --bg:#fbfbfa; --fg:#1f1f1f; --muted:#6b6b6b; --line:#e2e2df; --accent:#2a6db0; --pane:#fff; --error:#b3261e; --scroll-thumb:#7f7f7c; --scroll-track:#efefed; color-scheme: light dark; }
+@media (prefers-color-scheme: dark) { :root { --bg:#1b1b1b; --fg:#e6e6e3; --muted:#9a9a96; --line:#333331; --accent:#7fb0e6; --pane:#202020; --error:#f2b8b5; --scroll-thumb:#7a7a78; --scroll-track:#2a2a29; } }
+/* The same thin, palette-coloured bars the application draws (M8-R10): this
+   page has its own copy of the palette, so it needs its own copy of these.
+   On the universal selector for the reason ui/src/style.css gives — Chromium
+   inherits scrollbar-color and does not inherit scrollbar-width. */
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) var(--scroll-track); }
 body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
 main { width:100%; max-width:22rem; padding:1.5rem; margin:1rem; background:var(--pane); border:1px solid var(--line); border-radius:8px; }
 h1 { margin:0 0 .25rem; font-size:1.1rem; }
