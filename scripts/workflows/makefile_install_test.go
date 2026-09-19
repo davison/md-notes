@@ -146,24 +146,65 @@ func TestInstallRefusesWhatIsNotThere(t *testing.T) {
 }
 
 // TestInstallCopiesTheBinaryAndTheUnit: the two paths the .deb installs, the
-// modes it installs them with, DESTDIR honoured, and the `systemctl --user`
-// lines printed for the invoking user to run (the decision on #164: a user
-// unit cannot be enabled for them from under sudo).
+// modes it installs them with, DESTDIR and PREFIX honoured, and the right
+// closing words — the `systemctl --user` lines for a real install, because a
+// user unit cannot be enabled for the invoking user from under sudo (the
+// decision on #164), and a staged-under-DESTDIR line instead when nothing has
+// been installed anywhere systemd looks (the review of PR #166, nit (a)).
 func TestInstallCopiesTheBinaryAndTheUnit(t *testing.T) {
-	tree, destdir := installTree(t, true, true)
+	systemctlLines := []string{"systemctl --user daemon-reload", "systemctl --user enable --now mdn"}
 
-	out, err := runMake(t, tree, "install", "DESTDIR="+destdir)
-	if err != nil {
-		t.Fatalf("make install: %v\n%s", err, out)
-	}
+	t.Run("into a prefix", func(t *testing.T) {
+		tree, _ := installTree(t, true, true)
+		prefix := filepath.Join(tree, "prefix")
 
+		out, err := runMake(t, tree, "install", "PREFIX="+prefix)
+		if err != nil {
+			t.Fatalf("make install: %v\n%s", err, out)
+		}
+		assertInstalled(t, out,
+			filepath.Join(prefix, "bin", "mdn"),
+			filepath.Join(prefix, "lib", "systemd", "user", "mdn.service"))
+
+		for _, want := range systemctlLines {
+			if !strings.Contains(out, want) {
+				t.Errorf("`make install` does not print %q, which is the step it cannot take for the invoking user:\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("staged under DESTDIR", func(t *testing.T) {
+		tree, destdir := installTree(t, true, true)
+
+		out, err := runMake(t, tree, "install", "DESTDIR="+destdir)
+		if err != nil {
+			t.Fatalf("make install: %v\n%s", err, out)
+		}
+		assertInstalled(t, out,
+			filepath.Join(destdir, "usr", "bin", "mdn"),
+			filepath.Join(destdir, "usr", "lib", "systemd", "user", "mdn.service"))
+
+		// Nothing is where systemd looks, so those two lines would either do
+		// nothing or enable a unit installed for real at some earlier point.
+		for _, unwanted := range systemctlLines {
+			if strings.Contains(out, unwanted) {
+				t.Errorf("a staged install tells the reader to run %q, but nothing is installed on this system:\n%s", unwanted, out)
+			}
+		}
+		if !strings.Contains(out, "Staged under") {
+			t.Errorf("a staged install does not say it staged:\n%s", out)
+		}
+	})
+}
+
+// assertInstalled: the binary and the unit, at the paths given, with the modes
+// the .deb uses, and the unit byte for byte from contrib/.
+func assertInstalled(t *testing.T, out, binary, unit string) {
+	t.Helper()
 	for _, want := range []struct {
 		path string
 		mode os.FileMode
-	}{
-		{filepath.Join(destdir, "usr", "bin", "mdn"), 0o755},
-		{filepath.Join(destdir, "usr", "lib", "systemd", "user", "mdn.service"), 0o644},
-	} {
+	}{{binary, 0o755}, {unit, 0o644}} {
 		info, err := os.Stat(want.path)
 		if err != nil {
 			t.Errorf("`make install` did not install %s: %v\n%s", want.path, err, out)
@@ -174,23 +215,62 @@ func TestInstallCopiesTheBinaryAndTheUnit(t *testing.T) {
 		}
 	}
 
-	// The unit is copied byte for byte, as the .deb copies it: the packaged
-	// unit and the from-source unit are the same file.
-	installed, err := os.ReadFile(filepath.Join(destdir, "usr", "lib", "systemd", "user", "mdn.service"))
-	if err == nil {
-		source, err := os.ReadFile(filepath.Join(repoRoot, "contrib", "mdn.service"))
-		if err != nil {
+	installed, err := os.ReadFile(unit)
+	if err != nil {
+		return
+	}
+	source, err := os.ReadFile(filepath.Join(repoRoot, "contrib", "mdn.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(installed) != string(source) {
+		t.Errorf("%s is not contrib/mdn.service byte for byte", unit)
+	}
+}
+
+// TestInstallAndCleanForkNothing: neither target reads VERSION or HOST_ARCH, so
+// neither should pay for them. They did — `LDFLAGS :=` and `HOST_ARCH :=` were
+// immediately expanded, so `git describe` and `go env` ran at parse time on
+// every invocation, and `go env` under sudo writes a telemetry directory into
+// root's HOME (the review of PR #166, nit (b)).
+//
+// Measured with logging shims ahead of the real tools on PATH, which is the
+// only way to see a parse-time $(shell): `make -n` does not show it, and the
+// output of a successful `make install` says nothing about it either.
+func TestInstallAndCleanForkNothing(t *testing.T) {
+	tree, destdir := installTree(t, true, true)
+
+	shims := filepath.Join(tree, "shims")
+	if err := os.MkdirAll(shims, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(tree, "forks.log")
+	for _, tool := range []string{"git", "go", "pnpm"} {
+		shim := "#!/bin/sh\necho \"" + tool + " $*\" >> " + log + "\nexit 0\n"
+		if err := os.WriteFile(filepath.Join(shims, tool), []byte(shim), 0o755); err != nil {
 			t.Fatal(err)
-		}
-		if string(installed) != string(source) {
-			t.Error("the installed unit is not contrib/mdn.service byte for byte")
 		}
 	}
 
-	for _, want := range []string{"systemctl --user daemon-reload", "systemctl --user enable --now mdn"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("`make install` does not print %q, which is the step it cannot take for the invoking user:\n%s", want, out)
+	for _, args := range [][]string{
+		{"install", "DESTDIR=" + destdir},
+		{"-n", "install"},
+		{"clean"},
+	} {
+		cmd := exec.Command(makeTool(t), args...)
+		cmd.Dir = tree
+		cmd.Env = append(os.Environ(), "MAKEFLAGS=", "PATH="+shims+string(os.PathListSeparator)+os.Getenv("PATH"))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("make %s: %v\n%s", strings.Join(args, " "), err, out)
 		}
+	}
+
+	forks, err := os.ReadFile(log)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if len(forks) > 0 {
+		t.Errorf("install and clean ran:\n%s\nNeither target reads VERSION or HOST_ARCH; the tools behind them belong to build and release, and under sudo `go env` writes into root's HOME.", forks)
 	}
 }
 
