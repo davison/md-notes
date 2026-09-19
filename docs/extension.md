@@ -5,10 +5,52 @@ It is the browser half of md-notes: it opens local markdown files in the app
 instead of letting the browser render them as plain text, and it clips a web
 page or a selection into the notes root as markdown.
 
-This page covers building it, loading it, the file URL permission, the token,
-clipping, and every permission it asks for.
+This page covers installing it, the file URL permission, the token, clipping,
+every permission it asks for, and building it from source.
 
-## Building
+## Installing it from the Chrome Web Store
+
+This is the way to install it. Brave, Chrome and any other Chromium browser
+with the store enabled:
+
+1. Open the listing —
+   <https://chromewebstore.google.com/detail/cefjbjkkddbahpcfapmfechniahpdgaj> —
+   and press **Add to Chrome**. Brave says the same thing and installs it in
+   the same place.
+2. Pin it to the toolbar if you want the badge visible.
+3. Give it the daemon URL and the token, below. Nothing works until you do:
+   the extension talks to a daemon you run, and only to that.
+4. For opening local markdown files, turn **Allow access to file URLs** on as
+   well — also below.
+
+Updates arrive from the store. Each md-notes release is uploaded to the store
+by [`.github/workflows/publish-webstore.yml`](../.github/workflows/publish-webstore.yml)
+when the release is published, and reaches you after the store has reviewed it;
+see [Cutting a release](releasing.md). The listing's own text, its screenshots
+and the justification for each permission are in
+[`extension/store/`](../extension/store), so what the store says about this
+extension is in the repository rather than only in a web form.
+
+> **In review.** The listing was submitted on 2026-09-19 and the store's first
+> review takes days. Until it passes, that address is the item's and the page
+> will not show you anything to install; build it and load it unpacked, below,
+> in the meantime. This note goes when the listing is live.
+
+The address is the item's id — `cefjbjkkddbahpcfapmfechniahpdgaj`, recorded on
+[davison/md-notes#135](https://github.com/davison/md-notes/issues/135) — with no
+name in front of it. The store redirects that to a canonical URL carrying a slug
+of the listing's name, and the id is the half that does not change, so it is the
+form to link and to write down.
+
+The privacy policy the listing points at is [`docs/privacy.md`](privacy.md) in
+this repository: page content goes only to the daemon URL you configured, the
+only things stored are that URL and the token, and nothing reaches any third
+party.
+
+## Building and loading it unpacked
+
+The developer route, and the one to use when you are changing the extension or
+running it ahead of a release.
 
 The extension is built from the repository, alongside the daemon:
 
@@ -19,16 +61,14 @@ make extension
 That produces two things:
 
 - `extension/dist/` — the unpacked extension, which is what you load into a
-  browser during normal use.
+  browser.
 - `extension/mdn-extension.zip` — the same tree zipped, for copying to another
   machine or uploading.
 
 `make check` typechecks the extension, runs its unit tests and builds it, so a
 broken extension fails CI like anything else.
 
-## Loading it in Brave
-
-Brave is Chromium, so the Chrome flow applies unchanged.
+Brave is Chromium, so the Chrome flow applies unchanged:
 
 1. Open `brave://extensions`.
 2. Turn on **Developer mode** (top right).
@@ -40,6 +80,15 @@ Rebuilding (`make extension`) rewrites `extension/dist` in place; press the
 reload arrow on the extension's card afterwards to pick the new build up.
 
 The same steps work in Chrome and Chromium at `chrome://extensions`.
+
+An unpacked extension and a store-installed one are separate installations with
+separate storage: if you have both, each has its own daemon URL and token, and
+the browser will run both at once. Remove one.
+
+A build carries the release's version only when it is built from a tag —
+`extension/public/manifest.json` holds no version literal and the build stamps
+one in, so an ordinary `make extension` produces `0.0.0`, which loads and is
+obviously not a release. See [Where the version comes from](releasing.md#where-the-version-comes-from).
 
 ## Allowing access to file URLs
 
@@ -66,10 +115,9 @@ options**):
 - **Token** — the installation's bearer token, printed by `mdn token`. Paste
   it and save.
 
-> **Not yet.** The extension is loaded unpacked from this repository; it is
-> not in any store. The inbox clipper for URLs shared from a phone is later
-> work and is not here. Everything else on this page works against a daemon
-> built from `main`.
+> **Not yet.** The inbox clipper for URLs shared from a phone is later work and
+> is not here. Everything else on this page works against a daemon built from
+> `main`.
 
 **Test connection** asks the daemon for its roots and says what came back.
 
@@ -393,6 +441,15 @@ Deliberately **not** asked for:
   a page unless you invoke a clip on it, and then only in that tab.
 - Web-accessible resources — nothing in the extension is reachable from a web
   page.
+
+The Chrome Web Store asks for the same thing in its own words: a justification
+per permission, a single-purpose statement, and a privacy policy. All three are
+in the repository — the justifications and the statement in
+[`extension/store/listing.md`](../extension/store/listing.md), the policy in
+[`docs/privacy.md`](privacy.md) — so the table above and what the store was told
+are the same account, written down once each and checkable against each other.
+`extension/store/listing.md` also records what the review is likely to push back
+on (`file:///*`, and the optional broad host permissions) and the answer.
 
 ## Testing it
 
