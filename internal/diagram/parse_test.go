@@ -357,3 +357,18 @@ func TestParseStylingSemicolon(t *testing.T) {
 		t.Errorf("entity codes: %+v %+v", f.Nodes, f.Edges)
 	}
 }
+
+// Only accTitle and accDescr are refused, not every name that begins with
+// acc (review of PR #173, B2).
+func TestParseAccNames(t *testing.T) {
+	for _, src := range []string{"graph TD\naccount --> B", "graph TD\naccept[Accept] --> B", "graph TD\naccess & accumulator --> B"} {
+		mustParse(t, src)
+	}
+	for _, src := range []string{"graph TD\naccTitle: x\nA", "graph TD\naccDescr: x\nA", "graph TD\naccDescr{ x }\nA", "graph TD\naccTitle x\nA"} {
+		_, err := Parse([]byte(src), DefaultLimits)
+		var r *Refusal
+		if !errors.As(err, &r) || r.Kind != Unsupported {
+			t.Errorf("%q: got %v, want unsupported", src, err)
+		}
+	}
+}
