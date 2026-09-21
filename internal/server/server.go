@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/davison/md-notes/internal/config"
+	"github.com/davison/md-notes/internal/diagram"
 	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/search"
@@ -43,6 +44,11 @@ type Server struct {
 	log    *log.Logger
 	md     *render.Renderer
 	source *source.Store
+
+	// draw, svgs and drawSlots serve the diagram route: see diagram.go.
+	draw      drawFunc
+	svgs      *svgCache
+	drawSlots chan struct{}
 
 	// token validates the bearer token a non-loopback client presents.
 	// Nil accepts nothing, so a daemon built without one refuses every
@@ -130,6 +136,9 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 	s := &Server{
 		reg: reg, port: port, ui: ui, mux: http.NewServeMux(), log: logger, md: render.New(),
 		source:    source.New(reg),
+		draw:      diagram.Render,
+		svgs:      newSVGCache(diagramCacheBytes, diagramCacheEntries),
+		drawSlots: make(chan struct{}, drawSlotCount()),
 		clipsDir:  config.DefaultClipsDir,
 		listDirs:  tree.Dirs,
 		sessions:  session.New(session.DefaultTTL),
@@ -155,6 +164,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 	s.mux.HandleFunc("GET /api/r/{slug}/raw/{path...}", s.rawFile)
 	s.mux.HandleFunc("GET /api/r/{slug}/tree", s.treeHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/note/{path...}", s.noteHandler)
+	s.mux.HandleFunc("GET /api/r/{slug}/diagram/{path...}", s.diagramHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/source/{path...}", s.sourceHandler)
 	s.mux.HandleFunc("PUT /api/r/{slug}/source/{path...}", s.saveSourceHandler)
 	s.mux.HandleFunc("POST /api/r/{slug}/source/{path...}", s.createSourceHandler)
