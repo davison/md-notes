@@ -566,3 +566,54 @@ func doNoRedirect(t *testing.T, ts *httptest.Server, p string) *http.Response {
 	t.Cleanup(func() { resp.Body.Close() })
 	return resp
 }
+
+// A panic while listing a note costs that request and nothing more: the
+// draw slot it held comes back, and the next request is served. Without
+// that, as many panics as there are slots would stop every diagram on the
+// daemon (round-two review of PR #175, B2).
+func TestDiagramListingPanicReleasesItsSlot(t *testing.T) {
+	ts, base := newTestServer(t)
+	s := serverOf(t, ts)
+	s.drawSlots = make(chan struct{}, 1)
+	writeNote(t, base, "bad.md", fence(testFlow))
+	writeNote(t, base, "good.md", fence(testFlow)+"\n")
+	inner := s.buildList
+	s.buildList = func(real string) ([]render.Diagram, error) {
+		if filepath.Base(real) == "bad.md" {
+			panic("boom")
+		}
+		return inner(real)
+	}
+	get := func(rel string) (*http.Response, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		t.Cleanup(cancel)
+		req, err := http.NewRequestWithContext(ctx, "GET", ts.URL+diagramURL(rel, testFlow, "light"), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = "localhost:7337"
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			t.Cleanup(func() { resp.Body.Close() })
+		}
+		return resp, err
+	}
+	for range 2 {
+		resp, err := get("bad.md")
+		if err != nil {
+			t.Errorf("the panicking listing dropped the connection: %v", err)
+		} else if resp.StatusCode != http.StatusInternalServerError {
+			t.Errorf("the panicking listing: status %d, want 500", resp.StatusCode)
+		} else if resp.Header.Get("Content-Security-Policy") != diagramCSP {
+			t.Error("the 500 lacks the diagram CSP")
+		}
+	}
+	start := time.Now()
+	resp, err := get("good.md")
+	if err != nil {
+		t.Fatalf("another note after a listing panic: %v after %v; the slot was kept", err, time.Since(start))
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("another note after a listing panic: status %d, want 200", resp.StatusCode)
+	}
+}
