@@ -372,3 +372,25 @@ func TestParseAccNames(t *testing.T) {
 		}
 	}
 }
+
+// A diagram with nothing to draw is refused rather than drawn as an empty
+// image, and a node named after a skipped keyword is refused rather than
+// silently dropped (review of PR #173, nit 1).
+func TestParseNothingToDraw(t *testing.T) {
+	for _, c := range []struct{ src, reason string }{
+		{"graph TD", "draws nothing"},
+		{"graph TD\n%% just a comment\nstyle A fill:#fff", "draws nothing"},
+		{"graph TD\nclass --> B", "keyword"},
+		{"graph TD\nA --> B\nstyle --> C", "keyword"},
+		{"graph TD\nA --> B\nclick & C", "keyword"},
+		{"graph TD\nA\nclass", "keyword"},
+	} {
+		_, err := Parse([]byte(c.src), DefaultLimits)
+		var r *Refusal
+		if !errors.As(err, &r) || !strings.Contains(r.Reason, c.reason) {
+			t.Errorf("%q: got %v, want a refusal containing %q", c.src, err, c.reason)
+		}
+	}
+	mustParse(t, "graph TD\nsubgraph empty\nend")
+	mustParse(t, "graph TD\nclassy --> B")
+}
