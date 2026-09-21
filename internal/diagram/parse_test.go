@@ -336,3 +336,24 @@ func TestParseHeadOrName(t *testing.T) {
 		t.Errorf("A --- oB parsed as %+v %+v", f.Nodes, f.Edges)
 	}
 }
+
+// A semicolon after a hex colour in a skipped styling statement ends that
+// statement; it is not the end of an entity code (review of PR #173, B1).
+func TestParseStylingSemicolon(t *testing.T) {
+	for _, src := range []string{
+		"graph TD; A-->B; style A fill:#fff; B-->C",
+		"graph TD; A-->B; classDef x fill:#abc; B-->C",
+		"graph TD; A-->B; style A fill:#123; B-->C",
+		"graph TD; A-->B; linkStyle 0 stroke:#f00; B-->C",
+	} {
+		f := mustParse(t, src)
+		if len(f.Nodes) != 3 || len(f.Edges) != 2 {
+			t.Errorf("%q: %d nodes and %d edges, want 3 and 2", src, len(f.Nodes), len(f.Edges))
+		}
+	}
+	// In a label, an entity code's semicolon is still part of the text.
+	f := mustParse(t, "graph TD; A[\"#35; one\"] --> B[x #quot;y#quot;]; B --> C")
+	if f.Nodes[0].Label[0] != "# one" || f.Nodes[1].Label[0] != `x "y"` || len(f.Edges) != 2 {
+		t.Errorf("entity codes: %+v %+v", f.Nodes, f.Edges)
+	}
+}

@@ -135,8 +135,10 @@ func splitStatements(s string, line int) ([]string, error) {
 			inQuote = !inQuote
 		case ';':
 			// The semicolon that ends a mermaid entity code (#quot;, #35;)
-			// is part of the text, not the end of a statement.
-			if !inQuote && !entityBefore(s[:i]) {
+			// is part of the text, not the end of a statement — except in
+			// a skipped styling statement, where `fill:#fff;` is a colour
+			// and its statement's end.
+			if !inQuote && (styling(s[start:i]) || !entityBefore(s[:i])) {
 				out = append(out, s[start:i])
 				start = i + 1
 			}
@@ -146,6 +148,16 @@ func splitStatements(s string, line int) ([]string, error) {
 		return nil, refuse(Syntax, line, "a double quote is not closed")
 	}
 	return append(out, s[start:]), nil
+}
+
+// styling reports whether a statement is one of the skipped styling or
+// interaction statements.
+func styling(st string) bool {
+	st = strings.TrimSpace(st)
+	if i := strings.IndexAny(st, " \t"); i >= 0 {
+		st = st[:i]
+	}
+	return ignored[st]
 }
 
 // entityBefore reports whether s ends in the body of an entity code: a #
