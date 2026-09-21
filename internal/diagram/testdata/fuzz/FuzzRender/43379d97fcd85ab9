@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("flowchart LR\n1--000%B%--x1")

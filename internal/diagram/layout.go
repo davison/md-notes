@@ -185,6 +185,7 @@ func (e *engine) buildNodes() {
 		e.finalW[i], e.finalH[i] = w, h
 		ol, or, rh := e.extents(w, h)
 		or += e.loopExtent(i)
+		rh = math.Max(rh, e.loopLabelSpan(i))
 		e.nodeOf[i] = e.add(&lnode{kind: kReal, ref: i, ol: ol, or: or, rh: rh, cluster: n.Subgraph})
 	}
 	// An empty subgraph still draws a box: an invisible anchor gives it
@@ -236,6 +237,22 @@ func (e *engine) loopExtent(n int) float64 {
 		ext += lab + 8
 	}
 	return ext
+}
+
+// loopLabelSpan is how much of the rank axis a node's self-loop labels
+// need: a loop's label is centred on the node along that axis, beside the
+// loop (below it when ranks run across), and may be longer than the node.
+func (e *engine) loopLabelSpan(n int) float64 {
+	span := 0.0
+	for _, i := range e.loops[n] {
+		w, h := textBox(e.f.Edges[i].Label)
+		if e.dir.horizontal() {
+			span = math.Max(span, w)
+		} else {
+			span = math.Max(span, h)
+		}
+	}
+	return span
 }
 
 func nodeSize(s Shape, tw, th float64) (w, h float64) {

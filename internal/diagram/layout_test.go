@@ -104,18 +104,27 @@ func checkDrawing(f *Flowchart, d *drawing) error {
 		}
 	}
 	for _, e := range d.edges {
-		if len(e.label) == 0 || e.loop {
+		for _, p := range e.pts {
+			if math.IsNaN(p.x) || math.IsNaN(p.y) || math.IsInf(p.x, 0) || math.IsInf(p.y, 0) {
+				return fmt.Errorf("edge point %v is not finite", p)
+			}
+			if !image.contains(rect{p.x, p.y, p.x, p.y}) {
+				return fmt.Errorf("edge point %v outside the image %v", p, image)
+			}
+		}
+		if len(e.label) == 0 {
 			continue
 		}
 		lb := rect{e.lx - e.lw/2, e.ly - e.lh/2, e.lx + e.lw/2, e.ly + e.lh/2}
+		if !image.contains(lb) {
+			return fmt.Errorf("edge label %q %v outside the image %v", e.label, lb, image)
+		}
+		if e.loop {
+			continue
+		}
 		for i := range nodes {
 			if lb.overlaps(nodes[i]) {
 				return fmt.Errorf("edge label %q %v overlaps node %s %v", e.label, lb, f.Nodes[i].ID, nodes[i])
-			}
-		}
-		for _, p := range e.pts {
-			if math.IsNaN(p.x) || math.IsNaN(p.y) {
-				return fmt.Errorf("edge point is NaN")
 			}
 		}
 	}
