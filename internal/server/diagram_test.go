@@ -491,3 +491,23 @@ func TestDiagramListingsAreBounded(t *testing.T) {
 		t.Errorf("peak concurrent listings %d, want 2", p)
 	}
 }
+func TestListCacheIsBounded(t *testing.T) {
+	l := func(n int) []render.Diagram { return []render.Diagram{{Hash: "h", Source: make([]byte, n)}} }
+	k := func(p string) noteKey { return noteKey{path: p} }
+	c := newListCache(1000, 2)
+	c.put(k("a"), l(10))
+	c.put(k("b"), l(10))
+	c.get(k("a"))
+	c.put(k("c"), l(10))
+	if _, ok := c.get(k("b")); ok {
+		t.Error("b, the least recently used, survived the entry bound")
+	}
+	c.put(k("big"), l(900))
+	if c.size > 1000 {
+		t.Errorf("size %d over the byte bound", c.size)
+	}
+	c.put(k("huge"), l(2000))
+	if _, ok := c.get(k("huge")); ok {
+		t.Error("a list larger than the whole cache was kept")
+	}
+}

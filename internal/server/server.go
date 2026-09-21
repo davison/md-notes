@@ -49,8 +49,9 @@ type Server struct {
 	draw      drawFunc
 	svgs      *svgCache
 	drawSlots chan struct{}
-	// buildList lists a note's flowcharts for the same route.
+	// buildList and lists serve the same route's look-up of a block.
 	buildList func(real string) ([]render.Diagram, error)
+	lists     *listCache
 
 	// token validates the bearer token a non-loopback client presents.
 	// Nil accepts nothing, so a daemon built without one refuses every
@@ -141,6 +142,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 		draw:      diagram.Render,
 		svgs:      newSVGCache(diagramCacheBytes, diagramCacheEntries),
 		drawSlots: make(chan struct{}, drawSlotCount()),
+		lists:     newListCache(listCacheBytes, listCacheEntries),
 		clipsDir:  config.DefaultClipsDir,
 		listDirs:  tree.Dirs,
 		sessions:  session.New(session.DefaultTTL),
