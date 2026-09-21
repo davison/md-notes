@@ -130,16 +130,16 @@ func TestRenderDeadline(t *testing.T) {
 	lim := DefaultLimits
 	lim.Timeout = time.Millisecond
 	start := time.Now()
-	_, err := RenderLimits(context.Background(), randomSource(100, 200, 1), Light, lim)
+	_, err := RenderLimits(context.Background(), slowest(), Light, lim)
 	var r *Refusal
 	if !errors.As(err, &r) || r.Kind != Limit || !strings.Contains(r.Reason, "took longer") {
 		t.Fatalf("got %v, want a deadline refusal", err)
 	}
-	if took := time.Since(start); took > 100*time.Millisecond {
+	if took := time.Since(start); took > 40*time.Millisecond {
 		t.Errorf("the deadline refusal took %v", took)
 	}
 	// And the same block inside the default deadline draws.
-	if _, err := Render(context.Background(), randomSource(100, 200, 1), Light); err != nil {
+	if _, err := Render(context.Background(), slowest(), Light); err != nil {
 		t.Fatalf("default deadline: %v", err)
 	}
 }
