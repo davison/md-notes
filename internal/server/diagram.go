@@ -127,6 +127,9 @@ func (s *Server) diagramHandler(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, os.ErrNotExist):
 		fail(http.StatusNotFound, "not found")
 		return
+	case errors.Is(err, errListing):
+		fail(http.StatusInternalServerError, "the note's diagrams could not be listed")
+		return
 	case err != nil:
 		fail(http.StatusServiceUnavailable, "the diagram was not drawn")
 		return
@@ -183,21 +186,7 @@ func (s *Server) diagramSource(ctx context.Context, real, hash string) ([]byte, 
 	key := noteKey{path: real, size: info.Size(), mtime: info.ModTime().UnixNano()}
 	list, ok := s.lists.get(key)
 	if !ok {
-		select {
-		case s.drawSlots <- struct{}{}:
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-		// Another request may have listed it while this one waited.
-		if list, ok = s.lists.get(key); !ok {
-			list, err = s.buildList(real)
-			if err == nil {
-				// Before the slot is handed on, so the next waiter finds it.
-				s.lists.put(key, list)
-			}
-		}
-		<-s.drawSlots
-		if err != nil {
+		if list, err = s.listInSlot(ctx, key, real); err != nil {
 			return nil, err
 		}
 	}
@@ -207,6 +196,46 @@ func (s *Server) diagramSource(ctx context.Context, real, hash string) ([]byte, 
 		}
 	}
 	return nil, nil
+}
+
+// errListing is a listing that panicked: a bug, answered as a 500 for that
+// request rather than taking the slot, or the daemon, with it.
+var errListing = errors.New("listing the note failed")
+
+// listInSlot builds a note's list inside a draw slot and caches it. The
+// slot is released however the build ends, and a panic in it becomes
+// errListing: the same second line diagram.Render keeps, for the same
+// reason — the listing runs diagram.Parse over hostile input too, and one
+// bad note must not stop diagrams for every other (round-two review of
+// PR #175, B2).
+//
+// A read that blocks — a note on a hung network or FUSE mount — holds its
+// slot for as long as the read does; os.ReadFile cannot be interrupted.
+// That is accepted, and the note render has the same exposure.
+func (s *Server) listInSlot(ctx context.Context, key noteKey, real string) (list []render.Diagram, err error) {
+	select {
+	case s.drawSlots <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-s.drawSlots }()
+	defer func() {
+		if r := recover(); r != nil {
+			s.log.Printf("diagram: listing %s panicked: %v", real, r)
+			list, err = nil, errListing
+		}
+	}()
+	// Another request may have listed it while this one waited.
+	if list, ok := s.lists.get(key); ok {
+		return list, nil
+	}
+	list, err = s.buildList(real)
+	if err != nil {
+		return nil, err
+	}
+	// Before the slot is handed on, so the next waiter finds it.
+	s.lists.put(key, list)
+	return list, nil
 }
 
 // listNote reads a note and lists its flowcharts. It is the listing the
