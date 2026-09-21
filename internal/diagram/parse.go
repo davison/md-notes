@@ -233,6 +233,11 @@ func (p *parser) statement(st string, line int) error {
 		if rest == "" || strings.ContainsRune("-=.~<&[({>:|", rune(rest[0])) {
 			return refuse(Unsupported, line, "%q is a keyword and cannot name a node", word)
 		}
+		// Nor is `style A --> B`: a link in a skipped statement would be
+		// skipped with it.
+		if hasLink(rest) {
+			return refuse(Syntax, line, "a %s statement cannot hold a link", word)
+		}
 		return nil
 	case accessibility(word) != "":
 		return refuse(Unsupported, line, "%s is not supported", accessibility(word))
@@ -240,6 +245,29 @@ func (p *parser) statement(st string, line int) error {
 		return refuse(Unsupported, line, "title is not supported")
 	}
 	return p.chain(st, line)
+}
+
+// hasLink reports whether text outside double quotes holds a link's
+// strokes: two dashes or equals signs, a dotted link, or ~~~. Styling
+// values use single dashes (stroke-width) and quoted URLs may hold
+// anything.
+func hasLink(s string) bool {
+	inQuote := false
+	for i := 0; i < len(s); i++ {
+		if s[i] == '"' {
+			inQuote = !inQuote
+			continue
+		}
+		if inQuote {
+			continue
+		}
+		for _, l := range []string{"--", "==", "-.-", ".->", "~~~"} {
+			if strings.HasPrefix(s[i:], l) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // accessibility is the accTitle or accDescr statement a word opens, or "".
