@@ -560,10 +560,11 @@ adoption; see [Corrections](#corrections-to-the-record-itself).
 the choice of a server-side renderer, flowcharts only, and the advisory tests are all written
 up by the coordinator: "the operator judged that not worth it and asked instead". The
 light-override acceptance is the one place the operator's words are quoted, and even those
-exist only as the coordinator relayed them in its decision comment on #171, with no comment
-written by the operator on any M9 issue or pull request. There is no operator comment
-weighing the sandboxed-frame option against a renderer of our own. That it
-was weighed is stated, and how is not.
+exist only as the coordinator relayed them in its decision comment on #171. No decision or
+requirement text on any M9 issue or pull request was written by the operator directly; the
+operator-confirmation comment each merged pull request carries is posted by `task finish`.
+There is no operator comment weighing the sandboxed-frame option against a renderer of our
+own. That it was weighed is stated, and how is not.
 
 **Whether the Noto Sans widths need an OFL notice.** The implementer believed not, because
 they are numbers with no glyph data, and offered it as a one-line addition "if the operator
