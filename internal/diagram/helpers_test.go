@@ -30,3 +30,9 @@ func randomSource(n, e int, seed uint64) []byte {
 	}
 	return []byte(b.String())
 }
+
+// slowest is the slowest block inside every default bound that a search
+// of 300 random graphs (40 to 200 nodes, n to 2n edges) turned up: about
+// 210ms to lay out on the machine #170 was measured on. The deadline tests
+// use it so that a layout that ignored its deadline would visibly overrun.
+func slowest() []byte { return randomSource(189, 260, 177) }

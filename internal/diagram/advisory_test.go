@@ -220,13 +220,13 @@ func TestAdvisoriesDoS(t *testing.T) {
 		lim := DefaultLimits
 		lim.Timeout = 20 * time.Millisecond
 		start := time.Now()
-		_, err := RenderLimits(context.Background(), randomSource(100, 200, 1), Light, lim)
+		_, err := RenderLimits(context.Background(), slowest(), Light, lim)
 		took := time.Since(start)
 		var r *Refusal
 		if !errors.As(err, &r) || r.Kind != Limit || !strings.Contains(r.Reason, "took longer than 20ms") {
 			t.Fatalf("got %v, want a deadline refusal", err)
 		}
-		if took > lim.Timeout+100*time.Millisecond {
+		if took > lim.Timeout+40*time.Millisecond {
 			t.Errorf("refused after %v, want soon after the %v deadline", took, lim.Timeout)
 		}
 	})
