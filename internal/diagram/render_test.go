@@ -129,18 +129,61 @@ func TestRenderCallerCancelled(t *testing.T) {
 func TestRenderDeadline(t *testing.T) {
 	lim := DefaultLimits
 	lim.Timeout = time.Millisecond
-	start := time.Now()
 	_, err := RenderLimits(context.Background(), slowest(), Light, lim)
 	var r *Refusal
 	if !errors.As(err, &r) || r.Kind != Limit || !strings.Contains(r.Reason, "took longer") {
 		t.Fatalf("got %v, want a deadline refusal", err)
 	}
-	if took := time.Since(start); took > 40*time.Millisecond {
-		t.Errorf("the deadline refusal took %v", took)
-	}
 	// And the same block inside the default deadline draws.
 	if _, err := Render(context.Background(), slowest(), Light); err != nil {
 		t.Fatalf("default deadline: %v", err)
+	}
+}
+
+// countdown is a context whose deadline passes after a set number of
+// checks, so a test can say which check stops the layout without timing
+// anything.
+type countdown struct {
+	context.Context
+	left, calls int
+}
+
+func (c *countdown) Err() error {
+	c.calls++
+	if c.left <= 0 {
+		return context.DeadlineExceeded
+	}
+	c.left--
+	return nil
+}
+
+// The layout stops at whichever of its checks first sees the deadline —
+// the first, the last, and every one between — so no phase runs on past
+// it. This is the deadline test that cannot flake: it counts checks rather
+// than timing them.
+func TestLayoutChecksContext(t *testing.T) {
+	// A graph with subgraphs and cycles, so every phase has work to do.
+	src := append(randomSource(40, 70, 3), []byte("subgraph s\nn1\nn2\nend\nsubgraph t\nn3\nend\n")...)
+	f, err := Parse(src, DefaultLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := &countdown{Context: context.Background(), left: 1 << 30}
+	if _, err := layout(full, f, DefaultLimits); err != nil {
+		t.Fatal(err)
+	}
+	if full.calls < 20 {
+		t.Fatalf("the layout checked its context %d times; want a check in every round of every phase", full.calls)
+	}
+	for n := 0; n < full.calls; n++ {
+		c := &countdown{Context: context.Background(), left: n}
+		d, err := layout(c, f, DefaultLimits)
+		if !errors.Is(err, context.DeadlineExceeded) || d != nil {
+			t.Fatalf("deadline at check %d of %d: got %v, want the layout to stop", n+1, full.calls, err)
+		}
+		if c.calls != n+1 {
+			t.Fatalf("deadline at check %d: the layout checked %d times", n+1, c.calls)
+		}
 	}
 }
 
