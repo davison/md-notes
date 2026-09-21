@@ -93,7 +93,28 @@ describe("NoteView", () => {
     expect(screen.getByText("text").tagName).toBe("STRONG");
     expect(screen.queryByText("Metadata")).toBeNull();
     const url = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(url).toBe("/api/r/my%20notes/note/dir/a%20b.md");
+    // The reading view asks for its diagrams' sizes (#177).
+    expect(url).toBe("/api/r/my%20notes/note/dir/a%20b.md?sizes=1");
+  });
+
+  it("abandons its fetch when the reader moves on, so the daemon stops measuring", async () => {
+    // Review of PR #181, N2: a slow open left running kept the daemon
+    // laying out a note nobody was reading.
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_: string, init?: RequestInit) => {
+        if (init?.signal) signals.push(init.signal);
+        return new Promise(() => {});
+      }),
+    );
+    const { rerender, unmount } = render(<NoteView slug="n" path="a.md" />);
+    await waitFor(() => expect(signals.length).toBe(1));
+    rerender(<NoteView slug="n" path="b.md" />);
+    await waitFor(() => expect(signals.length).toBe(2));
+    expect(signals[0].aborted).toBe(true);
+    unmount();
+    expect(signals[1].aborted).toBe(true);
   });
 
   it("shows frontmatter in a collapsed panel", async () => {

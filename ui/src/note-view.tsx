@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { diagramURL, fetchNote, type Note } from "./api";
-import { DiagramPool, decorate, useDiagramTheme } from "./diagrams";
+import { DiagramPool, decorate, holdInView, useDiagramTheme } from "./diagrams";
 import { animationsOff } from "./settings";
 
 /**
@@ -34,13 +34,16 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
   const shown = useRef("");
   useEffect(() => {
     let cancelled = false;
+    // Abandoned when the reader moves on, so the daemon stops measuring a
+    // note nobody is reading (review of PR #181, N2).
+    const abort = new AbortController();
     const key = slug + "\0" + path;
     if (shown.current !== key) {
       shown.current = key;
       setNote(null);
       setError(null);
     }
-    fetchNote(slug, path).then(
+    fetchNote(slug, path, { sizes: true, signal: abort.signal }).then(
       (n) => {
         if (cancelled) return;
         setNote(n);
@@ -55,6 +58,7 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
     );
     return () => {
       cancelled = true;
+      abort.abort();
     };
     // onTitle is deliberately not a dependency: it is reported from the
     // fetch, and refetching because the caller passed a fresh closure
@@ -95,16 +99,23 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
       const target = lineTarget(body.current, line);
       if (target) {
         target.scrollIntoView({ block: "center" });
+        // A diagram above the target that the daemon did not measure has no
+        // box until it loads; keep the target where it was put as each one
+        // arrives (#177).
+        const release = holdInView(target);
         // No flash when animations are off: the class is not added at all,
         // rather than added and left to a stylesheet that has cancelled the
         // animation, so nothing repaints and nothing is left behind if the
         // page navigates before the timer. Centring the block is what says
         // where the hit is; that is a scroll, not an animation.
-        if (animationsOff()) return;
+        if (animationsOff()) return release;
         const flash = target.classList.contains("line-anchor") ? (target.nextElementSibling ?? target) : target;
         flash.classList.add("flash");
         const t = setTimeout(() => flash.classList.remove("flash"), 1500);
-        return () => clearTimeout(t);
+        return () => {
+          clearTimeout(t);
+          release();
+        };
       }
       // No block at or before that line (a hit in the frontmatter, say):
       // fall through to the usual top-of-note behaviour for a fresh open.
