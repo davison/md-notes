@@ -227,6 +227,12 @@ func (p *parser) statement(st string, line int) error {
 		// crosses the subgraph's border.
 		return nil
 	case ignored[word]:
+		// `class --> B` is not a class statement but a node named class,
+		// which mermaid cannot parse either; skipping it would drop the
+		// node and its edges, so it is refused.
+		if rest == "" || strings.ContainsRune("-=.~<&[({>:|", rune(rest[0])) {
+			return refuse(Unsupported, line, "%q is a keyword and cannot name a node", word)
+		}
 		return nil
 	case accessibility(word) != "":
 		return refuse(Unsupported, line, "%s is not supported", accessibility(word))
@@ -483,6 +489,9 @@ func (p *parser) resolve() error {
 		}
 		nodeIdx[m.name] = len(f.Nodes)
 		f.Nodes = append(f.Nodes, Node{ID: m.name, Label: lbl, Shape: m.shape, Subgraph: m.sub})
+	}
+	if len(f.Nodes) == 0 && len(f.Subgraphs) == 0 {
+		return refuse(Syntax, 0, "the diagram draws nothing")
 	}
 	end := func(name string) End {
 		if s, ok := p.subIndex[name]; ok {
