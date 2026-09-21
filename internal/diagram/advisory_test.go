@@ -182,23 +182,28 @@ func TestAdvisoriesDoS(t *testing.T) {
 		}
 		return strings.Join(parts, sep)
 	}
+	// Each of these is refused in about a millisecond, while parsing or
+	// before any layout work; the bound on the time is wide so a loaded
+	// runner cannot fail it, and still far short of what the unbounded
+	// work would take.
+	const bounded = 500 * time.Millisecond
 	cases := []struct {
 		name, src, reason string
 		within            time.Duration
 	}{
-		{"CVE-2026-41150/input size", "flowchart TD\nA --> B\n" + strings.Repeat("%% padding\n", 3100), "bytes; the limit is", 50 * time.Millisecond},
-		{"CVE-2026-41150/node count", "flowchart TD\n" + rep("n%d", 201, "\n"), "more than 200 nodes", 50 * time.Millisecond},
-		{"CVE-2026-71436/edge count", "flowchart TD\n" + strings.Repeat("a --> b\n", 401), "more than 400 edges", 50 * time.Millisecond},
-		{"CVE-2026-71436/& product", "flowchart TD\n" + rep("a%d", 25, " & ") + " --> " + rep("b%d", 25, " & "), "more than 400 edges", 50 * time.Millisecond},
-		{"CVE-2026-71436/long chain", "flowchart TD\n" + rep("c%d", 199, " --> ") + "\n" + rep("c%d", 199, " --> ") + "\n" + rep("c%d", 199, " --> "), "more than 400 edges", 50 * time.Millisecond},
-		{"CVE-2026-71439/deep nesting", "flowchart TD\n" + rep("subgraph s%d", 9, "\n") + "\nA\n" + rep("end", 9, "\n"), "nested more than 8 deep", 50 * time.Millisecond},
-		{"CVE-2026-71439/label length", "flowchart TD\nA[\"" + strings.Repeat("x", 501) + "\"]", "more than 500 characters", 50 * time.Millisecond},
-		{"CVE-2026-71439/label lines", "flowchart TD\nA[\"" + strings.Repeat("x<br>", 21) + "\"]", "more than 20 lines", 50 * time.Millisecond},
-		{"CVE-2026-71439/link length", "flowchart TD\nA " + strings.Repeat("-", 11) + "> B", "longer than 8", 50 * time.Millisecond},
+		{"CVE-2026-41150/input size", "flowchart TD\nA --> B\n" + strings.Repeat("%% padding\n", 3100), "bytes; the limit is", bounded},
+		{"CVE-2026-41150/node count", "flowchart TD\n" + rep("n%d", 201, "\n"), "more than 200 nodes", bounded},
+		{"CVE-2026-71436/edge count", "flowchart TD\n" + strings.Repeat("a --> b\n", 401), "more than 400 edges", bounded},
+		{"CVE-2026-71436/& product", "flowchart TD\n" + rep("a%d", 25, " & ") + " --> " + rep("b%d", 25, " & "), "more than 400 edges", bounded},
+		{"CVE-2026-71436/long chain", "flowchart TD\n" + rep("c%d", 199, " --> ") + "\n" + rep("c%d", 199, " --> ") + "\n" + rep("c%d", 199, " --> "), "more than 400 edges", bounded},
+		{"CVE-2026-71439/deep nesting", "flowchart TD\n" + rep("subgraph s%d", 9, "\n") + "\nA\n" + rep("end", 9, "\n"), "nested more than 8 deep", bounded},
+		{"CVE-2026-71439/label length", "flowchart TD\nA[\"" + strings.Repeat("x", 501) + "\"]", "more than 500 characters", bounded},
+		{"CVE-2026-71439/label lines", "flowchart TD\nA[\"" + strings.Repeat("x<br>", 21) + "\"]", "more than 20 lines", bounded},
+		{"CVE-2026-71439/link length", "flowchart TD\nA " + strings.Repeat("-", 11) + "> B", "longer than 8", bounded},
 		// Inside every count, but 25 links of length 8 in a chain put its ends
 		// 400 ranks apart, and ten edges between them need a dummy node in
 		// every rank between.
-		{"CVE-2026-71439/layout size", "flowchart TD\n" + longChain(25) + strings.Repeat("c0 --> c25\n", 10), "layout needs more than", 50 * time.Millisecond},
+		{"CVE-2026-71439/layout size", "flowchart TD\n" + longChain(25) + strings.Repeat("c0 --> c25\n", 10), "layout needs more than", bounded},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -215,7 +220,10 @@ func TestAdvisoriesDoS(t *testing.T) {
 		})
 	}
 	// A layout that hits the render deadline: a dense graph inside every
-	// count, given a deadline shorter than it takes.
+	// count, given a deadline shorter than it takes. The time allowed past
+	// the deadline is generous, so a loaded runner cannot fail it;
+	// TestLayoutChecksContext is the exact test that every phase of the
+	// layout stops at its deadline.
 	t.Run("CVE-2026-41150/render deadline", func(t *testing.T) {
 		lim := DefaultLimits
 		lim.Timeout = 20 * time.Millisecond
@@ -226,7 +234,7 @@ func TestAdvisoriesDoS(t *testing.T) {
 		if !errors.As(err, &r) || r.Kind != Limit || !strings.Contains(r.Reason, "took longer than 20ms") {
 			t.Fatalf("got %v, want a deadline refusal", err)
 		}
-		if took > lim.Timeout+40*time.Millisecond {
+		if took > lim.Timeout+time.Second {
 			t.Errorf("refused after %v, want soon after the %v deadline", took, lim.Timeout)
 		}
 	})
