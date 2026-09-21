@@ -906,10 +906,10 @@ only through `<img>`, which runs no script and loads nothing, and never inline. 
 every answer at a diagram URL, the refusals included, carries
 `Content-Security-Policy: default-src 'none'; sandbox` and
 `X-Content-Type-Options: nosniff`, so even a drawing opened directly as a page runs
-nothing and is never sniffed into something that could. The one known exception is a
-URL with an encoded `..` segment (`%2e%2e`), which never reaches the route and gets the
-daemon's generic `404` with fixed text and no headers; nothing of the request is in it
-([#179](https://github.com/davison/md-notes/issues/179)). The attack payloads of
+nothing and is never sniffed into something that could. One known exception: QA found
+a diagram URL with an encoded `..` segment (`%2e%2e`) that the route never sees, which
+gets the daemon's generic `404` — fixed text, nothing of the request in it — without
+the two headers ([#179](https://github.com/davison/md-notes/issues/179)). The attack payloads of
 mermaid's published advisories are test cases in the package, each shown inert
 ([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5765984674)).
 
