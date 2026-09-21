@@ -769,7 +769,16 @@ var namedEntities = map[string]string{
 // string, a Font Awesome icon — is refused, never passed on or shown as if
 // it were the text.
 func label(raw string, line int, lim Limits) ([]string, error) {
-	t := strings.TrimSpace(raw)
+	// Invisible characters go first, before any check reads the text, so
+	// dropping them cannot assemble a tag, a <br> or an icon out of text
+	// the checks passed. They are dropped again after entity decoding, as
+	// a code can spell one.
+	t := strings.TrimSpace(strings.Map(func(r rune) rune {
+		if invisible(r) {
+			return -1
+		}
+		return r
+	}, raw))
 	if strings.HasPrefix(t, `"`) {
 		if len(t) < 2 || !strings.HasSuffix(t, `"`) {
 			return nil, refuse(Syntax, line, "a double quote is not closed")
@@ -819,12 +828,15 @@ func label(raw string, line int, lim Limits) ([]string, error) {
 }
 
 // invisible reports the bidi embedding, override and isolate controls
-// (U+202A–U+202E, U+2066–U+2069) and the zero-width space, word joiner and
-// byte-order mark. The zero-width joiner and non-joiner and the LRM/RLM
-// marks are kept: scripts and emoji need them to be written correctly.
+// (U+202A–U+202E, U+2066–U+2069), the Arabic letter mark (U+061C), the
+// zero-width space, word joiner and byte-order mark, and the tag
+// characters (U+E0000–U+E007F). The zero-width joiner and non-joiner and
+// the LRM/RLM marks are kept: scripts and emoji need them to be written
+// correctly.
 func invisible(r rune) bool {
 	return r >= 0x202A && r <= 0x202E || r >= 0x2066 && r <= 0x2069 ||
-		r == 0x200B || r == 0x2060 || r == 0xFEFF
+		r == 0x061C || r == 0x200B || r == 0x2060 || r == 0xFEFF ||
+		r >= 0xE0000 && r <= 0xE007F
 }
 
 func decodeEntity(m string) string {

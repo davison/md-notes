@@ -407,3 +407,29 @@ func TestParseInvisibleCharacters(t *testing.T) {
 		t.Errorf("joiners and marks dropped: %q", got)
 	}
 }
+
+// Invisible characters are dropped before a label is checked, so dropping
+// them cannot put together markup, a line break or an icon the checks
+// would have refused or read (review of PR #173, round two).
+func TestParseStripBeforeChecks(t *testing.T) {
+	for _, c := range []struct{ src, reason string }{
+		{"graph TD\nA[\"<\u200Bscript>x\"]", "HTML"},
+		{"graph TD\nA[\"<\uFEFFimg src=x>\"]", "HTML"},
+		{"graph TD\nA[\"fa\u200B:fa-car\"]", "icons"},
+		{"graph TD\nA[\"\u200B`md`\"]", "markdown"},
+	} {
+		_, err := Parse([]byte(c.src), DefaultLimits)
+		var r *Refusal
+		if !errors.As(err, &r) || !strings.Contains(r.Reason, c.reason) {
+			t.Errorf("%q: got %v, want a refusal containing %q", c.src, err, c.reason)
+		}
+	}
+	f := mustParse(t, "graph TD\nA[\"a<\u200Bbr>b\"]")
+	if !reflect.DeepEqual(f.Nodes[0].Label, []string{"a", "b"}) {
+		t.Errorf("a<ZWSP br>b is %q, want a line break", f.Nodes[0].Label)
+	}
+	f = mustParse(t, "graph TD\nA[\"x\u061Cy\U000E0041\U000E007Fz\"]")
+	if got := f.Nodes[0].Label[0]; got != "xyz" {
+		t.Errorf("Arabic letter mark and tag characters kept: %q", got)
+	}
+}
