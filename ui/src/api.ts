@@ -117,7 +117,7 @@ export interface Note {
    * The note's drawable flowcharts: each one's line anchor and source hash,
    * for the reading view to put the daemon's drawing in front of (#171).
    */
-  diagrams?: { line: number; hash: string }[];
+  diagrams?: { line: number; hash: string; width?: number; height?: number }[];
 }
 
 export function fetchNote(slug: string, path: string): Promise<Note> {

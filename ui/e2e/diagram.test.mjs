@@ -75,6 +75,7 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
     write("refused.md", "# Refused\n\n" + fence(layoutRefused()));
     write("live.md", "# Live\n\n" + fence("graph TD; P-->Q\n") + "\n" + fence("graph TD; X-->Y\n"));
     write("flows.md", FLOWS.text);
+    write("unreachable.md", "# Unreachable\n\n" + fence(FLOW));
     browser = await playwright.chromium.launch({ headless: true });
   });
 
@@ -204,18 +205,38 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
     }
   });
 
-  it("shows the code block when the daemon refuses to draw, and keeps it through a live update", async () => {
-    const { page, responses, close } = await open();
+  it("shows as code a block the layout refuses, without ever asking for an image", async () => {
+    // The note endpoint draws each block to measure it (#177), so a refusal
+    // by the layout is known before the page decorates: the block is not
+    // listed, and it is code from the first frame.
+    const { page, requests, close } = await open();
     try {
       await openNote(page, fixture.url("refused.md"));
-      await waitFor(() => responses.length > 0, "the diagram request");
-      assert.equal(responses[0].status, 422);
-      await page.waitForFunction(() => {
-        const pre = document.querySelector(".markdown pre");
-        return !document.querySelector(".markdown img") && getComputedStyle(pre).display !== "none";
-      });
+      const seen = await page.evaluate(() => ({
+        imgs: document.querySelectorAll(".markdown img").length,
+        shown: getComputedStyle(document.querySelector(".markdown pre")).display !== "none",
+      }));
+      assert.deepEqual(seen, { imgs: 0, shown: true });
+      fs.appendFileSync(fixture.file("refused.md"), "\nA paragraph added below.\n");
+      await page.locator(".markdown p", { hasText: "A paragraph added below." }).waitFor();
+      assert.equal(requests.length, 0, `a drawing was asked for: ${requests.join(", ")}`);
+    } finally {
+      await close();
+    }
+  });
 
-      // A live update elsewhere in the note leaves the refused block as code:
+  it("shows the code block, and no broken image, when the drawing cannot be fetched, and keeps it through a live update", async () => {
+    const { page, requests, close } = await open();
+    try {
+      await page.route("**/api/r/*/diagram/**", (route) => route.abort("internetdisconnected"));
+      await openNote(page, fixture.url("unreachable.md"));
+      await waitFor(() => requests.length > 0, "the diagram request");
+      await page.waitForFunction(
+        () => [...document.querySelectorAll(".markdown pre")].every((p) => getComputedStyle(p).display !== "none"),
+      );
+      assert.equal(await page.locator(".markdown img").count(), 0);
+
+      // A live update elsewhere in the note leaves the failed block as code:
       // it is not hidden again, and not asked for again (review of PR #175, N3).
       await page.evaluate(() => {
         window.__hidden = 0;
@@ -223,24 +244,10 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
           if (document.querySelector(".markdown pre.diagram-source")) window.__hidden++;
         }).observe(document.querySelector(".markdown"), { subtree: true, childList: true, attributes: true });
       });
-      fs.appendFileSync(fixture.file("refused.md"), "\nA paragraph added below.\n");
+      fs.appendFileSync(fixture.file("unreachable.md"), "\nA paragraph added below.\n");
       await page.locator(".markdown p", { hasText: "A paragraph added below." }).waitFor();
       assert.equal(await page.evaluate(() => window.__hidden), 0, "the code block was hidden again");
-      assert.equal(responses.length, 1, `the refused drawing was asked for again: ${JSON.stringify(responses)}`);
-    } finally {
-      await close();
-    }
-  });
-
-  it("shows the code block, and no broken image, when the drawing cannot be fetched", async () => {
-    const { page, close } = await open();
-    try {
-      await page.route("**/api/r/*/diagram/**", (route) => route.abort("internetdisconnected"));
-      await openNote(page, fixture.url("flow.md"));
-      await page.waitForFunction(
-        () => [...document.querySelectorAll(".markdown pre")].every((p) => getComputedStyle(p).display !== "none"),
-      );
-      assert.equal(await page.locator(".markdown img").count(), 0);
+      assert.equal(requests.length, 1, `the failed drawing was asked for again: ${requests.join(", ")}`);
     } finally {
       await close();
     }
@@ -340,8 +347,10 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
       it(`lands a hit ${what}, at ${profile.name}`, async () => {
         const seen = await landsOn(profile, line, opts);
         assert.equal(seen.tag, tag);
+        // Centred, as the pre-M9 build centres it: the scroll puts the
+        // block's start in the middle of the screen, and it stays there.
         assert.ok(
-          seen.top >= 0 && seen.top < seen.height - 40,
+          Math.abs(seen.top - seen.height / 2) < seen.height / 4,
           `the target's top is at ${seen.top}px in a ${seen.height}px viewport: ${JSON.stringify(seen)}`,
         );
       });
