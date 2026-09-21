@@ -433,3 +433,30 @@ func TestParseStripBeforeChecks(t *testing.T) {
 		t.Errorf("Arabic letter mark and tag characters kept: %q", got)
 	}
 }
+
+// A skipped statement that holds a link is a chain mermaid cannot parse
+// either, not a styling statement; skipping it would drop the link, so it
+// is refused (review of PR #173, round two, nit 3).
+func TestParseSkippedStatementWithLink(t *testing.T) {
+	for _, src := range []string{
+		"graph TD\nstyle A --> B\nC",
+		"graph TD\nclass A --> B",
+		"graph TD\nclick A ==> B",
+		"graph TD\nclassDef A -.-> B",
+		"graph TD\nlinkStyle A ~~~ B",
+		"graph TD\nstyle A --- B",
+	} {
+		_, err := Parse([]byte(src), DefaultLimits)
+		var r *Refusal
+		if !errors.As(err, &r) || !strings.Contains(r.Reason, "link") {
+			t.Errorf("%q: got %v, want a refusal about the link", src, err)
+		}
+	}
+	for _, src := range []string{
+		"graph TD\nA\nstyle A fill:#f9f,stroke:#333,stroke-width:4px,stroke-dasharray: 5 5",
+		"graph TD\nA\nclick A href \"https://example.com/a--b==c\" \"tip -- here\"",
+		"graph TD\nA\nclassDef big-box fill:#fff",
+	} {
+		mustParse(t, src)
+	}
+}
