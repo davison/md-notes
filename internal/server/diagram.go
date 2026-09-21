@@ -65,6 +65,14 @@ const (
 	diagramCacheEntries = 512
 )
 
+// The note-list cache's bounds. An entry holds its blocks' sources, which
+// the input bound keeps to 32 KiB each; 16 MiB holds the lists of a few
+// hundred ordinary notes, or a handful of pathological ones.
+const (
+	listCacheBytes   = 16 << 20
+	listCacheEntries = 256
+)
+
 // drawFunc is diagram.Render; a test replaces it to count or hold draws.
 type drawFunc func(ctx context.Context, src []byte, theme diagram.Theme) ([]byte, error)
 
@@ -154,10 +162,44 @@ func (s *Server) diagramHandler(w http.ResponseWriter, r *http.Request) {
 // diagramSource finds the block whose hash is hash in the note at real.
 // It returns nil when the note holds no such block, and an error wrapping
 // os.ErrNotExist when the note cannot be read.
+//
+// A page asks for each of its diagrams separately, so listing the note
+// afresh for every request would parse the whole note once per diagram —
+// quadratic in its size, and outside any bound (the round-one review of
+// PR #175, B1). So the list is cached by the file's identity as a stat sees
+// it, and a request for a diagram of an unchanged note costs a stat and a
+// map look-up. A listing that has to be built — the read and the parse —
+// takes a draw slot like a draw does, so a burst of them queues.
+//
+// A stale entry could only come from a write that kept both the size and
+// the modification time to the nanosecond; the worst it can do is answer
+// with a block the note held a moment ago, or a 404 the page already
+// treats as a fallback.
 func (s *Server) diagramSource(ctx context.Context, real, hash string) ([]byte, error) {
-	list, err := s.buildList(real)
-	if err != nil {
-		return nil, err
+	info, err := os.Stat(real)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("stat note: %w", os.ErrNotExist)
+	}
+	key := noteKey{path: real, size: info.Size(), mtime: info.ModTime().UnixNano()}
+	list, ok := s.lists.get(key)
+	if !ok {
+		select {
+		case s.drawSlots <- struct{}{}:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		// Another request may have listed it while this one waited.
+		if list, ok = s.lists.get(key); !ok {
+			list, err = s.buildList(real)
+			if err == nil {
+				// Before the slot is handed on, so the next waiter finds it.
+				s.lists.put(key, list)
+			}
+		}
+		<-s.drawSlots
+		if err != nil {
+			return nil, err
+		}
 	}
 	for _, d := range list {
 		if d.Hash == hash {
@@ -209,6 +251,78 @@ func (s *Server) drawDiagram(ctx context.Context, key string, src []byte, theme 
 		return d, nil
 	default:
 		return drawn{}, err
+	}
+}
+
+// noteKey is a note's identity as a stat sees it.
+type noteKey struct {
+	path  string
+	size  int64
+	mtime int64
+}
+
+// listCache holds the flowchart list of recently viewed notes, bounded by
+// the bytes of source it holds and by entries, least recently used first
+// out. A note's old entries age out on their own: an edit changes its key.
+type listCache struct {
+	mu         sync.Mutex
+	maxBytes   int
+	maxEntries int
+	size       int
+	order      *list.List
+	items      map[noteKey]*list.Element
+}
+
+type listItem struct {
+	key  noteKey
+	list []render.Diagram
+}
+
+func newListCache(maxBytes, maxEntries int) *listCache {
+	return &listCache{maxBytes: maxBytes, maxEntries: maxEntries, order: list.New(), items: map[noteKey]*list.Element{}}
+}
+
+func listSize(key noteKey, l []render.Diagram) int {
+	n := len(key.path) + 16
+	for _, d := range l {
+		n += len(d.Source) + len(d.Hash) + 8
+	}
+	return n
+}
+
+func (c *listCache) get(key noteKey) ([]render.Diagram, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.items[key]
+	if !ok {
+		return nil, false
+	}
+	c.order.MoveToFront(e)
+	return e.Value.(*listItem).list, true
+}
+
+func (c *listCache) put(key noteKey, l []render.Diagram) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := listSize(key, l)
+	if n > c.maxBytes {
+		return
+	}
+	if e, ok := c.items[key]; ok {
+		c.size -= listSize(key, e.Value.(*listItem).list)
+		e.Value.(*listItem).list = l
+		c.size += n
+		c.order.MoveToFront(e)
+	} else {
+		c.items[key] = c.order.PushFront(&listItem{key: key, list: l})
+		c.size += n
+	}
+	for c.size > c.maxBytes || c.order.Len() > c.maxEntries {
+		last := c.order.Back()
+		it := last.Value.(*listItem)
+		c.order.Remove(last)
+		delete(c.items, it.key)
+		c.size -= listSize(it.key, it.list)
 	}
 }
 
