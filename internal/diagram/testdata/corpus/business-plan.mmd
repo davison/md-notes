@@ -1,0 +1,11 @@
+flowchart LR
+    A[Club documents and correspondence] --> B[Evidence store with provenance]
+    R[Versioned funder rules] --> C[Eligibility and budget checks]
+    B --> C
+    C --> D[Case workflow and agent tasks]
+    D --> E[Grounded application packet]
+    E --> F[Club approval and authorised filing]
+    F --> G[Receipt and funder response]
+    G --> D
+    G --> H[Award obligations and reporting]
+    H --> B
