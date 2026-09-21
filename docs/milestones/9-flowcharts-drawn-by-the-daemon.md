@@ -154,11 +154,27 @@ and 83 of 83 on `c5ab85a`.
 
 ## The human gates
 
-None were raised. `gh codecrew status` reports "gates raised: none" for the milestone, and
-no task plan listed a blocking ask-the-human point.
+One, raised on this task after its pull request was approved and resolved by the operator
+before it merged. No implementation task raised one, and no task plan listed a blocking
+ask-the-human point.
 
-The operator still made four of the milestone's decisions, each recorded by the coordinator
-when the operator gave it:
+**The Noto Sans notice, on #172** ([#172](https://github.com/davison/md-notes/issues/172#issuecomment-5768540875)).
+The renderer sizes labels from a table of Noto Sans Regular advance widths, generated from
+the font by `internal/diagram/genmetrics`. The table holds numbers only: no glyph outlines,
+no font file, and nothing embedded in the SVG, which names Noto Sans as a font family for
+the reader's own copy. The implementer's view on #170 was that a table of metrics is not a
+copy of the font software, so the SIL Open Font License places no notice obligation on it,
+and nothing was added
+([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5766109427)). The gate
+offered two options: (a) no notice, with this record saying the question was considered, or
+(b) a one-line acknowledgement in the README, the `.deb`'s copyright file and the AUR
+package's licence array. The operator took the first:
+*"(A) no notice required. I'll add one if the project requests it"*
+([#172](https://github.com/davison/md-notes/issues/172#issuecomment-5768556289)). So no notice was added, and the
+README, the packaging and M9-R4's outcome stand as they are.
+
+Outside the gate, the operator made four of the milestone's decisions, each recorded by the
+coordinator when the operator gave it:
 
 - the renderer is the project's own, drawn on the server, instead of mermaid in the page;
 - flowcharts are the only diagram type in scope;
@@ -558,19 +574,17 @@ adoption; see [Corrections](#corrections-to-the-record-itself).
 
 **The operator's reasoning is recorded in the coordinator's words.** The vetting of mermaid,
 the choice of a server-side renderer, flowcharts only, and the advisory tests are all written
-up by the coordinator: "the operator judged that not worth it and asked instead". The
-light-override acceptance is the one place the operator's words are quoted, and even those
-exist only as the coordinator relayed them in its decision comment on #171. No decision or
-requirement text on any M9 issue or pull request was written by the operator directly; the
-operator-confirmation comment each merged pull request carries is posted by `task finish`.
+up by the coordinator: "the operator judged that not worth it and asked instead". Of the
+four operator decisions under [The human gates](#the-human-gates), the light-override
+acceptance is the one that quotes the operator's words, and even those exist only as the
+coordinator relayed them in its decision comment on #171. The one decision in the
+operator's own words is the resolution of the Noto Sans gate
+([#172](https://github.com/davison/md-notes/issues/172#issuecomment-5768556289)). Apart
+from it, no decision or requirement text on any M9 issue or pull request was written by the
+operator directly; the operator-confirmation comment each merged pull request carries is
+posted by `task finish`.
 There is no operator comment weighing the sandboxed-frame option against a renderer of our
 own. That it was weighed is stated, and how is not.
-
-**Whether the Noto Sans widths need an OFL notice.** The implementer believed not, because
-they are numbers with no glyph data, and offered it as a one-line addition "if the operator
-wants one"
-([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5766109427)). No answer is
-recorded. No notice was added, so the question stands as the implementer left it.
 
 **Whether the note fetch is abandoned when the reader leaves, in a browser.** #177 made the
 page abort its fetch on navigation, and `TestNoteMeasuringStopsWithTheRequest` shows the
