@@ -394,3 +394,16 @@ func TestParseNothingToDraw(t *testing.T) {
 	mustParse(t, "graph TD\nsubgraph empty\nend")
 	mustParse(t, "graph TD\nclassy --> B")
 }
+
+// Bidi controls and zero-width characters are dropped from labels, so a
+// label cannot display as something other than what it says (review of
+// PR #173, nit 4); joiners and direction marks, which scripts need, stay.
+func TestParseInvisibleCharacters(t *testing.T) {
+	f := mustParse(t, "graph TD\nA[\"pay\u202Eevil\u202C \u2066x\u2069 zero\u200Bwidth\u2060\uFEFF\"] --> B[\"a\u200Db\u200Cc\u200Fd\"]")
+	if got := f.Nodes[0].Label[0]; got != "payevil x zerowidth" {
+		t.Errorf("label %q", got)
+	}
+	if got := f.Nodes[1].Label[0]; got != "a\u200Db\u200Cc\u200Fd" {
+		t.Errorf("joiners and marks dropped: %q", got)
+	}
+}

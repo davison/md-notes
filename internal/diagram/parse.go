@@ -799,6 +799,10 @@ func label(raw string, line int, lim Limits) ([]string, error) {
 			switch {
 			case r == '\t':
 				b.WriteByte(' ')
+			case invisible(r):
+				// Dropped: bidi overrides and zero-width characters would
+				// only make a label display as something other than what
+				// it says.
 			case unicode.IsControl(r):
 				return nil, refuse(Syntax, line, "a control character in a label")
 			default:
@@ -812,6 +816,15 @@ func label(raw string, line int, lim Limits) ([]string, error) {
 		return nil, refuse(Limit, line, "a label of more than %d characters", lim.MaxLabel)
 	}
 	return parts, nil
+}
+
+// invisible reports the bidi embedding, override and isolate controls
+// (U+202A–U+202E, U+2066–U+2069) and the zero-width space, word joiner and
+// byte-order mark. The zero-width joiner and non-joiner and the LRM/RLM
+// marks are kept: scripts and emoji need them to be written correctly.
+func invisible(r rune) bool {
+	return r >= 0x202A && r <= 0x202E || r >= 0x2066 && r <= 0x2069 ||
+		r == 0x200B || r == 0x2060 || r == 0xFEFF
 }
 
 func decodeEntity(m string) string {
