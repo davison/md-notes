@@ -7,6 +7,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"testing"
 )
 
 // The allowlist the writer is held to. An element or attribute outside it,
@@ -27,6 +28,20 @@ var (
 	// value can hold a quote, a bracket, a colon or a semicolon, so none
 	// can be markup, CSS, a URL or a reference.
 	plainValue = regexp.MustCompile(`^[-0-9A-Za-z#., ]*$`)
+	// Geometry is held to numbers: a NaN or an infinity from a layout bug
+	// would otherwise pass as a plain value.
+	number      = `-?[0-9]+(\.[0-9]+)?`
+	numberValue = regexp.MustCompile(`^` + number + `$`)
+	numberList  = regexp.MustCompile(`^` + number + `([ ,]` + number + `)*$`)
+	pathValue   = regexp.MustCompile(`^[MLCAVZ]` + `([ ,]?(` + number + `|[MLCAVZ]))*$`)
+	numeric     = map[string]*regexp.Regexp{
+		"width": numberValue, "height": numberValue, "x": numberValue, "y": numberValue,
+		"rx": numberValue, "ry": numberValue, "cx": numberValue, "cy": numberValue, "r": numberValue,
+		"x1": numberValue, "y1": numberValue, "x2": numberValue, "y2": numberValue,
+		"stroke-width": numberValue, "font-size": numberValue,
+		"viewBox": numberList, "points": numberList, "stroke-dasharray": numberList,
+		"d": pathValue,
+	}
 	fixedValue = map[string]string{
 		"xmlns":       "http://www.w3.org/2000/svg",
 		"font-family": fontFamily,
@@ -84,6 +99,8 @@ func checkSVG(svg []byte) ([]string, error) {
 					if a.Value != want {
 						return nil, fmt.Errorf("attribute %s=%q", an, a.Value)
 					}
+				} else if re, ok := numeric[an]; ok && !re.MatchString(a.Value) {
+					return nil, fmt.Errorf("attribute %s=%q on <%s> is not numeric", an, a.Value, name)
 				} else if !plainValue.MatchString(a.Value) {
 					return nil, fmt.Errorf("attribute %s=%q on <%s> is not a plain value", an, a.Value, name)
 				}
@@ -109,4 +126,28 @@ func checkSVG(svg []byte) ([]string, error) {
 		return nil, fmt.Errorf("no root element")
 	}
 	return texts, nil
+}
+
+// The validator itself rejects what the writer must never produce.
+func TestCheckSVGRejects(t *testing.T) {
+	ok := `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10"><path d="M0,0 L1.5,-2 C1,2 3,4 5,6 Z" fill="#ffffff"/><text x="1" y="2"><tspan x="1" y="2">a &lt;b&gt;</tspan></text></svg>`
+	if _, err := checkSVG([]byte(ok)); err != nil {
+		t.Fatalf("a valid document fails: %v", err)
+	}
+	for _, bad := range []string{
+		`<svg xmlns="http://www.w3.org/2000/svg" width="NaN" height="10"></svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect x="-Inf" y="0"/></svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path d="M0,NaN L1,1"/></svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><polygon points="0,0 +Inf,1"/></svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" onload="alert(1)"></svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect fill="url(#x)"/></svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">loose text</svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><!-- c --></svg>`,
+		`<svg xmlns="http://www.w3.org/2000/svg" width="10"`,
+	} {
+		if _, err := checkSVG([]byte(bad)); err == nil {
+			t.Errorf("accepted %s", bad)
+		}
+	}
 }
