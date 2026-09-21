@@ -2,7 +2,7 @@
 
 md-notes is a local service that turns folders of markdown files into a notes
 application in the browser. This page describes what exists and works today, at the
-end of [milestone eight](milestones/8-the-first-release.md): the
+end of [milestone nine](milestones/9-flowcharts-drawn-by-the-daemon.md): the
 daemon and the rendered viewer from
 [milestone one](milestones/1-daemon-and-rendered-viewer.md), the editor from
 [milestone two](milestones/2-editor-autosave-and-live-update.md), the browser half
@@ -11,7 +11,9 @@ polish milestone four put on all three, the create and delete verbs milestone
 five added to them, the tailnet clipping and clipper repairs of
 [milestone six](milestones/6-tailnet-clipping-and-the-m5-backlog.md), and what
 milestone seven did to roots, to the navigator and to installing the app on a phone,
-all of it now carrying a version number and installable from a package.
+all of it carrying a version number and installable from a package since
+[milestone eight](milestones/8-the-first-release.md), and the flowcharts milestone nine
+draws.
 Notes are created, edited and deleted in the app; renaming one is still done with other
 tools.
 
@@ -73,6 +75,16 @@ the three-column layout needs, the search and tag pane sits under the navigator 
 note column gets every pixel that is not the navigator — reaching the full reading width
 from 1020 px up — with thin scrollbars in the theme's own colours throughout
 ([In a narrower window](#in-a-narrower-window)).
+
+Milestone nine made a mermaid flowchart in a note read as a diagram. The daemon parses
+the block, lays it out and writes the SVG itself, and the page shows it as an image in
+front of the code block, in the light, dark or e-ink palette the page is using, redrawn
+when the note changes on disk. Mermaid's own library was vetted and declined — it has
+critical cross-site-scripting advisories under its strictest setting, and any script on
+this app's origin can read and write every note — so no diagram source ever runs,
+styles or inserts anything in the browser. A block outside the supported subset, one
+the daemon refuses to draw, and every other mermaid diagram type stay the code block
+they were ([Flowcharts](#flowcharts)).
 
 The browser half is a Chromium extension that clips a readable page or a selection
 into the notes root as markdown, and opens a local markdown file in the app instead
@@ -240,7 +252,8 @@ the [tailnet section](#reaching-the-daemon-over-the-tailnet) says why.
 | `POST /api/roots` | Registers `{"path": "/absolute/dir"}` and returns the root. Relative paths are refused, and a path that is not a directory is `400` with the filesystem's own sentence. The optional `"file"` names a note inside that folder: with it the daemon registers only once it has found the note, and otherwise answers `404 {"code":"not_found"}` having written nothing. See [Roots](#roots) |
 | `DELETE /api/roots/{slug}` | Unregisters a recent root and returns `204 No Content`; the root leaves the registry and the state file, and no file leaves the disk. `403 {"code":"notes_root"}` for the configured notes root, `404 {"code":"not_found"}` for a slug that is not registered, and `403 {"code":"loopback_only"}` under a configured `tailnet_host`. See [Roots](#roots) |
 | `GET /api/r/{slug}/tree` | The root's markdown tree as nested `{name, path, dir, children}`, each file node also carrying `modified`, its modification time in Unix milliseconds — absent on a directory, and on a file whose time the daemon could not read. See [the navigator's order](#the-web-ui) |
-| `GET /api/r/{slug}/note/{path...}` | A rendered note as `{path, title, frontmatter, html}`. Non-markdown paths are 404 here |
+| `GET /api/r/{slug}/note/{path...}` | A rendered note as `{path, title, frontmatter, html, diagrams}`. `diagrams` lists the note's drawable flowcharts as `[{line, hash}]` — the `data-line` of the anchor before the block and a hash of its source — and is absent when there are none. Non-markdown paths are 404 here |
+| `GET /api/r/{slug}/diagram/{path...}?h=&theme=` | The SVG of the flowchart whose hash is `h` in that note, drawn in the `light`, `dark` or `eink` palette, as `image/svg+xml` with `Cache-Control: no-cache` and an `ETag`. `404` when the note holds no such block (it changed), `400` for a bad `theme` or `h`, `422` with the reason when the daemon refuses to draw it. Every answer carries `Content-Security-Policy: default-src 'none'; sandbox` and `X-Content-Type-Options: nosniff`. See [Flowcharts](#flowcharts) |
 | `GET /api/r/{slug}/source/{path...}` | Existing UTF-8 markdown as `{source, revision}`; see [conditional saves](#conditional-saves) |
 | `PUT /api/r/{slug}/source/{path...}` | Conditionally saves JSON `{source, revision}` and returns the saved `{source, revision}` |
 | `POST /api/r/{slug}/source/{path...}` | Creates the note at `{path...}`, never overwriting. Optional JSON body `{"source": "..."}`; no body at all creates an empty note. `201` with a `Location` header and `{root, path, source, revision}`. Missing parent directories are created. See [Creating and deleting notes](#creating-and-deleting-notes) |
@@ -706,9 +719,10 @@ what is on screen; [The browser tab](#the-browser-tab) below says how. The panes
   ([#31](https://github.com/davison/md-notes/issues/31)). Relative links to markdown
   become in-app navigation; relative images and other assets are served from the raw
   endpoint; a link whose target escapes the root keeps its text but loses its destination
-  and says why. A bar above the note carries the mode, the save state, `Ctrl+E`, which
-  flips the pane to the editor and back, and **Delete** at its right-hand end — see
-  [Editing](#editing). The delete button's place is fixed: it is the far end of the bar
+  and says why. A mermaid flowchart is drawn by the daemon and shown as an image in front
+  of its code block — see [Flowcharts](#flowcharts). A bar above the note carries the
+  mode, the save state, `Ctrl+E`, which flips the pane to the editor and back, and
+  **Delete** at its right-hand end — see [Editing](#editing). The delete button's place is fixed: it is the far end of the bar
   from the mode toggle, in the rendered view and in the editor alike, and the
   `margin-left: auto` that puts it there is a property of the button rather than of the
   save status beside it, which is absent on a note that has only been read
@@ -741,6 +755,149 @@ stylesheet in which a class is styled in one scheme and not the other or carries
 background of its own in one scheme only, a colour falls below AA, a line-highlight or
 diff tint is too close in luminance to the page to be seen, or two colours the source
 palette tells apart have come together.
+
+### Flowcharts
+
+A fenced block whose info string is `mermaid` and whose diagram is a `flowchart` or a
+`graph` reads as a drawing rather than as code. The daemon draws it, as an SVG, and the
+page shows that SVG as an image in front of the code block, which it hides while the
+image stands. Mermaid's own library is not used, here or anywhere
+([#169](https://github.com/davison/md-notes/issues/169#issuecomment-5765785737)): the
+flowchart is parsed, laid out and written by `internal/diagram`, a package of the
+daemon's own. Other mermaid diagram types — sequence, class, state, Gantt and the rest
+— stay code blocks until someone needs one.
+
+**What is drawn.** A block is drawn when it uses only this subset of the flowchart
+syntax:
+
+- the header `flowchart` or `graph`, with a direction `TB`, `TD`, `BT`, `LR` or `RL`
+  (`TB` if none), statements on their own lines or separated by `;`, so
+  `graph TD; A-->B;` works;
+- nodes, bare (`A`, a rectangle labelled `A`) or in one of fourteen shapes: `A[rect]`,
+  `A(round)`, `A([stadium])`, `A[[subroutine]]`, `A[(cylinder)]`, `A((circle))`,
+  `A(((double circle)))`, `A>asymmetric]`, `A{rhombus}`, `A{{hexagon}}`, the
+  parallelograms `A[/…/]` and `A[\…\]`, and the trapezoids `A[/…\]` and `A[\…/]`;
+- links: solid `---` and `-->`, dotted `-.-` and `-.->`, thick `===` and `==>`,
+  invisible `~~~`; circle and cross ends (`--o`, `--x`); both ends (`<-->`, `o--o`,
+  `x--x`); and longer links (`--->`, `-..->`), each extra character one more rank,
+  up to eight ranks — `--------->` is the longest arrow drawn;
+- link labels in either form, `A -- text --> B` (`-. text .->`, `== text ==>`) or
+  `A -->|text| B`;
+- chains (`A --> B --> C`) and groups (`A & B --> C & D`);
+- `subgraph id`, `subgraph id [Title]`, `subgraph "Title"` and `subgraph Title with
+  spaces`, nested, each closed by `end`, with links to and from a subgraph drawn to its
+  border. A `direction` inside a subgraph is accepted and not honoured: the subgraph is
+  drawn in the diagram's direction, which is what mermaid itself does whenever a link
+  crosses the subgraph's border;
+- labels, quoted (`A["text (with) brackets"]`) or not, with `<br>` as a line break and
+  mermaid's entity codes (`#quot;`, `#35;`) as the characters they name; a long line
+  wraps at a space;
+- `%%` comments.
+
+**What is skipped.** `style`, `classDef`, `class`, `:::class`, `linkStyle` and `click`
+are recognised and skipped whole, up to the end of their line or their `;`. The drawing
+is in the theme's colours, and an image has nothing to click, so a styled flowchart
+copied from elsewhere still draws — without whatever its colours meant
+([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5766109427)). One
+edge of that is worth knowing: a skipped statement holding `--` or `-->` outside double
+quotes is read as a link, and the whole diagram then shows as code. `fill:var(--x)`,
+`font-family:'a--b'` in single quotes and a single-quoted `click` URL containing `-->`
+all do it. Double quotes, or leaving the statement out, draws the diagram
+([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5766902241)).
+Bidirectional-text controls and zero-width characters are dropped from labels, and so
+are the tag characters that make the England, Scotland and Wales flags: those three
+emoji draw as a plain black flag.
+
+**What shows as code, and why.** Everything else stays the code block it would be
+without this feature, and nothing is ever half-drawn:
+
+- **another diagram type**, or a block that is not a flowchart at all;
+- **a construct outside the subset**: `%%{init}%%` or any other `%%{…}%%` directive,
+  front matter, `accTitle`, `accDescr` and `title`, `@{…}` node metadata, markdown
+  labels, HTML in a label (anything but `<br>`), `fa:` icons, and a `direction` outside
+  a subgraph. Each of these changes what is drawn, or passes styling or markup through,
+  so it is refused rather than guessed at;
+- **text that does not parse**, and a flowchart with nothing to draw;
+- **a block over a bound.** A block is limited to 32 KiB of source, 200 nodes, 400
+  links (counting each one an `&` expands to), 50 subgraphs nested at most 8 deep,
+  links of at most 8 ranks, and 500 characters and 20 lines per label; and the working
+  graph the layout builds — nodes, one point per rank each link crosses, and one per
+  rank a subgraph spans — to 3,000. The flowcharts in real notes are nowhere near
+  these; the reasons for each number are on
+  [#170](https://github.com/davison/md-notes/issues/170#issuecomment-5766109839), with
+  one of its timings [corrected](https://github.com/davison/md-notes/issues/170#issuecomment-5766322910);
+- **a drawing that takes longer than 2 seconds**, which the layout checks for
+  throughout and stops at.
+
+Most of these are known when the note is rendered, and the page then asks for no image
+at all. The two only drawing can find — the layout's size and the deadline — are found
+when the image is asked for, and the block goes back to code then. That answer is
+remembered by the daemon, so a hostile block costs its two seconds once rather than at
+every view; the other side of it is that a block refused because the machine was busy
+at that moment stays refused until the daemon restarts or the entry is evicted
+([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767039874)).
+
+**When the image cannot be fetched.** An image that fails for any reason — a refusal
+while drawing, the note changed underneath it, the daemon stopped, the network gone —
+takes itself out and leaves the code block, so there is never a broken-image icon. The
+page does not ask for that drawing again: the block stays code, through live updates
+too, until its source changes, the palette changes, or you **open the note again**,
+which is how to retry after the network comes back. The page cannot tell a refusal from
+a failed fetch, which is why it does not retry on its own
+([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767530708)).
+**Diagrams are not available offline**: drawings are under `/api/`, which the
+[installed app's](#installing-the-app) worker never answers from its cache — and
+neither is the note they belong to, so offline there is no rendered note to show one
+in.
+
+**Palettes.** There are three, and the image follows the page's own choice between
+them, changing in place when the setting or the device's scheme changes:
+
+| The page is | The diagram is drawn |
+|-------------|----------------------|
+| In the light scheme | In the light palette, the page's own colours |
+| In the dark scheme | In the dark palette, the page's own colours |
+| Under **Always use the light theme** | In the e-ink palette: black on white, 2-pixel lines, no greys |
+
+The light override is the app's e-ink setting (see
+[Display settings](#display-settings)), so it is the one signal that the screen may
+have no backlight, and it gets the palette a panel draws best; on an ordinary screen
+the only difference from the light palette is the weight of the lines. The operator
+accepted that mapping, with no separate e-ink switch
+([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767528754)). In
+every palette text is held to 4.5:1 against what it sits on and lines to 3:1, by a
+test.
+
+**Live, sized and accessible.** A diagram follows its note on disk: an edit elsewhere
+reaches the page through [live update](#live-update) and the changed diagram is drawn
+again, while an unchanged one in the same note keeps its image and is not fetched
+again. The image is drawn at its natural size, never scaled up, and shrinks to the
+reading column when it is wider. Its `alt` text is the diagram's source, which is the
+whole of what it says, in the syntax its author wrote. A search hit on the block
+flashes the image.
+
+**Why this cannot run anything.** The daemon parses the block into plain data — node
+shapes, links, label lines — and writes the SVG itself, from a fixed set of elements
+and attributes, with every piece of the note's text escaped as character data; nothing
+in it refers to anything, and no styling from the note reaches it. The page shows it
+only through `<img>`, which runs no script and loads nothing, and never inline. And
+every answer at a diagram URL, the refusals included, carries
+`Content-Security-Policy: default-src 'none'; sandbox` and
+`X-Content-Type-Options: nosniff`, so even a drawing opened directly as a page runs
+nothing and is never sniffed into something that could. The attack payloads of
+mermaid's published advisories are test cases in the package, each shown inert
+([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5765984674)).
+
+**The cost to the daemon.** Drawings and refusals are kept in memory, up to 8 MiB and
+512 of them, and a note's list of flowcharts is kept by its size and modification
+time, so a page asking for each of its diagrams costs a parse once. At most half the
+machine's processors draw at once, and listing a note's flowcharts takes one of those
+slots too, so a clipped note full of expensive blocks queues rather than taking every
+core. One consequence: a note on a network or FUSE mount whose read hangs holds its
+slot for as long as the read does, because a file read cannot be interrupted, and
+other diagrams wait behind it if every slot is held. Rendering the note itself has the
+same exposure
+([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767530708)).
 
 ### The browser tab
 
@@ -911,8 +1068,9 @@ and neither is sent anywhere.
   device's `prefers-color-scheme` says. The syntax colouring in fenced code follows
   the same switch, so an overridden page is not left with dark-scheme tokens on a
   light background. It is applied by an inline script before the stylesheet paints,
-  so overriding a dark device shows no frame of the dark scheme on load. Turning it
-  off returns the page to the device's preference.
+  so overriding a dark device shows no frame of the dark scheme on load. Flowcharts
+  follow it too, in the e-ink palette rather than the light one — see
+  [Flowcharts](#flowcharts). Turning it off returns the page to the device's preference.
 - **No animation.** No transitions, and no flash on the block a search hit scrolls
   to — the scroll itself still happens, centring the block. The same is true without
   the switch on a device that asks for reduced motion: `prefers-reduced-motion:
@@ -936,7 +1094,7 @@ that device end to end, including the two ways to reach your notes from one.
 ### What holds these numbers
 
 The figures in the two sections above are not only documented, they are measured on
-every push. `make e2e` runs a suite of 61 checks under `ui/e2e` in headless Chromium
+every push. `make e2e` runs a suite of 71 checks under `ui/e2e` in headless Chromium
 against the built daemon on a temporary root, and CI runs it as a job of its own: the
 pane rectangles at four phone profiles and a desktop control, the 960-pixel
 breakpoint walked at 959, 960 and 961, the 1290-pixel one walked at 1289 and 1290 —
@@ -972,7 +1130,13 @@ together with the rules that matter about it: that no request under `/api/` is e
 answered from the worker's cache, that a rebuilt shell wins over the cached one while the
 daemon is answering and the cached one answers when it is not, that the worker's cache is
 named after its contents, and that the roots page and three `/r/` routes all say the
-daemon is unreachable rather than that the root does not exist.
+daemon is unreachable rather than that the root does not exist. It draws
+[a flowchart](#flowcharts) in each of the three palettes, reading each palette's
+background back out of the image, follows a change of the setting without a reload,
+shrinks a wide diagram to the column, keeps the code block when the daemon refuses to
+draw and when the drawing cannot be fetched, redraws a diagram edited on disk without
+fetching an unchanged one again, and opens a drawing directly as a document to show it
+cannot run a script even with one spliced into it.
 The viewports are the suite's own literals rather than Playwright's
 device registry, whose numbers move between releases
 ([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426)). It
@@ -1457,7 +1621,7 @@ What an authenticated caller reaches is the UI's own API and nothing else:
 | Reachable | Not reachable |
 |-----------|---------------|
 | `GET /api/roots` | `POST /api/roots` |
-| the per-root reads — `tree`, `note`, `source`, `raw`, `search`, `tags`, `events` | `DELETE /api/roots/{slug}` |
+| the per-root reads — `tree`, `note`, `diagram`, `source`, `raw`, `search`, `tags`, `events` | `DELETE /api/roots/{slug}` |
 | | anything else under `/api/` |
 | `PUT`, `POST` and `DELETE` on `/api/r/{slug}/source/{path…}` | |
 | `POST /api/clip`, to a caller presenting the token | |

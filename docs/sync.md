@@ -339,7 +339,11 @@ and a line saying the daemon is not answering, instead of the browser's own
 stored on the phone: every note, the tree and the search come from the
 daemon, and they come back when it does. The offline copy is the application,
 not the notes. If you want the notes themselves on the phone, that is
-Syncthing and Markor above, and the two can live side by side.
+Syncthing and Markor above, and the two can live side by side. Flowcharts are
+the same: the daemon draws each one when it is asked for, the drawing is not
+cached for offline use, and one whose fetch fails shows as its code block until
+you open the note again
+([Flowcharts](introduction.md#flowcharts)).
 
 **Updating.** There is nothing to update by hand. The app asks the daemon for
 its shell every time it opens, so the next open after you rebuild the daemon

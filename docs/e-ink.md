@@ -37,7 +37,10 @@ effect at once.
   device's colour-scheme preference says — which matters, because Android's
   night mode is a reasonable thing to leave on for a phone and the wrong way
   round for e-ink. The code colouring in fenced blocks follows the same switch,
-  so a fence is not left in dark-scheme colours on a light page. The override is
+  so a fence is not left in dark-scheme colours on a light page, and so do
+  flowcharts: under the override the daemon draws them in its e-ink palette, black
+  on white with 2-pixel lines and no greys, rather than the light palette's grey
+  strokes ([Flowcharts](introduction.md#flowcharts)). The override is
   applied before the page paints, so you never see a frame of the scheme you
   overrode. Turning it off gives the device its preference back.
 - **No animation.** No transitions anywhere, and no flash on the block a search
