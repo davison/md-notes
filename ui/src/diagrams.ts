@@ -29,6 +29,13 @@ export const SOURCE_HIDDEN_CLASS = "diagram-source";
 export interface DiagramRef {
   line: number;
   hash: string;
+  /**
+   * The drawing's natural size, from the daemon's layout. Set on the image
+   * so its box is reserved before the SVG arrives: a scroll to a line below
+   * it lands, and nothing below it moves when it loads (#177).
+   */
+  width?: number;
+  height?: number;
 }
 
 /**
@@ -145,6 +152,11 @@ export function decorate(
       block.classList.remove(SOURCE_HIDDEN_CLASS);
       if (pool.get(key) === image) pool.delete(key);
     };
+    // Before the src, so the box is there from the first layout.
+    if (d.width && d.height) {
+      image.setAttribute("width", String(d.width));
+      image.setAttribute("height", String(d.height));
+    }
     if (image.getAttribute("src") !== src) image.setAttribute("src", src);
     if (anchor.nextElementSibling !== image) anchor.after(image);
     block.classList.add(SOURCE_HIDDEN_CLASS);

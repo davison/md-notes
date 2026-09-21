@@ -50,6 +50,22 @@ describe("decorate", () => {
     expect(other.classList.contains(SOURCE_HIDDEN_CLASS)).toBe(false);
   });
 
+  it("reserves the drawing's box from the size the daemon measured", () => {
+    const scope = note(block(3, "s") + block(8, "t"));
+    decorate(
+      scope,
+      [
+        { line: 3, hash: "a", width: 185, height: 94.6 },
+        { line: 8, hash: "b" },
+      ],
+      url("light"),
+      new DiagramPool(),
+    );
+    const [sized, unsized] = [...scope.querySelectorAll("img")];
+    expect([sized.getAttribute("width"), sized.getAttribute("height")]).toEqual(["185", "94.6"]);
+    expect(unsized.hasAttribute("width") || unsized.hasAttribute("height")).toBe(false);
+  });
+
   it("brings the code block back and drops the image when it cannot load", () => {
     const scope = note(block(3, "graph TD; A--&gt;B\n"));
     const pool = new DiagramPool();
