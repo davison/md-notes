@@ -49,6 +49,8 @@ type Server struct {
 	draw      drawFunc
 	svgs      *svgCache
 	drawSlots chan struct{}
+	// buildList lists a note's flowcharts for the same route.
+	buildList func(real string) ([]render.Diagram, error)
 
 	// token validates the bearer token a non-loopback client presents.
 	// Nil accepts nothing, so a daemon built without one refuses every
@@ -149,6 +151,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 		starting:  map[string]chan struct{}{},
 		closing:   make(chan struct{}),
 	}
+	s.buildList = s.listNote
 	for _, o := range opts {
 		o(s)
 	}

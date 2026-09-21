@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"regexp"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/davison/md-notes/internal/diagram"
+	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/tree"
 )
@@ -112,17 +114,14 @@ func (s *Server) diagramHandler(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusNotFound, "not found")
 		return
 	}
-	src, err := os.ReadFile(real)
-	if err != nil {
+	source, err := s.diagramSource(r.Context(), real, hash)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
 		fail(http.StatusNotFound, "not found")
 		return
-	}
-	var source []byte
-	for _, d := range s.md.Diagrams(src) {
-		if d.Hash == hash {
-			source = d.Source
-			break
-		}
+	case err != nil:
+		fail(http.StatusServiceUnavailable, "the diagram was not drawn")
+		return
 	}
 	if source == nil {
 		fail(http.StatusNotFound, "the note has no such diagram; it may have changed")
@@ -150,6 +149,32 @@ func (s *Server) diagramHandler(w http.ResponseWriter, r *http.Request) {
 	h.Set("Cache-Control", "no-cache")
 	h.Set("ETag", got.etag)
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(got.svg))
+}
+
+// diagramSource finds the block whose hash is hash in the note at real.
+// It returns nil when the note holds no such block, and an error wrapping
+// os.ErrNotExist when the note cannot be read.
+func (s *Server) diagramSource(ctx context.Context, real, hash string) ([]byte, error) {
+	list, err := s.buildList(real)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range list {
+		if d.Hash == hash {
+			return d.Source, nil
+		}
+	}
+	return nil, nil
+}
+
+// listNote reads a note and lists its flowcharts. It is the listing the
+// note render does; a test replaces it to count or hold listings.
+func (s *Server) listNote(real string) ([]render.Diagram, error) {
+	src, err := os.ReadFile(real)
+	if err != nil {
+		return nil, fmt.Errorf("read note: %w", os.ErrNotExist)
+	}
+	return s.md.Diagrams(src), nil
 }
 
 // drawDiagram answers from the cache, or draws — at most drawSlots at once

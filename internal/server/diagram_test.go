@@ -116,6 +116,18 @@ func TestDiagramRevalidates(t *testing.T) {
 	if b := readAll(t, again.Body); b != "" {
 		t.Errorf("a 304 carried a body: %q", b)
 	}
+	// The 304 stands in for the image, so it carries what the image does.
+	for k, v := range map[string]string{
+		"X-Content-Type-Options":       "nosniff",
+		"Content-Security-Policy":      diagramCSP,
+		"Cross-Origin-Resource-Policy": "same-origin",
+		"Cache-Control":                "no-cache",
+		"ETag":                         etag,
+	} {
+		if got := again.Header.Get(k); got != v {
+			t.Errorf("304: %s = %q, want %q", k, got, v)
+		}
+	}
 }
 
 // The hash is a key among the blocks of the note on disk, never a request
@@ -391,5 +403,91 @@ func TestNoteListsItsDiagrams(t *testing.T) {
 	want := `"diagrams":[{"line":3,"hash":"` + render.HashSource([]byte(testFlow)) + `"}]`
 	if !strings.Contains(body, want) {
 		t.Errorf("note JSON lacks %s:\n%s", want, body)
+	}
+}
+
+// countLists wraps the server's listing step and reports how often it ran.
+func countLists(s *Server) *atomic.Int32 {
+	var n atomic.Int32
+	inner := s.buildList
+	s.buildList = func(real string) ([]render.Diagram, error) {
+		n.Add(1)
+		return inner(real)
+	}
+	return &n
+}
+
+// A page asks for each of its diagrams separately. Listing the note is a
+// full parse of it, so doing that per request makes one view of a note
+// with N diagrams cost N parses of the whole note — a burst of cached
+// requests took eleven of twelve cores in the round-one review of PR #175
+// (B1). The list is kept per note, as a stat sees it, and built again only
+// when the note changes.
+func TestDiagramListsANoteOncePerVersion(t *testing.T) {
+	ts, base := newTestServer(t)
+	var text strings.Builder
+	var srcs []string
+	for i := range 5 {
+		src := fmt.Sprintf("graph TD; A%d-->B\n", i)
+		srcs = append(srcs, src)
+		text.WriteString(fence(src) + "\n")
+	}
+	writeNote(t, base, "d.md", text.String())
+	lists := countLists(serverOf(t, ts))
+	for _, theme := range []string{"light", "dark", "eink"} {
+		for _, src := range srcs {
+			if resp := do(t, ts, "GET", diagramURL("d.md", src, theme), "", nil); resp.StatusCode != 200 {
+				t.Fatalf("status %d", resp.StatusCode)
+			}
+		}
+	}
+	if n := lists.Load(); n != 1 {
+		t.Errorf("listed the note %d times for 15 requests, want 1", n)
+	}
+	// An edit is a new version of the note, and is listed again; the old
+	// hash is gone from it.
+	writeNote(t, base, "d.md", fence("graph TD; Z-->Y\n"))
+	if resp := do(t, ts, "GET", diagramURL("d.md", srcs[0], "light"), "", nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("a hash the edited note no longer holds: status %d, want 404", resp.StatusCode)
+	}
+	if n := lists.Load(); n != 2 {
+		t.Errorf("listed %d times after an edit, want 2", n)
+	}
+}
+
+// Building a list — reading and parsing a note — takes a draw slot, so a
+// burst over many notes queues rather than parsing them all at once.
+func TestDiagramListingsAreBounded(t *testing.T) {
+	ts, base := newTestServer(t)
+	s := serverOf(t, ts)
+	s.drawSlots = make(chan struct{}, 2)
+	for i := range 6 {
+		writeNote(t, base, fmt.Sprintf("n%d.md", i), fence(testFlow))
+	}
+	var running, peak atomic.Int32
+	inner := s.buildList
+	s.buildList = func(real string) ([]render.Diagram, error) {
+		n := running.Add(1)
+		for {
+			p := peak.Load()
+			if n <= p || peak.CompareAndSwap(p, n) {
+				break
+			}
+		}
+		time.Sleep(30 * time.Millisecond)
+		running.Add(-1)
+		return inner(real)
+	}
+	var wg sync.WaitGroup
+	for i := range 6 {
+		wg.Go(func() {
+			if resp := do(t, ts, "GET", diagramURL(fmt.Sprintf("n%d.md", i), testFlow, "light"), "", nil); resp.StatusCode != 200 {
+				t.Errorf("status %d", resp.StatusCode)
+			}
+		})
+	}
+	wg.Wait()
+	if p := peak.Load(); p != 2 {
+		t.Errorf("peak concurrent listings %d, want 2", p)
 	}
 }
