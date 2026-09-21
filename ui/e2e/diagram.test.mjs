@@ -16,7 +16,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { DESKTOP, loadPlaywright, missingPrerequisite, openNote, startFixture, waitFor } from "./harness.mjs";
+import { DESKTOP, PIXEL_7, loadPlaywright, missingPrerequisite, openNote, startFixture, waitFor } from "./harness.mjs";
 
 const playwright = loadPlaywright();
 const blocker = missingPrerequisite(playwright);
@@ -37,6 +37,30 @@ function layoutRefused() {
 
 const fence = (src) => "```mermaid\n" + src + "```\n";
 
+/**
+ * A note of twelve tall flowcharts, then a block drawn as code, then prose:
+ * the shape QA's regression was found on (davison/md-notes#177). The source
+ * lines of three scroll-to-line targets are recorded as it is built.
+ */
+const FLOWS = (() => {
+  const lines = ["# Flows", ""];
+  const at = {};
+  for (let d = 1; d <= 12; d++) {
+    lines.push("```mermaid", "flowchart TD");
+    const fenceLine = lines.length - 1;
+    for (let n = 0; n < 5; n++) lines.push(`  D${d}N${n}[Diagram ${d} step ${n}] --> D${d}N${n + 1}[Diagram ${d} step ${n + 1}]`);
+    if (d === 9) at.inDiagram = fenceLine + 3;
+    lines.push("```", "");
+  }
+  lines.push("```mermaid", "sequenceDiagram", "  Alice->>Bob: Hello", "```", "");
+  at.codeBlock = lines.length - 3;
+  lines.push("Some prose between.", "");
+  lines.push("The needle-word paragraph.", "");
+  at.paragraph = lines.length - 1;
+  for (let i = 0; i < 40; i++) lines.push(`Trailing paragraph ${i}.`, "");
+  return { text: lines.join("\n"), at };
+})();
+
 /** The page backgrounds each palette draws, as the canvas reads them back. */
 const BACKGROUND = { light: [251, 251, 250], dark: [27, 27, 27], eink: [255, 255, 255] };
 
@@ -50,6 +74,7 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
     write("wide.md", "# Wide\n\n" + fence(WIDE));
     write("refused.md", "# Refused\n\n" + fence(layoutRefused()));
     write("live.md", "# Live\n\n" + fence("graph TD; P-->Q\n") + "\n" + fence("graph TD; X-->Y\n"));
+    write("flows.md", FLOWS.text);
     browser = await playwright.chromium.launch({ headless: true });
   });
 
@@ -252,6 +277,76 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
       await close();
     }
   });
+
+  /**
+   * Scroll-to-line with real layout (davison/md-notes#177). Every drawing is
+   * held back until well after the page has scrolled, so the scroll always
+   * meets the images before they have loaded, however fast the machine is;
+   * `fail` then aborts them rather than letting them through. The target
+   * must end in view once every image has settled, which the pre-M9 build
+   * did and the first M9 build did not.
+   */
+  const landsOn = async (profile, line, { fail = false } = {}) => {
+    const { name, ...options } = profile;
+    const ctx = await browser.newContext({ ...options, colorScheme: "light", serviceWorkers: "block" });
+    try {
+      const page = await ctx.newPage();
+      await page.route("**/api/r/*/diagram/**", async (route) => {
+        await new Promise((r) => setTimeout(r, 400));
+        if (fail) await route.abort("internetdisconnected");
+        else await route.continue();
+      });
+      await openNote(page, fixture.url("flows.md", `?l=${line}`));
+      await page.waitForFunction(() => document.querySelectorAll(".markdown pre").length > 0);
+      // Settled: every image loaded, or taken away for its code block.
+      await page.waitForFunction(
+        () =>
+          [...document.querySelectorAll(".markdown img.diagram")].every((i) => i.complete && i.naturalWidth > 0) &&
+          [...document.querySelectorAll(".markdown pre")].every(
+            (p) => getComputedStyle(p).display !== "none" || p.previousElementSibling?.matches("img.diagram"),
+          ),
+        null,
+        { timeout: 10000 },
+      );
+      await page.waitForTimeout(100);
+      return await page.evaluate((l) => {
+        let best = null;
+        let bestLine = -1;
+        for (const el of document.querySelectorAll(".markdown [data-line]")) {
+          const n = Number(el.getAttribute("data-line"));
+          if (n <= l && n >= bestLine) [best, bestLine] = [el, n];
+        }
+        // An anchor is empty; what the reader sees is the block after it.
+        const shown = best.classList.contains("line-anchor")
+          ? [best.nextElementSibling, best.nextElementSibling?.nextElementSibling].find(
+              (e) => e && getComputedStyle(e).display !== "none",
+            )
+          : best;
+        const r = shown.getBoundingClientRect();
+        return { tag: shown.tagName, top: Math.round(r.top), bottom: Math.round(r.bottom), height: innerHeight };
+      }, line);
+    } finally {
+      await ctx.close();
+    }
+  };
+
+  for (const profile of [DESKTOP, PIXEL_7]) {
+    for (const [what, line, tag, opts] of [
+      ["inside the ninth diagram", FLOWS.at.inDiagram, "IMG", {}],
+      ["on a block shown as code below the diagrams", FLOWS.at.codeBlock, "PRE", {}],
+      ["on a paragraph below the diagrams", FLOWS.at.paragraph, "P", {}],
+      ["on a paragraph below diagrams that all fail to load", FLOWS.at.paragraph, "P", { fail: true }],
+    ]) {
+      it(`lands a hit ${what}, at ${profile.name}`, async () => {
+        const seen = await landsOn(profile, line, opts);
+        assert.equal(seen.tag, tag);
+        assert.ok(
+          seen.top >= 0 && seen.top < seen.height - 40,
+          `the target's top is at ${seen.top}px in a ${seen.height}px viewport: ${JSON.stringify(seen)}`,
+        );
+      });
+    }
+  }
 
   describe("the drawing opened as a document", () => {
     /** The URL the reading view uses for flow.md's diagram, taken from the page. */
