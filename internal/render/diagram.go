@@ -30,6 +30,12 @@ type Diagram struct {
 	// hex. The diagram route looks the block up by it in the note it
 	// re-reads, so the hash is a key and never a claim.
 	Hash string `json:"hash"`
+	// Width and Height are the drawing's natural size, which the reading
+	// view reserves before the image loads. The renderer does not know
+	// them — they come from the layout — so the caller that draws fills
+	// them in; zero means not measured.
+	Width  float64 `json:"width,omitempty"`
+	Height float64 `json:"height,omitempty"`
 	// Source is the block's content, the text its code block shows.
 	Source []byte `json:"-"`
 }

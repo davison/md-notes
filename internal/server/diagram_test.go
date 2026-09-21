@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -401,7 +402,7 @@ func TestNoteListsItsDiagrams(t *testing.T) {
 	writeNote(t, base, "d.md", "# D\n\n"+fence(testFlow)+"\n"+fence("sequenceDiagram\nA->>B: x\n"))
 	resp := do(t, ts, "GET", "/api/r/notes/note/d.md", "", nil)
 	body := readAll(t, resp.Body)
-	want := `"diagrams":[{"line":3,"hash":"` + render.HashSource([]byte(testFlow)) + `"}]`
+	want := `"diagrams":[{"line":3,"hash":"` + render.HashSource([]byte(testFlow)) + `","width":185,"height":94.6}]`
 	if !strings.Contains(body, want) {
 		t.Errorf("note JSON lacks %s:\n%s", want, body)
 	}
@@ -615,5 +616,43 @@ func TestDiagramListingPanicReleasesItsSlot(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("another note after a listing panic: status %d, want 200", resp.StatusCode)
+	}
+}
+
+// The note says how big each drawing is, so the reading view can reserve
+// its box before the image loads and a scroll to a line below it lands
+// (davison/md-notes#177). The size is the drawing's own, and the drawing
+// made to measure it is the one the image route then serves.
+func TestNoteSizesItsDiagrams(t *testing.T) {
+	ts, base := newTestServer(t)
+	writeNote(t, base, "d.md", "# D\n\n"+fence(testFlow)+"\n"+fence(layoutRefused()))
+	draws := countDraws(serverOf(t, ts))
+	resp := do(t, ts, "GET", "/api/r/notes/note/d.md", "", nil)
+	var note struct {
+		Diagrams []struct {
+			Line          int
+			Hash          string
+			Width, Height float64
+		}
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&note); err != nil {
+		t.Fatal(err)
+	}
+	// The layout refuses the second block, so it is not listed: it stays
+	// code and no image is ever asked for.
+	if len(note.Diagrams) != 1 || note.Diagrams[0].Hash != render.HashSource([]byte(testFlow)) {
+		t.Fatalf("diagrams = %+v, want the drawable one alone", note.Diagrams)
+	}
+	for _, theme := range []string{"light", "dark", "eink"} {
+		img := do(t, ts, "GET", diagramURL("d.md", testFlow, theme), "", nil)
+		w, h, ok := diagram.Size([]byte(readAll(t, img.Body)))
+		if !ok || w != note.Diagrams[0].Width || h != note.Diagrams[0].Height {
+			t.Errorf("%s: drawing is %vx%v, the note said %vx%v", theme, w, h, note.Diagrams[0].Width, note.Diagrams[0].Height)
+		}
+	}
+	// Two measured at note time (one drawn, one refused), then dark and
+	// e-ink; light came from the cache.
+	if n := draws.Load(); n != 4 {
+		t.Errorf("drew %d times, want 4", n)
 	}
 }

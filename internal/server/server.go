@@ -869,6 +869,7 @@ func (s *Server) noteHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not render note")
 		return
 	}
+	note.Diagrams = s.measureDiagrams(r.Context(), note.Diagrams)
 	w.Header().Set("Cache-Control", "no-cache")
 	writeJSON(w, http.StatusOK, note)
 }

@@ -83,6 +83,8 @@ type drawn struct {
 	svg     []byte
 	etag    string
 	refusal *diagram.Refusal
+	// width and height are the drawing's natural size, read from svg.
+	width, height float64
 }
 
 func (s *Server) diagramHandler(w http.ResponseWriter, r *http.Request) {
@@ -248,6 +250,43 @@ func (s *Server) listNote(real string) ([]render.Diagram, error) {
 	return s.md.Diagrams(src), nil
 }
 
+// measureDiagrams draws each listed diagram in the light palette and
+// gives it its natural size, so the reading view can reserve the image's
+// box before it loads and a scroll to a line below it lands where it
+// should (davison/md-notes#177). The size is the same in every palette.
+//
+// It is the draw the image route would make: through the same cache,
+// slots and deadline, so the light image is then a cache hit and a
+// refusal is remembered. A block the layout refuses is dropped from the
+// list here, so it stays code and no image is ever asked for. One whose
+// draw did not finish — the request went away — is kept unmeasured.
+func (s *Server) measureDiagrams(ctx context.Context, list []render.Diagram) []render.Diagram {
+	if len(list) == 0 {
+		return list
+	}
+	results := make([]drawn, len(list))
+	errs := make([]error, len(list))
+	var wg sync.WaitGroup
+	for i, d := range list {
+		wg.Go(func() {
+			results[i], errs[i] = s.drawDiagram(ctx, d.Hash+"/light", d.Source, diagram.Light)
+		})
+	}
+	wg.Wait()
+	kept := list[:0]
+	for i, d := range list {
+		switch {
+		case errs[i] != nil:
+		case results[i].refusal != nil:
+			continue
+		default:
+			d.Width, d.Height = results[i].width, results[i].height
+		}
+		kept = append(kept, d)
+	}
+	return kept
+}
+
 // drawDiagram answers from the cache, or draws — at most drawSlots at once
 // — and caches the answer. A refusal is cached as well as an SVG, so a
 // hostile block costs its render deadline once rather than at every view.
@@ -272,6 +311,7 @@ func (s *Server) drawDiagram(ctx context.Context, key string, src []byte, theme 
 	case err == nil:
 		sum := sha256.Sum256(svg)
 		d := drawn{svg: svg, etag: `"` + base64.RawURLEncoding.EncodeToString(sum[:16]) + `"`}
+		d.width, d.height, _ = diagram.Size(svg)
 		s.svgs.put(key, d)
 		return d, nil
 	case errors.As(err, &refusal):
