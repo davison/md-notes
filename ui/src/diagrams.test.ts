@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULTS } from "./settings";
-import { DIAGRAM_CLASS, SOURCE_HIDDEN_CLASS, decorate, diagramTheme, type DiagramPool } from "./diagrams";
+import { DIAGRAM_CLASS, DiagramPool, SOURCE_HIDDEN_CLASS, decorate, diagramTheme } from "./diagrams";
 
 /** The markup the daemon renders for a fenced mermaid block, anchor first. */
 function block(line: number, source: string): string {
@@ -33,7 +33,7 @@ describe("diagramTheme", () => {
 describe("decorate", () => {
   it("puts the image between the anchor and its code block, and hides the code", () => {
     const scope = note("<p data-line=\"1\">p</p>\n" + block(3, "graph TD; A--&gt;B\n") + block(7, "graph LR; C--&gt;D\n"));
-    const pool: DiagramPool = new Map();
+    const pool = new DiagramPool();
     decorate(scope, [{ line: 7, hash: "h7" }], url("light"), pool);
 
     const img = scope.querySelector("img")!;
@@ -52,7 +52,7 @@ describe("decorate", () => {
 
   it("brings the code block back and drops the image when it cannot load", () => {
     const scope = note(block(3, "graph TD; A--&gt;B\n"));
-    const pool: DiagramPool = new Map();
+    const pool = new DiagramPool();
     decorate(scope, [{ line: 3, hash: "h" }], url("light"), pool);
     const img = scope.querySelector("img")!;
     img.dispatchEvent(new Event("error"));
@@ -67,6 +67,49 @@ describe("decorate", () => {
     expect(again.getAttribute("src")).toContain("theme=dark");
   });
 
+  it("leaves a block whose drawing failed as code until its source or the theme changes", () => {
+    // The round-one review of PR #175, N3: without this, every live update
+    // or theme change hid the code block again until the cached refusal
+    // came back, and the page jumped.
+    const scope = note(block(3, "refused") + block(8, "fine"));
+    const pool = new DiagramPool();
+    const both = [
+      { line: 3, hash: "r" },
+      { line: 8, hash: "f" },
+    ];
+    decorate(scope, both, url("light"), pool);
+    scope.querySelector("img")!.dispatchEvent(new Event("error"));
+    const refusedPre = scope.querySelector('[data-line="3"]')!.nextElementSibling!;
+    expect(refusedPre.tagName).toBe("PRE");
+
+    // A live update over the same source, in the same theme.
+    let hidden = 0;
+    new MutationObserver(() => {
+      if (refusedPre.classList.contains(SOURCE_HIDDEN_CLASS)) hidden++;
+    }).observe(refusedPre, { attributes: true, attributeFilter: ["class"] });
+    decorate(scope, both, url("light"), pool);
+    expect(scope.querySelectorAll("img").length).toBe(1);
+    expect(refusedPre.classList.contains(SOURCE_HIDDEN_CLASS)).toBe(false);
+
+    // A changed source is a new hash, and is tried.
+    decorate(scope, [{ line: 3, hash: "r2" }, both[1]], url("light"), pool);
+    expect(scope.querySelectorAll("img").length).toBe(2);
+    return Promise.resolve().then(() => expect(hidden).toBe(1));
+  });
+
+  it("brings the code back when the theme returns to one whose drawing failed", () => {
+    const scope = note(block(3, "s"));
+    const pool = new DiagramPool();
+    const one = [{ line: 3, hash: "h" }];
+    decorate(scope, one, url("light"), pool);
+    scope.querySelector("img")!.dispatchEvent(new Event("error"));
+    decorate(scope, one, url("dark"), pool);
+    expect(scope.querySelector("img")!.getAttribute("src")).toContain("theme=dark");
+    decorate(scope, one, url("light"), pool);
+    expect(scope.querySelector("img")).toBeNull();
+    expect(scope.querySelector("pre")!.classList.contains(SOURCE_HIDDEN_CLASS)).toBe(false);
+  });
+
   it("skips an entry whose anchor is missing or is not followed by a code block", () => {
     const scope = note('<div class="line-anchor" data-line="2"></div><p>not code</p>' + block(9, "x"));
     decorate(
@@ -76,7 +119,7 @@ describe("decorate", () => {
         { line: 5, hash: "b" },
       ],
       url("light"),
-      new Map(),
+      new DiagramPool(),
     );
     expect(scope.querySelector("img")).toBeNull();
     expect(scope.querySelector("pre")!.classList.contains(SOURCE_HIDDEN_CLASS)).toBe(false);
@@ -86,7 +129,7 @@ describe("decorate", () => {
     // The daemon strips both of these from note HTML; the look-up does not
     // rely on that alone: only an anchor div is an anchor.
     const scope = note('<p data-line="4">text</p><pre>decoy</pre>' + block(4, "real"));
-    decorate(scope, [{ line: 4, hash: "h" }], url("light"), new Map());
+    decorate(scope, [{ line: 4, hash: "h" }], url("light"), new DiagramPool());
     const img = scope.querySelector("img")!;
     expect(img.alt).toBe("real");
     expect(scope.querySelector("pre")!.textContent).toBe("decoy");
@@ -95,7 +138,7 @@ describe("decorate", () => {
 
   it("changes only the src when the theme changes", () => {
     const scope = note(block(3, "s"));
-    const pool: DiagramPool = new Map();
+    const pool = new DiagramPool();
     decorate(scope, [{ line: 3, hash: "h" }], url("light"), pool);
     const img = scope.querySelector("img")!;
     decorate(scope, [{ line: 3, hash: "h" }], url("eink"), pool);
@@ -106,7 +149,7 @@ describe("decorate", () => {
 
   it("reuses the element for an unchanged diagram when the note is rendered again", () => {
     const scope = note(block(3, "one") + block(8, "two"));
-    const pool: DiagramPool = new Map();
+    const pool = new DiagramPool();
     decorate(
       scope,
       [
@@ -148,7 +191,7 @@ describe("decorate", () => {
 
   it("tells two identical diagrams apart by their order", () => {
     const scope = note(block(3, "same") + block(8, "same"));
-    const pool: DiagramPool = new Map();
+    const pool = new DiagramPool();
     const same = [
       { line: 3, hash: "s" },
       { line: 8, hash: "s" },
@@ -162,7 +205,7 @@ describe("decorate", () => {
 
   it("is idempotent over the same markup", () => {
     const scope = note(block(3, "s"));
-    const pool: DiagramPool = new Map();
+    const pool = new DiagramPool();
     decorate(scope, [{ line: 3, hash: "h" }], url("light"), pool);
     const before = scope.innerHTML;
     decorate(scope, [{ line: 3, hash: "h" }], url("light"), pool);

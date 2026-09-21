@@ -179,7 +179,7 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
     }
   });
 
-  it("shows the code block when the daemon refuses to draw", async () => {
+  it("shows the code block when the daemon refuses to draw, and keeps it through a live update", async () => {
     const { page, responses, close } = await open();
     try {
       await openNote(page, fixture.url("refused.md"));
@@ -189,6 +189,19 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
         const pre = document.querySelector(".markdown pre");
         return !document.querySelector(".markdown img") && getComputedStyle(pre).display !== "none";
       });
+
+      // A live update elsewhere in the note leaves the refused block as code:
+      // it is not hidden again, and not asked for again (review of PR #175, N3).
+      await page.evaluate(() => {
+        window.__hidden = 0;
+        new MutationObserver(() => {
+          if (document.querySelector(".markdown pre.diagram-source")) window.__hidden++;
+        }).observe(document.querySelector(".markdown"), { subtree: true, childList: true, attributes: true });
+      });
+      fs.appendFileSync(fixture.file("refused.md"), "\nA paragraph added below.\n");
+      await page.locator(".markdown p", { hasText: "A paragraph added below." }).waitFor();
+      assert.equal(await page.evaluate(() => window.__hidden), 0, "the code block was hidden again");
+      assert.equal(responses.length, 1, `the refused drawing was asked for again: ${JSON.stringify(responses)}`);
     } finally {
       await close();
     }
