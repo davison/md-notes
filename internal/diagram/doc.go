@@ -30,8 +30,10 @@
 //   - `%%` comments.
 //
 // The styling and interaction statements `style`, `classDef`, `class`,
-// `:::class`, `linkStyle` and `click` are skipped whole: colour is the
-// theme's, and an image has nothing to click. Everything else — `%%{…}%%`
+// `:::class`, `linkStyle` and `click` are skipped whole, up to their
+// newline or semicolon: colour is the theme's, and an image has nothing to
+// click. Bidi controls and zero-width characters are dropped from labels.
+// A block with nothing to draw is refused. Everything else — `%%{…}%%`
 // directives, front matter, `@{…}` metadata, markdown or HTML labels
 // (except `<br>`), icons, accessibility statements, other diagram types,
 // and any text that does not parse — is refused with a *Refusal, and the
