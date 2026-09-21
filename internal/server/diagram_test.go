@@ -400,7 +400,7 @@ func TestDiagramIsGuarded(t *testing.T) {
 func TestNoteListsItsDiagrams(t *testing.T) {
 	ts, base := newTestServer(t)
 	writeNote(t, base, "d.md", "# D\n\n"+fence(testFlow)+"\n"+fence("sequenceDiagram\nA->>B: x\n"))
-	resp := do(t, ts, "GET", "/api/r/notes/note/d.md", "", nil)
+	resp := do(t, ts, "GET", "/api/r/notes/note/d.md?sizes=1", "", nil)
 	body := readAll(t, resp.Body)
 	want := `"diagrams":[{"line":3,"hash":"` + render.HashSource([]byte(testFlow)) + `","width":185,"height":94.6}]`
 	if !strings.Contains(body, want) {
@@ -627,7 +627,7 @@ func TestNoteSizesItsDiagrams(t *testing.T) {
 	ts, base := newTestServer(t)
 	writeNote(t, base, "d.md", "# D\n\n"+fence(testFlow)+"\n"+fence(layoutRefused()))
 	draws := countDraws(serverOf(t, ts))
-	resp := do(t, ts, "GET", "/api/r/notes/note/d.md", "", nil)
+	resp := do(t, ts, "GET", "/api/r/notes/note/d.md?sizes=1", "", nil)
 	var note struct {
 		Diagrams []struct {
 			Line          int
@@ -654,5 +654,192 @@ func TestNoteSizesItsDiagrams(t *testing.T) {
 	// e-ink; light came from the cache.
 	if n := draws.Load(); n != 4 {
 		t.Errorf("drew %d times, want 4", n)
+	}
+}
+
+// measureNote opens a note the way the reading view does, asking for its
+// diagrams' sizes, and reports how long the answer took.
+func measureNote(t *testing.T, ts *httptest.Server, rel string) (sized int, took time.Duration) {
+	t.Helper()
+	start := time.Now()
+	resp := do(t, ts, "GET", "/api/r/notes/note/"+rel+"?sizes=1", "", nil)
+	var note struct {
+		Diagrams []struct{ Width float64 }
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&note); err != nil {
+		t.Fatal(err)
+	}
+	took = time.Since(start)
+	for _, d := range note.Diagrams {
+		if d.Width > 0 {
+			sized++
+		}
+	}
+	return sized, took
+}
+
+func distinctFlows(prefix string, n int) string {
+	var b strings.Builder
+	for i := range n {
+		b.WriteString(fence(fmt.Sprintf("graph TD; %s%d-->B\n", prefix, i)) + "\n")
+	}
+	return b.String()
+}
+
+// Sizes are kept by source hash, apart from the drawings, so opening an
+// unchanged note again lays nothing out even once its drawings have been
+// evicted — which a note with more diagrams than the drawing cache holds
+// does to itself on every open (review of PR #181, B1).
+func TestNoteSizesAreKeptApartFromTheDrawings(t *testing.T) {
+	ts, base := newTestServer(t)
+	s := serverOf(t, ts)
+	s.svgs = newSVGCache(1<<20, 4)
+	writeNote(t, base, "d.md", distinctFlows("A", 10))
+	draws := countDraws(s)
+	if sized, _ := measureNote(t, ts, "d.md"); sized != 10 {
+		t.Fatalf("first open sized %d of 10", sized)
+	}
+	first := draws.Load()
+	if sized, _ := measureNote(t, ts, "d.md"); sized != 10 {
+		t.Fatalf("second open sized %d of 10", sized)
+	}
+	if n := draws.Load() - first; n != 0 {
+		t.Errorf("a warm open of an unchanged note laid out %d diagrams, want 0", n)
+	}
+	// An image request's draw records its size too.
+	writeNote(t, base, "e.md", fence("graph TD; Q-->R\n"))
+	do(t, ts, "GET", diagramURL("e.md", "graph TD; Q-->R\n", "dark"), "", nil)
+	before := draws.Load()
+	if sized, _ := measureNote(t, ts, "e.md"); sized != 1 {
+		t.Errorf("a size the image route drew was not used")
+	}
+	if n := draws.Load() - before; n != 0 {
+		t.Errorf("drew %d to size a block the route had drawn, want 0", n)
+	}
+}
+
+// slowDraws makes every draw of a source containing marker take d.
+func slowDraws(s *Server, marker string, d time.Duration) {
+	inner := s.draw
+	s.draw = func(ctx context.Context, src []byte, theme diagram.Theme) ([]byte, error) {
+		if strings.Contains(string(src), marker) {
+			select {
+			case <-time.After(d):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		return inner(ctx, src, theme)
+	}
+}
+
+// The note's text is never held for its diagrams beyond the measuring
+// budget: the blocks it does not reach go out unmeasured, and the page
+// keeps its place for them itself.
+func TestNoteMeasuringIsBudgeted(t *testing.T) {
+	ts, base := newTestServer(t)
+	s := serverOf(t, ts)
+	s.drawSlots = make(chan struct{}, 6)
+	slowDraws(s, "Slow", 100*time.Millisecond)
+	writeNote(t, base, "slow.md", distinctFlows("Slow", 40))
+	sized, took := measureNote(t, ts, "slow.md")
+	if limit := measureBudget + 150*time.Millisecond; took > limit {
+		t.Errorf("the note took %v with 40 slow diagrams, want under %v", took, limit)
+	}
+	if sized == 0 || sized == 40 {
+		t.Errorf("sized %d of 40; the budget should reach some and not all", sized)
+	}
+}
+
+// One note's measuring takes at most a couple of slots, and only for its
+// budget, so another note opened meanwhile is not held behind it.
+func TestNoteMeasuringDoesNotStarveOthers(t *testing.T) {
+	ts, base := newTestServer(t)
+	s := serverOf(t, ts)
+	s.drawSlots = make(chan struct{}, 6)
+	slowDraws(s, "Slow", 100*time.Millisecond)
+	writeNote(t, base, "slow.md", distinctFlows("Slow", 120))
+	writeNote(t, base, "other.md", fence("graph TD; Other-->One\n"))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		measureNote(t, ts, "slow.md")
+	}()
+	// Once the slow note's measuring holds the slots.
+	for deadline := time.Now().Add(2 * time.Second); len(s.drawSlots) == 0; {
+		if time.Now().After(deadline) {
+			t.Fatal("the slow note never started measuring")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	sized, took := measureNote(t, ts, "other.md")
+	<-done
+	if took > 100*time.Millisecond || sized != 1 {
+		t.Errorf("another note took %v and sized %d of 1 while a slow one measured; want under 100ms, 1", took, sized)
+	}
+}
+
+// A request that goes away stops its measuring: no draw starts after it.
+func TestNoteMeasuringStopsWithTheRequest(t *testing.T) {
+	ts, base := newTestServer(t)
+	s := serverOf(t, ts)
+	s.drawSlots = make(chan struct{}, 6)
+	var started atomic.Int64
+	var mu sync.Mutex
+	var starts []time.Time
+	inner := s.draw
+	s.draw = func(ctx context.Context, src []byte, theme diagram.Theme) ([]byte, error) {
+		started.Add(1)
+		mu.Lock()
+		starts = append(starts, time.Now())
+		mu.Unlock()
+		select {
+		case <-time.After(40 * time.Millisecond):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return inner(ctx, src, theme)
+	}
+	writeNote(t, base, "slow.md", distinctFlows("Slow", 40))
+	ctx, cancel := context.WithCancel(context.Background())
+	req, _ := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/r/notes/note/slow.md?sizes=1", nil)
+	req.Host = "localhost:7337"
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	if resp, err := http.DefaultClient.Do(req); err == nil {
+		resp.Body.Close()
+	}
+	gone := time.Now()
+	time.Sleep(300 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	late := 0
+	for _, at := range starts {
+		if at.After(gone.Add(20 * time.Millisecond)) {
+			late++
+		}
+	}
+	if late != 0 {
+		t.Errorf("%d draws started after the request went away", late)
+	}
+}
+
+// Only the reading view asks for sizes. Other callers of the note
+// endpoint — the editor's title, for one — lay nothing out.
+func TestNoteWithoutSizesDrawsNothing(t *testing.T) {
+	ts, base := newTestServer(t)
+	writeNote(t, base, "d.md", distinctFlows("A", 3))
+	draws := countDraws(serverOf(t, ts))
+	body := readAll(t, do(t, ts, "GET", "/api/r/notes/note/d.md", "", nil).Body)
+	if n := draws.Load(); n != 0 {
+		t.Errorf("a plain note fetch drew %d diagrams, want 0", n)
+	}
+	if strings.Contains(body, `"width"`) {
+		t.Errorf("a plain note fetch carries sizes: %s", body)
+	}
+	if !strings.Contains(body, `"diagrams":[{`) {
+		t.Errorf("a plain note fetch lost its diagram list: %s", body)
 	}
 }
