@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULTS } from "./settings";
-import { DIAGRAM_CLASS, DiagramPool, SOURCE_HIDDEN_CLASS, decorate, diagramTheme } from "./diagrams";
+import { DIAGRAM_CLASS, DiagramPool, SOURCE_HIDDEN_CLASS, decorate, diagramTheme, holdInView } from "./diagrams";
 
 /** The markup the daemon renders for a fenced mermaid block, anchor first. */
 function block(line: number, source: string): string {
@@ -226,5 +226,67 @@ describe("decorate", () => {
     const before = scope.innerHTML;
     decorate(scope, [{ line: 3, hash: "h" }], url("light"), pool);
     expect(scope.innerHTML).toBe(before);
+  });
+});
+
+describe("holdInView", () => {
+  /**
+   * A note whose images the daemon did not measure (#177, review of PR #181):
+   * each has no box until it loads, so the target below it moves, and the
+   * scroll is taken again as each one settles — until the reader scrolls.
+   */
+  function setup() {
+    const scope = note(block(3, "a") + block(8, "b") + '<p data-line="12">target</p>' + block(14, "after"));
+    decorate(
+      scope,
+      [
+        { line: 3, hash: "a" },
+        { line: 8, hash: "b", width: 100, height: 50 },
+        { line: 14, hash: "c" },
+      ],
+      url("light"),
+      new DiagramPool(),
+    );
+    const target = scope.querySelector('[data-line="12"]')!;
+    const scrolls = vi.fn();
+    (target as HTMLElement).scrollIntoView = scrolls;
+    const [unmeasured, measured, below] = [...scope.querySelectorAll("img")];
+    return { target, scrolls, unmeasured, measured, below };
+  }
+
+  it("scrolls to the target again when an unmeasured image above it loads or fails", () => {
+    const { target, scrolls, unmeasured, measured, below } = setup();
+    const stop = holdInView(target);
+    below.dispatchEvent(new Event("load"));
+    measured.dispatchEvent(new Event("load"));
+    expect(scrolls).not.toHaveBeenCalled();
+    unmeasured.dispatchEvent(new Event("load"));
+    expect(scrolls).toHaveBeenCalledTimes(1);
+    expect(scrolls).toHaveBeenCalledWith({ block: "center" });
+    stop();
+  });
+
+  it("does so after a failure too, once the code block is back", () => {
+    const { target, scrolls, unmeasured } = setup();
+    const stop = holdInView(target);
+    unmeasured.dispatchEvent(new Event("error"));
+    expect(scrolls).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("lets go when the reader scrolls", () => {
+    const { target, scrolls, unmeasured } = setup();
+    const stop = holdInView(target);
+    window.dispatchEvent(new Event("wheel"));
+    unmeasured.dispatchEvent(new Event("load"));
+    expect(scrolls).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("lets go when stopped", () => {
+    const { target, scrolls, unmeasured } = setup();
+    holdInView(target)();
+    unmeasured.dispatchEvent(new Event("load"));
+    expect(scrolls).not.toHaveBeenCalled();
   });
 });

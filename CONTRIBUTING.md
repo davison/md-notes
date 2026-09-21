@@ -126,7 +126,7 @@ red scan means something was published, not that the build broke.
 phone layout, the drawer, the middle-width layout, the display settings and
 the scrollbars, the tap targets, the asset cache, creating and deleting a
 note, the navigator's two orders, removing a root, the installable app, the
-service worker's cache name and flowcharts drawn as images: nine suites, 79
+service worker's cache name and flowcharts drawn as images: nine suites, 83
 tests. It is CI's second job.
 
 The extension has a browser suite of its own, which CI does not run, because
