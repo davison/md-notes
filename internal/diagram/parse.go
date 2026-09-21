@@ -228,10 +228,22 @@ func (p *parser) statement(st string, line int) error {
 		return nil
 	case ignored[word]:
 		return nil
-	case strings.HasPrefix(word, "acc") || word == "title":
-		return refuse(Unsupported, line, "%s is not supported", strings.TrimSuffix(word, ":"))
+	case accessibility(word) != "":
+		return refuse(Unsupported, line, "%s is not supported", accessibility(word))
+	case word == "title":
+		return refuse(Unsupported, line, "title is not supported")
 	}
 	return p.chain(st, line)
+}
+
+// accessibility is the accTitle or accDescr statement a word opens, or "".
+func accessibility(word string) string {
+	for _, kw := range []string{"accTitle", "accDescr"} {
+		if word == kw || strings.HasPrefix(word, kw+":") || strings.HasPrefix(word, kw+"{") {
+			return kw
+		}
+	}
+	return ""
 }
 
 func (p *parser) subgraph(rest string, line int) error {
