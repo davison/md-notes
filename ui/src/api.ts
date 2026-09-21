@@ -120,8 +120,19 @@ export interface Note {
   diagrams?: { line: number; hash: string; width?: number; height?: number }[];
 }
 
-export function fetchNote(slug: string, path: string): Promise<Note> {
-  return request<Note>(`/api/r/${encodeURIComponent(slug)}/note/${encodePath(path)}`);
+export interface NoteOptions {
+  /**
+   * Ask the daemon for each diagram's size, which it measures within a
+   * budget (#177). The reading view wants them; a caller after the title
+   * alone does not, and costs the daemon no layout.
+   */
+  sizes?: boolean;
+  signal?: AbortSignal;
+}
+
+export function fetchNote(slug: string, path: string, opts: NoteOptions = {}): Promise<Note> {
+  const query = opts.sizes ? "?sizes=1" : "";
+  return request<Note>(`/api/r/${encodeURIComponent(slug)}/note/${encodePath(path)}${query}`, opts.signal ? { signal: opts.signal } : undefined);
 }
 
 export interface Hit {
