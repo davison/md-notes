@@ -495,6 +495,11 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		"127.0.0.1:" + strconv.Itoa(s.port): true,
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Anything answered at a diagram URL — a refusal here, the mux's
+		// own 404 or redirect — carries the headers the drawing does.
+		if diagramPath(r.URL.Path) {
+			setDiagramHeaders(w.Header())
+		}
 		// Which rule applies is decided by the Host, so nothing may be
 		// able to decide it other than the Host header itself. A request
 		// target in absolute form carries an authority of its own, which
