@@ -147,7 +147,7 @@ and 83 of 83 on `c5ab85a`.
 | ID | Requirement | What the work established | QA |
 |----|-------------|---------------------------|----|
 | M9-R1 | A `flowchart` or `graph` block renders as a diagram in the reading view, for a documented subset: every direction, the common shapes, solid, dotted and thick edges with and without arrows and labels, chains and `&`, `subgraph`, comments. Anything else shows as code | 14 shapes, the link forms the plan lists (solid, dotted, thick and invisible, with arrow, circle and cross ends, both-ends forms and longer links), both label forms, four subgraph header forms, nesting, and links to a subgraph's border. A subgraph's own `direction` is accepted and not honoured, which is what mermaid does whenever a link crosses the border ([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5766109427)). After the first verdict, each diagram's box is reserved before its image loads ([#177](https://github.com/davison/md-notes/issues/177#issuecomment-5768086074)) | **[Not satisfied](https://github.com/davison/md-notes/issues/169#issuecomment-5767706977)** on `6e735d5`: every form drew, but a search hit inside the 9th diagram of a note landed at 2802 px in a 900 px viewport, where the pre-M9 build centres it at 490 px ([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767691648)). **[Satisfied](https://github.com/davison/md-notes/issues/169#issuecomment-5768247525)** on `c5ab85a`: every hit probed stays centred for 6 s, cold notes included, at 1280×900 and 390×800; a reader's wheel or PageUp during loading is not fought; and the subset and fallbacks re-confirmed on the new binary |
-| M9-R2 | Drawn by the daemon from a typed model into an SVG of its own elements, with source text escaped, shown through `<img>`; styling and markup directives not honoured; the parser fuzzed; size, counts and time bounded | Parsed into enums, indexes and label lines; the writer emits only `svg rect path polygon ellipse circle line text tspan` and writes no id, class, style, href, `url()`, marker or defs. Styling and `click` are skipped whole, and `%%{…}%%`, HTML and markdown labels are refused ([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5766500829)). Delivered with `default-src 'none'; sandbox` and `nosniff` ([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767039874)) | [Satisfied](https://github.com/davison/md-notes/issues/169#issuecomment-5767706977): the advisory payloads were run through the running app, not just the package. Of 23 hostile blocks, 13 stayed code and 10 drew. All 30 drawings (10 blocks × 3 palettes) held only the elements `svg path polygon rect text tspan`, with payload text only as escaped character data, and no dialog and no off-origin request in Chromium. Opened directly, they had no active elements. Headers were on every status tried except one encoded dot-segment URL (observation 2, captured as [#179](https://github.com/davison/md-notes/issues/179)). Raw-HTML forgeries were not adopted. A 120-draw burst held the six slots. The fuzzers ran clean for 90 s and 60 s |
+| M9-R2 | Drawn by the daemon from a typed model into an SVG of its own elements, with source text escaped, shown through `<img>`; styling and markup directives not honoured; the parser fuzzed; size, counts and time bounded | Parsed into enums, indexes and label lines; the writer emits only `svg rect path polygon ellipse circle line text tspan` and writes no id, class, style, href, `url()`, marker or defs. Styling and `click` are skipped whole, and `%%{…}%%`, HTML and markdown labels are refused ([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5766109427)); the element list is the writer's own, in `internal/diagram/doc.go` and the [PR #173](https://github.com/davison/md-notes/pull/173) description. Delivered with `default-src 'none'; sandbox` and `nosniff` ([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767039874)) | [Satisfied](https://github.com/davison/md-notes/issues/169#issuecomment-5767706977): the advisory payloads were run through the running app, not just the package. Of 23 hostile blocks, 13 stayed code and 10 drew. All 30 drawings (10 blocks × 3 palettes) held only the elements `svg path polygon rect text tspan`, with payload text only as escaped character data, and no dialog and no off-origin request in Chromium. Opened directly, they had no active elements. Headers were on every status tried. The verdict's observation 2 named one encoded dot-segment URL without them; QA later withdrew it, because its curl had normalised the path before sending ([#179](https://github.com/davison/md-notes/issues/179#issuecomment-5768334633)). Raw-HTML forgeries were not adopted. A 120-draw burst held the six slots. The fuzzers ran clean for 90 s and 60 s |
 | M9-R3 | Legible in the light, dark and e-ink themes and following the setting; updated when the note changes on disk; falling back to code when a drawing cannot be fetched | Light and dark come from the page's own colours, and e-ink is black on white with 2 px lines. A test holds text to 4.5:1 and lines to 3:1. The light override gives the e-ink palette, accepted by the operator ([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767528754)). An unchanged diagram keeps its element across a live update. A failed image leaves the code block and is not asked for again on that page ([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767530708)) | [Satisfied](https://github.com/davison/md-notes/issues/169#issuecomment-5767706977): every drawing checked by eye in all three palettes, and a scheme change and the override each rewrote `src` on the same elements with no reload. A disk edit re-requested only the changed diagram. An aborted fetch, going offline, a killed daemon and a 422 each left code, and a 5 ms sampler never saw a broken image. Re-confirmed on `c5ab85a` with a 10 ms sampler ([#169](https://github.com/davison/md-notes/issues/169#issuecomment-5768247525)) |
 | M9-R4 | One static binary with no cgo on amd64 and arm64; the size change measured and recorded; any third-party licence carried by the `.deb`, the AUR package and the README | No module added and no cgo. The size is under [What it cost the binary](#what-it-cost-the-binary). No licence came in; the Noto Sans advance widths are numbers only, with no glyph data ([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5766109427)) | [Satisfied](https://github.com/davison/md-notes/issues/169#issuecomment-5767706977): `file` and `ldd` report a static binary, and `go version -m` reports `CGO_ENABLED=0` on both architectures. QA's Go-only baselines match #170's recorded ones byte for byte. `go list -deps ./internal/diagram` shows only the standard library |
 | M9-R5 | The README and docs describe the supported subset and what falls back; the roadmap row; this record | This task; the pull request carrying this record is what delivers it. Stage one was reviewed and approved ([PR #176](https://github.com/davison/md-notes/pull/176#issuecomment-5767712105)) | [Untestable at the verdict](https://github.com/davison/md-notes/issues/169#issuecomment-5767706977): QA graded `main` before this task had merged, and nothing of it existed there. The re-grade repeated that ([#169](https://github.com/davison/md-notes/issues/169#issuecomment-5768247525)). A superseding verdict is owed once it merges |
@@ -302,7 +302,8 @@ The app has no separate e-ink switch, and the override exists for the e-ink pane
   known to report.
 - `<picture>` sources.
 
-The operator accepted the mapping: "it's acceptable, no separate e-ink theme needed"
+The operator accepted the mapping. The coordinator's decision comment gives the operator's
+words, as relayed by the coordinator: "it's acceptable, no separate e-ink theme needed"
 ([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767528754)).
 
 ### The route's delivery and caching
@@ -344,7 +345,7 @@ what that cost, and the decision was revised
 - For a diagram the budget did not reach, `holdInView` re-centres the target each time an
   image above it loads or fails, and lets go when the reader scrolls, clicks or types.
 
-The revised decision measured the cost: a hit inside the 40th of 60 mostly unmeasured
+The revised decision measured the hold: a hit inside the 40th of 60 mostly unmeasured
 diagrams lands at 491 px of a 900 px viewport with the hold, and at 9323 px without it.
 
 **Trade-off:** on a first open of a note with many unfamiliar, slow diagrams, most of them go
@@ -468,12 +469,26 @@ blocking finding came with a test that failed before its fix.
   a `defer` and recovers the panic.
 - **Round three** [approved](https://github.com/davison/md-notes/pull/175#issuecomment-5767526941).
 
+One thing this review passed failed later. Under "What I attacked and found sound", round
+one wrote: "A search hit below a tall diagram stays put while the image loads, because
+Chromium's scroll anchoring handles the shift"
+([PR #175](https://github.com/davison/md-notes/pull/175#issuecomment-5767314701)). QA found
+that case broken on a note's first open: the images above the target have no height when the
+scroll runs, the offset is then 0, and anchoring does not act at 0, as
+[#177](https://github.com/davison/md-notes/issues/177)'s plan found. That finding became M9-R1's not-satisfied verdict and fix task #177. The only test of the
+scroll then ran in jsdom, which has no layout
+([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767691648)); #177's
+browser cases are what hold it now.
+
 **[PR #181](https://github.com/davison/md-notes/pull/181), two rounds.**
 - **Round one** ([changes requested](https://github.com/davison/md-notes/pull/181#issuecomment-5767909888)),
   B1: the note endpoint laid out every diagram on every open. A note of 600 slow diagrams
   took 9.2 s and 45 s of CPU per open even when warm, because its drawings evicted each
   other from the 512-entry cache. Three concurrent opens took 23.6 s and 142 s of CPU.
-  Another note's one small diagram waited 4.76 s behind them.
+  Another note's one small diagram waited 4.76 s behind them. The same review confirmed the
+  new scroll cases bite: on `ee287ab`, the tests before the fix, all 8 failed. Its N1, that
+  the rewritten browser suite no longer reached the route's 422, was restored in the fix
+  pass.
 - **Round two** [approved](https://github.com/davison/md-notes/pull/181#issuecomment-5768146985)
   the budgeted design, and re-ran the reviewer's own table. The same note took 2.69 s cold
   with 3.0 s of CPU, and three concurrent opens took 2.73 s and 8.8 s of CPU, against the
@@ -502,12 +517,20 @@ It was corrected on the task when round one of PR #175 found this
 PR #181 measured it
 ([#177](https://github.com/davison/md-notes/issues/177#issuecomment-5768086074)).
 
-**"Every answer at a diagram URL carries both headers."** The round-one reply on PR #175
-([PR #175](https://github.com/davison/md-notes/pull/175#issuecomment-5767392235)) gave this
-as the precise statement for the docs. QA found one encoded dot-segment URL that gets the
-generic 404 without them, on `6e735d5` and again on `c5ab85a`
-([#169](https://github.com/davison/md-notes/issues/169#issuecomment-5767706977),
-observation 2). It is captured as #179, and the docs name the exception.
+**#179, raised and withdrawn.** QA's first verdict reported, as observation 2, that an
+encoded dot-segment URL under `/diagram/` got the generic 404 without `nosniff` or the CSP
+([#169](https://github.com/davison/md-notes/issues/169#issuecomment-5767706977)), and the
+re-grade on `c5ab85a` repeated it
+([#169](https://github.com/davison/md-notes/issues/169#issuecomment-5768247525)). It was
+captured as #179. QA then withdrew it
+([#179](https://github.com/davison/md-notes/issues/179#issuecomment-5768334633)): without
+`--path-as-is`, curl removes the `%2e%2e` segment before sending, so the daemon was asked for
+a path outside `/diagram/`. When the encoded segment does reach the daemon, the answer is a
+`400`, `403` or `307`, each with both headers. The coordinator closed #179 as not a defect
+([#179](https://github.com/davison/md-notes/issues/179#issuecomment-5768338086)). The statement in the
+round-one reply on PR #175, that every answer at a diagram URL carries both headers
+([PR #175](https://github.com/davison/md-notes/pull/175#issuecomment-5767392235)), stands. The
+first draft of this task's stage two named the exception in the docs; they no longer do.
 
 **The e2e count.** Stage one of this task wrote 71 checks. #177 made it 83, and the count
 was re-run on the rebased branch.
@@ -524,17 +547,22 @@ Raised by this milestone, for a later task to adopt:
 |---------|------|-----------|
 | [#174](https://github.com/davison/md-notes/issues/174) | the round-one review of [PR #173](https://github.com/davison/md-notes/pull/173#issuecomment-5766494612) | An edge into a nested subgraph is drawn through the subgraph's title band. It is the one drawing-quality finding that the fix pass left alone, as not cheap |
 | [#178](https://github.com/davison/md-notes/issues/178) | M9 QA, observation 1 | A note with 20,000 small language-tagged code blocks takes about 78 s to render, on the pre-M9 build as well. The addendum from #177's fix pass ([#178](https://github.com/davison/md-notes/issues/178#issuecomment-5768099588)): each block in a language chroma has no lexer for, `mermaid` included, costs 2.5 to 3.5 ms to render, against about 0.15 ms for `go` |
-| [#179](https://github.com/davison/md-notes/issues/179) | M9 QA, observation 2 | An encoded dot-segment under a diagram URL gets the generic 404 without `nosniff` or the CSP. The body is fixed text, and QA found no way to exploit it |
 | [#180](https://github.com/davison/md-notes/issues/180) | M9 QA, observation 3 | An e-ink diagram's white background sits in a faint box on the light page's `#fbfbfa`. Cosmetic |
 | [#182](https://github.com/davison/md-notes/issues/182) | N2 of the round-two review of [PR #181](https://github.com/davison/md-notes/pull/181#issuecomment-5768146985) | A diagram refused at the 2 s deadline on a merely busy host stays as code until the daemon restarts |
+
+[#179](https://github.com/davison/md-notes/issues/179), from M9 QA's observation 2, was also
+raised, and then closed as not a defect when QA withdrew the observation. It is not open for
+adoption; see [Corrections](#corrections-to-the-record-itself).
 
 ## Where the record is silent
 
 **The operator's reasoning is recorded in the coordinator's words.** The vetting of mermaid,
 the choice of a server-side renderer, flowcharts only, and the advisory tests are all written
 up by the coordinator: "the operator judged that not worth it and asked instead". The
-light-override acceptance is the one place with the operator's own words quoted. There is no
-operator comment weighing the sandboxed-frame option against a renderer of our own. That it
+light-override acceptance is the one place the operator's words are quoted, and even those
+exist only as the coordinator relayed them in its decision comment on #171, with no comment
+written by the operator on any M9 issue or pull request. There is no operator comment
+weighing the sandboxed-frame option against a renderer of our own. That it
 was weighed is stated, and how is not.
 
 **Whether the Noto Sans widths need an OFL notice.** The implementer believed not, because
@@ -543,8 +571,7 @@ wants one"
 ([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5766109427)). No answer is
 recorded. No notice was added, so the question stands as the implementer left it.
 
-**The exact URL #179 names.** QA's observation gives it as
-`…/diagram/%2e%2e/outside/o.md`, with the start elided. Three spellings of that shape, sent
-with `curl --path-as-is` to a scratch daemon built from this branch, reached the route and
-were answered `403` with both headers, so the failing form differs in some way the record
-does not show. Whoever takes #179 should ask QA for the full URL rather than reconstruct it.
+**Whether the note fetch is abandoned when the reader leaves, in a browser.** #177 made the
+page abort its fetch on navigation, and `TestNoteMeasuringStopsWithTheRequest` shows the
+daemon side. QA's re-grade says it did not observe the abort in the browser
+([#169](https://github.com/davison/md-notes/issues/169#issuecomment-5768247525)).

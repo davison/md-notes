@@ -724,9 +724,9 @@ what is on screen; [The browser tab](#the-browser-tab) below says how. The panes
   mode, the save state, `Ctrl+E`, which flips the pane to the editor and back, and
   **Delete** at its right-hand end — see [Editing](#editing). The delete button's place
   is fixed: it is the far end of the bar from the mode toggle, in the rendered view and
-  in the editor alike, and the
-  `margin-left: auto` that puts it there is a property of the button rather than of the
-  save status beside it, which is absent on a note that has only been read
+  in the editor alike, and the `margin-left: auto` that puts it there is a property of
+  the button rather than of the save status beside it, which is absent on a note that
+  has only been read
   ([#85](https://github.com/davison/md-notes/issues/85#issuecomment-5702098868)).
 - **Search and tags.** A debounced search box whose results group by file, showing
   the matching line with the match emphasised and a line of context either side.
@@ -831,12 +831,12 @@ without this feature, and nothing is ever half-drawn:
   throughout and stops at.
 
 Most of these are known when the note is rendered, and the page then asks for no image
-at all. The two only drawing can find — the layout's size and the deadline — are found
-when the daemon lays the block out, which is usually while it answers for the note
-itself (see *Sized before they load* below): a block the layout refuses is then taken
-out of the list and shows as code from the start, with no image requested. One the
-note's answer did not reach is refused when its image is asked for, and goes back to
-code then. Either way the daemon remembers the refusal, by the block's source, so a
+at all. The two only drawing can find are found later. The layout's size is usually
+found while the daemon answers for the note itself (see *Sized before they load*
+below): a block the layout refuses is then taken out of the list and shows as code
+from the start, with no image requested. The deadline, and the size of a block the
+note's answer did not reach, are found when its image is asked for, and the block goes
+back to code then. Either way the daemon remembers the refusal, by the block's source, so a
 hostile block costs its two seconds once rather than at every view. The other side of
 that is a block refused at the deadline only because the machine was busy at that
 moment: it **stays code until the daemon restarts**, however often the note is opened
@@ -906,10 +906,7 @@ only through `<img>`, which runs no script and loads nothing, and never inline. 
 every answer at a diagram URL, the refusals included, carries
 `Content-Security-Policy: default-src 'none'; sandbox` and
 `X-Content-Type-Options: nosniff`, so even a drawing opened directly as a page runs
-nothing and is never sniffed into something that could. One known exception: QA found
-a diagram URL with an encoded `..` segment (`%2e%2e`) that the route never sees, which
-gets the daemon's generic `404` — fixed text, nothing of the request in it — without
-the two headers ([#179](https://github.com/davison/md-notes/issues/179)). The attack payloads of
+nothing and is never sniffed into something that could. The attack payloads of
 mermaid's published advisories are test cases in the package, each shown inert
 ([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5765984674)).
 
