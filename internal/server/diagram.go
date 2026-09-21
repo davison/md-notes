@@ -414,6 +414,14 @@ func diagramPath(p string) bool {
 	return ok && (sub == "diagram" || strings.HasPrefix(sub, "diagram/"))
 }
 
+// measureBudget is how long a note request spends measuring its diagrams
+// before it answers with what it has (review of PR #181, B1). 150 ms keeps
+// the note's text inside the time a reader takes as immediate, and is room
+// for hundreds of the diagrams notes hold, which lay out in well under a
+// millisecond each; a block not reached goes out unmeasured, and the page
+// keeps its place for it as it loads.
+const measureBudget = 150 * time.Millisecond
+
 // drawSlotCount is how many diagrams may be drawn at once: half the
 // processors, so a note full of expensive blocks queues rather than taking
 // every core from the rest of the daemon.
