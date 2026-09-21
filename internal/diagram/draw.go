@@ -1,6 +1,9 @@
 package diagram
 
-import "math"
+import (
+	"math"
+	"sort"
+)
 
 // A drawing is the laid-out diagram in final coordinates: what the SVG
 // writer draws, and all it can draw.
@@ -89,6 +92,13 @@ func (e *engine) draw() *drawing {
 		a, b := tf(cl.x0, cl.y0), tf(cl.x1, cl.y1)
 		return math.Min(a.x, b.x), math.Min(a.y, b.y), math.Max(a.x, b.x), math.Max(a.y, b.y)
 	}
+	// Each chain's polyline, ends not yet clipped.
+	type pending struct {
+		ed    Edge
+		pts   []point
+		label int
+	}
+	var ps []pending
 	for _, c := range e.chains {
 		ed := e.f.Edges[c.edge]
 		if ed.Line == LineInvisible {
@@ -103,13 +113,21 @@ func (e *engine) draw() *drawing {
 				pts[i], pts[j] = pts[j], pts[i]
 			}
 		}
+		ps = append(ps, pending{ed, pts, c.label})
+	}
+	// Where more than one edge meets a node on the same side, their ends
+	// are spread across that side in the order they arrive from, rather
+	// than all aimed at the centre, so their heads stay apart.
+	anchors := e.ports(d, len(ps), func(i int) (Edge, []point) { return ps[i].ed, ps[i].pts })
+	for i, p := range ps {
+		ed, pts := p.ed, p.pts
 		// Clip each end to the outline of what it touches: the node's
 		// shape, or the subgraph's box.
 		if ed.From.Subgraph >= 0 {
 			x0, y0, x1, y1 := box(ed.From.Subgraph)
 			pts = clipToBox(pts, x0, y0, x1, y1)
 		} else {
-			pts[0] = clipShape(d.nodes[ed.From.Node], pts[1])
+			pts[0] = clipFrom(d.nodes[ed.From.Node], anchors[i][0], pts[1])
 		}
 		if ed.To.Subgraph >= 0 {
 			rev := reverse(pts)
@@ -117,14 +135,14 @@ func (e *engine) draw() *drawing {
 			rev = clipToBox(rev, x0, y0, x1, y1)
 			pts = reverse(rev)
 		} else {
-			pts[len(pts)-1] = clipShape(d.nodes[ed.To.Node], pts[len(pts)-2])
+			pts[len(pts)-1] = clipFrom(d.nodes[ed.To.Node], anchors[i][1], pts[len(pts)-2])
 		}
 		de := dedge{line: ed.Line, head: ed.Head, tail: ed.Tail, pts: pts}
-		if c.label >= 0 {
-			nd := e.nodes[c.label]
-			p := tf(nd.x, nd.y)
+		if p.label >= 0 {
+			nd := e.nodes[p.label]
+			lp := tf(nd.x, nd.y)
 			w, h := textBox(ed.Label)
-			de.label, de.lx, de.ly, de.lw, de.lh = ed.Label, p.x, p.y, w, h
+			de.label, de.lx, de.ly, de.lw, de.lh = ed.Label, lp.x, lp.y, w, h
 		}
 		d.edges = append(d.edges, de)
 	}
@@ -137,16 +155,22 @@ func (e *engine) draw() *drawing {
 			}
 			reach := loopReach + loopStep*float64(k)
 			de := dedge{line: ed.Line, head: ed.Head, tail: ed.Tail, loop: true, label: ed.Label}
+			// Each further loop leaves and returns further apart as well as
+			// reaching further out, so loops on one node nest rather than
+			// cross.
+			spread := func(size float64) float64 { return math.Min(size/2-2, size/6+5*float64(k)) }
 			if e.dir.horizontal() {
 				y := nd.y + nd.h/2
-				de.pts = []point{{nd.x - nd.w/4, y}, {nd.x - nd.w/4 - 6, y + reach}, {nd.x + nd.w/4 + 6, y + reach}, {nd.x + nd.w/4, y}}
+				a := spread(nd.w)
+				de.pts = []point{{nd.x - a, y}, {nd.x - a - 6, y + reach}, {nd.x + a + 6, y + reach}, {nd.x + a, y}}
 				if len(ed.Label) > 0 {
 					w, h := textBox(ed.Label)
 					de.lx, de.ly, de.lw, de.lh = nd.x, y+reach+4+h/2, w, h
 				}
 			} else {
 				x := nd.x + nd.w/2
-				de.pts = []point{{x, nd.y - nd.h/4}, {x + reach, nd.y - nd.h/4 - 6}, {x + reach, nd.y + nd.h/4 + 6}, {x, nd.y + nd.h/4}}
+				a := spread(nd.h)
+				de.pts = []point{{x, nd.y - a}, {x + reach, nd.y - a - 6}, {x + reach, nd.y + a + 6}, {x, nd.y + a}}
 				if len(ed.Label) > 0 {
 					w, h := textBox(ed.Label)
 					de.lx, de.ly, de.lw, de.lh = x+reach+4+w/2, nd.y, w, h
@@ -186,33 +210,98 @@ func reverse(p []point) []point {
 	return out
 }
 
-// clipShape is where the line from a node's centre towards p leaves the
-// node's outline.
-func clipShape(n dnode, p point) point {
-	dx, dy := p.x-n.x, p.y-n.y
-	if dx == 0 && dy == 0 {
-		return p
-	}
-	hw, hh := n.w/2, n.h/2
-	var t float64
+// inside reports whether p is inside a node's outline.
+func inside(n dnode, p point) bool {
+	dx, dy := math.Abs(p.x-n.x)/(n.w/2), math.Abs(p.y-n.y)/(n.h/2)
 	switch n.shape {
 	case ShapeRhombus:
-		t = 1 / (math.Abs(dx)/hw + math.Abs(dy)/hh)
+		return dx+dy <= 1
 	case ShapeCircle, ShapeDoubleCircle:
-		t = 1 / math.Sqrt(dx*dx/(hw*hw)+dy*dy/(hh*hh))
-	default:
-		t = math.Inf(1)
-		if dx != 0 {
-			t = hw / math.Abs(dx)
-		}
-		if dy != 0 {
-			t = math.Min(t, hh/math.Abs(dy))
-		}
+		return dx*dx+dy*dy <= 1
 	}
-	if t >= 1 {
+	return dx <= 1 && dy <= 1
+}
+
+// clipFrom is where the line from a point inside a node towards p leaves
+// the node's outline, found by bisection so that any outline will do. A p
+// inside the node is returned as it is.
+func clipFrom(n dnode, from, p point) point {
+	if inside(n, p) || !inside(n, from) {
 		return p
 	}
-	return point{n.x + dx*t, n.y + dy*t}
+	lo, hi := 0.0, 1.0
+	for i := 0; i < 40; i++ {
+		mid := (lo + hi) / 2
+		if inside(n, point{from.x + (p.x-from.x)*mid, from.y + (p.y-from.y)*mid}) {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	return point{from.x + (p.x-from.x)*lo, from.y + (p.y-from.y)*lo}
+}
+
+// ports picks, for each edge's two ends, the point inside its node that the
+// end is aimed from. Ends meeting a node on the same side of it (before or
+// after it along the ranks) are spread across that side, in the order of
+// where they come from; a lone end is aimed from the centre.
+func (e *engine) ports(d *drawing, n int, edge func(int) (Edge, []point)) [][2]point {
+	out := make([][2]point, n)
+	type end struct {
+		edge, which int
+		cross       float64 // the far point's position across the ranks
+	}
+	groups := map[[2]int][]end{}
+	var keys [][2]int
+	for i := 0; i < n; i++ {
+		ed, pts := edge(i)
+		for which, nodeEnd := range []End{ed.From, ed.To} {
+			if nodeEnd.Node < 0 {
+				continue
+			}
+			nd := d.nodes[nodeEnd.Node]
+			far := pts[1]
+			if which == 1 {
+				far = pts[len(pts)-2]
+			}
+			out[i][which] = point{nd.x, nd.y}
+			along, cross := far.y-nd.y, far.x
+			if e.dir.horizontal() {
+				along, cross = far.x-nd.x, far.y
+			}
+			side := 0
+			if along > 0 {
+				side = 1
+			}
+			k := [2]int{nodeEnd.Node, side}
+			if _, ok := groups[k]; !ok {
+				keys = append(keys, k)
+			}
+			groups[k] = append(groups[k], end{i, which, cross})
+		}
+	}
+	for _, k := range keys {
+		g := groups[k]
+		if len(g) < 2 {
+			continue
+		}
+		sort.SliceStable(g, func(a, b int) bool { return g[a].cross < g[b].cross })
+		nd := d.nodes[k[0]]
+		width := nd.w
+		if e.dir.horizontal() {
+			width = nd.h
+		}
+		step := math.Min(18, width*0.8/float64(len(g)-1))
+		for j, en := range g {
+			off := (float64(j) - float64(len(g)-1)/2) * step
+			if e.dir.horizontal() {
+				out[en.edge][en.which] = point{nd.x, nd.y + off}
+			} else {
+				out[en.edge][en.which] = point{nd.x + off, nd.y}
+			}
+		}
+	}
+	return out
 }
 
 // clipToBox cuts a polyline that starts inside a box at the point where it
