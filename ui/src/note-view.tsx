@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { diagramURL, fetchNote, type Note } from "./api";
-import { decorate, useDiagramTheme, type DiagramPool } from "./diagrams";
+import { DiagramPool, decorate, useDiagramTheme } from "./diagrams";
 import { animationsOff } from "./settings";
 
 /**
@@ -27,7 +27,7 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
   const [error, setError] = useState<string | null>(null);
   const body = useRef<HTMLDivElement>(null);
   const theme = useDiagramTheme();
-  const pool = useRef<DiagramPool>(new Map());
+  const pool = useRef(new DiagramPool());
 
   // Opening a different note clears the pane; a version bump for the same
   // note refetches in place so a live update does not flash.
@@ -70,7 +70,7 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
     const key = slug + "\0" + path;
     if (pooled.current !== key) {
       pooled.current = key;
-      pool.current = new Map();
+      pool.current = new DiagramPool();
     }
     if (!note || !body.current) return;
     decorate(body.current, note.diagrams ?? [], (hash) => diagramURL(slug, path, hash, theme), pool.current);
