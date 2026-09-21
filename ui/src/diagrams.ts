@@ -68,8 +68,16 @@ export function useDiagramTheme(): DiagramTheme {
   return diagramTheme(s, dark);
 }
 
-/** The images one note view has made, kept so a re-render can reuse them. */
-export type DiagramPool = Map<string, HTMLImageElement>;
+/**
+ * The images one note view has made, kept so a re-render can reuse them,
+ * and the drawing URLs that failed on this page. A failed URL is not asked
+ * for again: the block stays code across live updates and re-renders until
+ * its source or the theme changes, which is a different URL (the round-one
+ * review of PR #175, N3). Opening the note again starts a fresh pool.
+ */
+export class DiagramPool extends Map<string, HTMLImageElement> {
+  readonly failed = new Set<string>();
+}
 
 /**
  * Puts each listed diagram's image in front of its code block inside
@@ -79,7 +87,8 @@ export type DiagramPool = Map<string, HTMLImageElement>;
  * already made for the same block (the same source, the same occurrence of
  * it) is the same element moved into place, so an unchanged diagram is not
  * fetched again after a live update; a changed theme is a changed `src`.
- * Images for blocks that are gone are dropped from the pool.
+ * Images for blocks that are gone are dropped from the pool. A block whose
+ * drawing already failed at this URL is left as code without asking again.
  *
  * An entry whose anchor is missing or is not directly followed by a `<pre>`
  * is skipped: the list and the markup come from the same parse, so that is
@@ -109,6 +118,14 @@ export function decorate(
     const block = pre instanceof HTMLImageElement && pre === pool.get(key) ? pre.nextElementSibling : pre;
     if (!anchor || !block || block.tagName !== "PRE") continue;
 
+    const src = urlFor(d.hash);
+    if (pool.failed.has(src)) {
+      // An image for another theme may stand here; the loop below takes it
+      // away, so the code has to come back with it.
+      block.classList.remove(SOURCE_HIDDEN_CLASS);
+      continue;
+    }
+
     let img = pool.get(key);
     if (!img) {
       img = document.createElement("img");
@@ -119,14 +136,15 @@ export function decorate(
     }
     const image = img;
     image.alt = block.textContent ?? "";
-    // Whatever goes wrong, the code block comes back and the image goes:
-    // a later call makes a fresh one and tries again.
+    // Whatever goes wrong, the code block comes back and the image goes,
+    // and this URL is not asked for again on this page; a different one —
+    // an edited source, another theme — is.
     image.onerror = () => {
+      pool.failed.add(image.getAttribute("src") ?? "");
       image.remove();
       block.classList.remove(SOURCE_HIDDEN_CLASS);
       if (pool.get(key) === image) pool.delete(key);
     };
-    const src = urlFor(d.hash);
     if (image.getAttribute("src") !== src) image.setAttribute("src", src);
     if (anchor.nextElementSibling !== image) anchor.after(image);
     block.classList.add(SOURCE_HIDDEN_CLASS);
