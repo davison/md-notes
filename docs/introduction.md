@@ -836,8 +836,8 @@ later. The layout's size is usually found while the daemon answers for the note 
 (see *Sized before they load* below): a block the layout refuses is then taken out of
 the list and shows as code from the start, with no image requested. The deadline, and
 the size of a block the note's answer did not reach, are found when its image is asked
-for, and the block goes back to code then. Either way the daemon remembers the refusal, by the block's source, so a
-hostile block costs its two seconds once rather than at every view. The other side of
+for, and the block goes back to code then. Either way the daemon remembers the refusal,
+by the block's source, so a hostile block costs its two seconds once rather than at every view. The other side of
 that is a block refused at the deadline only because the machine was busy at that
 moment: it **stays code until the daemon restarts**, however often the note is opened
 ([#177](https://github.com/davison/md-notes/issues/177#issuecomment-5768152245),
