@@ -252,7 +252,7 @@ the [tailnet section](#reaching-the-daemon-over-the-tailnet) says why.
 | `POST /api/roots` | Registers `{"path": "/absolute/dir"}` and returns the root. Relative paths are refused, and a path that is not a directory is `400` with the filesystem's own sentence. The optional `"file"` names a note inside that folder: with it the daemon registers only once it has found the note, and otherwise answers `404 {"code":"not_found"}` having written nothing. See [Roots](#roots) |
 | `DELETE /api/roots/{slug}` | Unregisters a recent root and returns `204 No Content`; the root leaves the registry and the state file, and no file leaves the disk. `403 {"code":"notes_root"}` for the configured notes root, `404 {"code":"not_found"}` for a slug that is not registered, and `403 {"code":"loopback_only"}` under a configured `tailnet_host`. See [Roots](#roots) |
 | `GET /api/r/{slug}/tree` | The root's markdown tree as nested `{name, path, dir, children}`, each file node also carrying `modified`, its modification time in Unix milliseconds — absent on a directory, and on a file whose time the daemon could not read. See [the navigator's order](#the-web-ui) |
-| `GET /api/r/{slug}/note/{path...}` | A rendered note as `{path, title, frontmatter, html, diagrams}`. `diagrams` lists the note's drawable flowcharts as `[{line, hash}]` — the `data-line` of the anchor before the block and a hash of its source — and is absent when there are none. Non-markdown paths are 404 here |
+| `GET /api/r/{slug}/note/{path...}` | A rendered note as `{path, title, frontmatter, html, diagrams}`. `diagrams` lists the note's drawable flowcharts as `[{line, hash}]` — the `data-line` of the anchor before the block and a hash of its source — and is absent when there are none. With `?sizes=1` the daemon also measures them, within a 150 ms budget: each entry it reached gains the drawing's `width` and `height`, and a block the layout refuses is left out. Non-markdown paths are 404 here. See [Flowcharts](#flowcharts) |
 | `GET /api/r/{slug}/diagram/{path...}?h=&theme=` | The SVG of the flowchart whose hash is `h` in that note, drawn in the `light`, `dark` or `eink` palette, as `image/svg+xml` with `Cache-Control: no-cache` and an `ETag`. `404` when the note holds no such block (it changed), `400` for a bad `theme` or `h`, `422` with the reason when the daemon refuses to draw it. Every answer carries `Content-Security-Policy: default-src 'none'; sandbox` and `X-Content-Type-Options: nosniff`. See [Flowcharts](#flowcharts) |
 | `GET /api/r/{slug}/source/{path...}` | Existing UTF-8 markdown as `{source, revision}`; see [conditional saves](#conditional-saves) |
 | `PUT /api/r/{slug}/source/{path...}` | Conditionally saves JSON `{source, revision}` and returns the saved `{source, revision}` |
@@ -722,8 +722,9 @@ what is on screen; [The browser tab](#the-browser-tab) below says how. The panes
   and says why. A mermaid flowchart is drawn by the daemon and shown as an image in front
   of its code block — see [Flowcharts](#flowcharts). A bar above the note carries the
   mode, the save state, `Ctrl+E`, which flips the pane to the editor and back, and
-  **Delete** at its right-hand end — see [Editing](#editing). The delete button's place is fixed: it is the far end of the bar
-  from the mode toggle, in the rendered view and in the editor alike, and the
+  **Delete** at its right-hand end — see [Editing](#editing). The delete button's place
+  is fixed: it is the far end of the bar from the mode toggle, in the rendered view and
+  in the editor alike, and the
   `margin-left: auto` that puts it there is a property of the button rather than of the
   save status beside it, which is absent on a note that has only been read
   ([#85](https://github.com/davison/md-notes/issues/85#issuecomment-5702098868)).
@@ -831,11 +832,16 @@ without this feature, and nothing is ever half-drawn:
 
 Most of these are known when the note is rendered, and the page then asks for no image
 at all. The two only drawing can find — the layout's size and the deadline — are found
-when the image is asked for, and the block goes back to code then. That answer is
-remembered by the daemon, so a hostile block costs its two seconds once rather than at
-every view; the other side of it is that a block refused because the machine was busy
-at that moment stays refused until the daemon restarts or the entry is evicted
-([#171](https://github.com/davison/md-notes/issues/171#issuecomment-5767039874)).
+when the daemon lays the block out, which is usually while it answers for the note
+itself (see *Sized before they load* below): a block the layout refuses is then taken
+out of the list and shows as code from the start, with no image requested. One the
+note's answer did not reach is refused when its image is asked for, and goes back to
+code then. Either way the daemon remembers the refusal, by the block's source, so a
+hostile block costs its two seconds once rather than at every view. The other side of
+that is a block refused at the deadline only because the machine was busy at that
+moment: it **stays code until the daemon restarts**, however often the note is opened
+([#177](https://github.com/davison/md-notes/issues/177#issuecomment-5768152245),
+captured as [#182](https://github.com/davison/md-notes/issues/182)).
 
 **When the image cannot be fetched.** An image that fails for any reason — a refusal
 while drawing, the note changed underneath it, the daemon stopped, the network gone —
@@ -874,7 +880,23 @@ again, while an unchanged one in the same note keeps its image and is not fetche
 again. The image is drawn at its natural size, never scaled up, and shrinks to the
 reading column when it is wider. Its `alt` text is the diagram's source, which is the
 whole of what it says, in the syntax its author wrote. A search hit on the block
-flashes the image.
+flashes the image. Images load lazily: one far below the part of the note on screen is
+not fetched until you scroll towards it.
+
+**Sized before they load.** So that a search hit or a line link lands on its target
+rather than being pushed away as the drawings above it arrive, the reading view asks
+for the note with each diagram's natural width and height, and the page reserves each
+image's box before its drawing loads. The daemon learns a size by laying the block
+out, and keeps it by the block's source, so an unchanged diagram is laid out once
+however often its note is opened. It spends at most 150 ms, on two of its drawing
+slots, measuring the blocks it has no size for yet, and then answers with what it has.
+On the **first open of a note with many large diagrams**, some go out unmeasured and
+are placed in stages as they load; the page re-centres the search hit or line each
+time one above it arrives, and stops doing so as soon as you scroll, click or type.
+Later opens find more of the sizes kept, until all of them are
+([#177](https://github.com/davison/md-notes/issues/177#issuecomment-5768086074)).
+Only the reading view asks for sizes: the editor, which fetches the note for its title
+alone, costs the daemon no layout.
 
 **Why this cannot run anything.** The daemon parses the block into plain data — node
 shapes, links, label lines — and writes the SVG itself, from a fixed set of elements
@@ -884,13 +906,17 @@ only through `<img>`, which runs no script and loads nothing, and never inline. 
 every answer at a diagram URL, the refusals included, carries
 `Content-Security-Policy: default-src 'none'; sandbox` and
 `X-Content-Type-Options: nosniff`, so even a drawing opened directly as a page runs
-nothing and is never sniffed into something that could. The attack payloads of
+nothing and is never sniffed into something that could. The one known exception is a
+URL with an encoded `..` segment (`%2e%2e`), which never reaches the route and gets the
+daemon's generic `404` with fixed text and no headers; nothing of the request is in it
+([#179](https://github.com/davison/md-notes/issues/179)). The attack payloads of
 mermaid's published advisories are test cases in the package, each shown inert
 ([#170](https://github.com/davison/md-notes/issues/170#issuecomment-5765984674)).
 
 **The cost to the daemon.** Drawings and refusals are kept in memory, up to 8 MiB and
-512 of them, and a note's list of flowcharts is kept by its size and modification
-time, so a page asking for each of its diagrams costs a parse once. At most half the
+512 of them; sizes and refusals, up to 32,768 of them, in a cache of their own; and a
+note's list of flowcharts is kept by its size and modification time, so a page asking
+for each of its diagrams costs a parse once. At most half the
 machine's processors draw at once, and listing a note's flowcharts takes one of those
 slots too, so a clipped note full of expensive blocks queues rather than taking every
 core. One consequence: a note on a network or FUSE mount whose read hangs holds its
@@ -1094,7 +1120,7 @@ that device end to end, including the two ways to reach your notes from one.
 ### What holds these numbers
 
 The figures in the two sections above are not only documented, they are measured on
-every push. `make e2e` runs a suite of 71 checks under `ui/e2e` in headless Chromium
+every push. `make e2e` runs a suite of 83 checks under `ui/e2e` in headless Chromium
 against the built daemon on a temporary root, and CI runs it as a job of its own: the
 pane rectangles at four phone profiles and a desktop control, the 960-pixel
 breakpoint walked at 959, 960 and 961, the 1290-pixel one walked at 1289 and 1290 —
@@ -1133,10 +1159,15 @@ named after its contents, and that the roots page and three `/r/` routes all say
 daemon is unreachable rather than that the root does not exist. It draws
 [a flowchart](#flowcharts) in each of the three palettes, reading each palette's
 background back out of the image, follows a change of the setting without a reload,
-shrinks a wide diagram to the column, keeps the code block when the daemon refuses to
-draw and when the drawing cannot be fetched, redraws a diagram edited on disk without
-fetching an unchanged one again, and opens a drawing directly as a document to show it
-cannot run a script even with one spliced into it.
+shrinks a wide diagram to the column, shows as code a block the layout refuses without
+asking for an image, keeps the code block when the drawing cannot be fetched, redraws a
+diagram edited on disk without fetching an unchanged one again, and opens a drawing
+directly as a document to show it cannot run a script even with one spliced into it. At
+desktop and Pixel 7 sizes, with every drawing held back until after the scroll, it
+lands a line link centred on its target below twelve diagrams — inside the ninth, on a
+block shown as code, on a paragraph, and on the paragraph when every drawing fails — and
+inside and below sixty dense diagrams the daemon had no time to measure, one refused by
+the layout at its image's request.
 The viewports are the suite's own literals rather than Playwright's
 device registry, whose numbers move between releases
 ([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426)). It

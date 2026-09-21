@@ -497,11 +497,12 @@ data, lays it out and writes an SVG from elements it chooses, with every piece o
 note's text escaped — and the page shows it through `<img>`, never inline, with a
 sandboxing content security policy and `nosniff` on every answer at a diagram URL.
 The drawing follows the light, dark or e-ink palette the page is using and changes
-when the note changes on disk. The supported subset covers every direction, the
-common node shapes, solid, dotted and thick links with their labels, chains, `&` and
-subgraphs; styling and `click` statements are skipped, and a block outside the
-subset, over a size bound or past the two-second drawing deadline, or of any other
-diagram type, stays the code block it always was.
+when the note changes on disk, and its box is reserved before it loads, so a search
+hit below a diagram lands where it should. The supported subset covers every
+direction, the common node shapes, solid, dotted and thick links with their labels,
+chains, `&` and subgraphs; styling and `click` statements are skipped, and a block
+outside the subset, over a size bound or past the two-second drawing deadline, or of
+any other diagram type, stays the code block it always was.
 [Flowcharts](docs/introduction.md#flowcharts) has the subset and every case that
 shows as code. The renderer is the project's own code with no new dependency, so the
 binary stays static and the licence below, and the packages' licence fields, are
