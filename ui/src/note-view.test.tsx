@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { LocationProvider, Router, Route, useLocation } from "preact-iso";
 import { NoteView, formatValue, fragmentTarget } from "./note-view";
-import { KEY, reset } from "./settings";
+import { KEY, reset, update } from "./settings";
 
 function mockNote(note: unknown, status = 200) {
   vi.stubGlobal(
@@ -262,5 +262,81 @@ describe("NoteView", () => {
     expect(prevented).toBe(true);
     expect(target.scrollIntoView).toHaveBeenCalled();
     expect(window.location.hash).toBe("#sec");
+  });
+});
+
+describe("NoteView's diagrams", () => {
+  const html =
+    '<div class="line-anchor" data-line="3"></div>\n<pre><code class="language-mermaid">graph TD; A--&gt;B\n</code></pre>\n';
+  const listed = { path: "d/x.md", title: "T", html, diagrams: [{ line: 3, hash: "abc" }] };
+
+  /** A device whose colour scheme the test sets, and can change. */
+  function stubScheme(dark: boolean) {
+    const listeners = new Set<() => void>();
+    const query = {
+      matches: dark,
+      media: "(prefers-color-scheme: dark)",
+      addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+      removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+    };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((q: string) => (q.includes("prefers-color-scheme") ? query : { matches: false, media: q, addEventListener() {}, removeEventListener() {} })),
+    );
+    return (next: boolean) => {
+      query.matches = next;
+      for (const fn of listeners) fn();
+    };
+  }
+
+  it("shows a listed flowchart as the daemon's image, in the device's scheme", async () => {
+    stubScheme(true);
+    mockNote(listed);
+    const { container } = render(<NoteView slug="n b" path="d/x.md" />);
+    await waitFor(() => expect(container.querySelector("img.diagram")).toBeTruthy());
+    const img = container.querySelector("img.diagram")!;
+    expect(img.getAttribute("src")).toBe("/api/r/n%20b/diagram/d/x.md?h=abc&theme=dark");
+    expect(container.querySelector("pre")!.classList.contains("diagram-source")).toBe(true);
+  });
+
+  it("follows the scheme and the light override as they change", async () => {
+    const setDark = stubScheme(false);
+    mockNote(listed);
+    const { container } = render(<NoteView slug="n" path="d/x.md" />);
+    await waitFor(() => expect(container.querySelector("img.diagram")).toBeTruthy());
+    const img = container.querySelector("img.diagram")!;
+    expect(img.getAttribute("src")).toContain("theme=light");
+
+    act(() => setDark(true));
+    await waitFor(() => expect(img.getAttribute("src")).toContain("theme=dark"));
+    act(() => {
+      update({ light: true });
+    });
+    await waitFor(() => expect(img.getAttribute("src")).toContain("theme=eink"));
+    act(() => {
+      update({ light: false });
+    });
+    await waitFor(() => expect(img.getAttribute("src")).toContain("theme=dark"));
+    // Still the one element: a theme change is a new src, not a new image.
+    expect(container.querySelectorAll("img.diagram").length).toBe(1);
+    expect(container.querySelector("img.diagram")).toBe(img);
+  });
+
+  it("leaves a note without a list exactly as the daemon rendered it", async () => {
+    stubScheme(false);
+    mockNote({ path: "x.md", title: "T", html });
+    const { container } = render(<NoteView slug="n" path="x.md" />);
+    await waitFor(() => expect(screen.getByText("T")).toBeTruthy());
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("pre")!.classList.contains("diagram-source")).toBe(false);
+  });
+
+  it("flashes the image, not the hidden code, for a search hit on the block", async () => {
+    stubScheme(false);
+    mockNote(listed);
+    stubScrollIntoView(() => {});
+    const { container } = render(<NoteView slug="n" path="d/x.md" line={4} />);
+    await waitFor(() => expect(container.querySelector("img.diagram.flash")).toBeTruthy());
+    expect(container.querySelector("pre")!.classList.contains("flash")).toBe(false);
   });
 });

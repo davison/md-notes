@@ -14,6 +14,9 @@ describe("the service worker's routing", () => {
       "/api/r/notes/events",
       "/api/r/notes/source/alpha.md",
       "/api/r/notes/raw/image.png",
+      // A flowchart's drawing (#171): never cached for offline use, like the
+      // note it belongs to.
+      "/api/r/notes/diagram/alpha.md",
     ]) {
       expect(classify(facts({ pathname })), pathname).toBe("network");
     }
