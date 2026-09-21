@@ -1273,6 +1273,22 @@ code {
   height: auto;
 }
 
+/*
+ * A flowchart the daemon drew (davison/md-notes#171), standing in front of
+ * the code block it was drawn from. Its own size is its natural size, so a
+ * small diagram is never scaled up, and a wide one shrinks to the column.
+ * The code block behind it is hidden only while the image stands; the
+ * script takes the class off again if the image fails.
+ */
+.markdown img.diagram {
+  display: block;
+  margin: 0 0 1em;
+}
+
+.markdown pre.diagram-source {
+  display: none;
+}
+
 .markdown hr {
   border: 0;
   border-top: 1px solid var(--line);

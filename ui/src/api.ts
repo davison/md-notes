@@ -82,6 +82,16 @@ export function rawURL(slug: string, path: string): string {
   return `/api/r/${encodeURIComponent(slug)}/raw/${encodePath(path)}`;
 }
 
+/**
+ * URL of the SVG the daemon draws for one flowchart block of a note. The
+ * daemon finds the block again by its hash in the note on disk, and answers
+ * 404 once the note no longer holds it.
+ */
+export function diagramURL(slug: string, path: string, hash: string, theme: string): string {
+  const q = `h=${encodeURIComponent(hash)}&theme=${encodeURIComponent(theme)}`;
+  return `/api/r/${encodeURIComponent(slug)}/diagram/${encodePath(path)}?${q}`;
+}
+
 /** In-app URL of a note. */
 export function noteURL(slug: string, path: string): string {
   return `/r/${encodeURIComponent(slug)}/${encodePath(path)}`;
@@ -103,6 +113,11 @@ export interface Note {
   title: string;
   frontmatter?: Record<string, unknown>;
   html: string;
+  /**
+   * The note's drawable flowcharts: each one's line anchor and source hash,
+   * for the reading view to put the daemon's drawing in front of (#171).
+   */
+  diagrams?: { line: number; hash: string }[];
 }
 
 export function fetchNote(slug: string, path: string): Promise<Note> {

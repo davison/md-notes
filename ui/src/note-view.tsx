@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "preact/hooks";
-import { fetchNote, type Note } from "./api";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { diagramURL, fetchNote, type Note } from "./api";
+import { decorate, useDiagramTheme, type DiagramPool } from "./diagrams";
 import { animationsOff } from "./settings";
 
 /**
@@ -25,6 +26,8 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
   const [note, setNote] = useState<Note | null>(null);
   const [error, setError] = useState<string | null>(null);
   const body = useRef<HTMLDivElement>(null);
+  const theme = useDiagramTheme();
+  const pool = useRef<DiagramPool>(new Map());
 
   // Opening a different note clears the pane; a version bump for the same
   // note refetches in place so a live update does not flash.
@@ -57,6 +60,21 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
     // fetch, and refetching because the caller passed a fresh closure
     // would be a loop.
   }, [slug, path, version]);
+
+  // The flowcharts go in front of their code blocks before the frame is
+  // painted, so a note with a diagram does not show its source first; and
+  // before the scroll below, so a search hit on a diagram flashes the image.
+  // A different note starts a fresh pool: nothing of the last one is reused.
+  const pooled = useRef("");
+  useLayoutEffect(() => {
+    const key = slug + "\0" + path;
+    if (pooled.current !== key) {
+      pooled.current = key;
+      pool.current = new Map();
+    }
+    if (!note || !body.current) return;
+    decorate(body.current, note.diagrams ?? [], (hash) => diagramURL(slug, path, hash, theme), pool.current);
+  }, [note, slug, path, theme]);
 
   // Scroll to the top of a newly opened note, or to its fragment. A live
   // refetch of the same note keeps the reader's place. A requested line
