@@ -742,9 +742,13 @@ func TestNoteMeasuringIsBudgeted(t *testing.T) {
 	s.drawSlots = make(chan struct{}, 6)
 	slowDraws(s, "Slow", 100*time.Millisecond)
 	writeNote(t, base, "slow.md", distinctFlows("Slow", 40))
+	// The same shape with nothing slow in it, for what rendering the note
+	// costs anyway; the budget is on top of that.
+	writeNote(t, base, "plain.md", distinctFlows("Plain", 40))
+	_, plain := measureNote(t, ts, "plain.md")
 	sized, took := measureNote(t, ts, "slow.md")
-	if limit := measureBudget + 150*time.Millisecond; took > limit {
-		t.Errorf("the note took %v with 40 slow diagrams, want under %v", took, limit)
+	if limit := plain + measureBudget + 100*time.Millisecond; took > limit {
+		t.Errorf("the note took %v with 40 slow diagrams (%v without), want under %v", took, plain, limit)
 	}
 	if sized == 0 || sized == 40 {
 		t.Errorf("sized %d of 40; the budget should reach some and not all", sized)

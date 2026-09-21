@@ -52,6 +52,9 @@ type Server struct {
 	// buildList and lists serve the same route's look-up of a block.
 	buildList func(real string) ([]render.Diagram, error)
 	lists     *listCache
+	// sizes and measureBudget serve the note endpoint's measuring.
+	sizes         *sizeCache
+	measureBudget time.Duration
 
 	// token validates the bearer token a non-loopback client presents.
 	// Nil accepts nothing, so a daemon built without one refuses every
@@ -143,15 +146,18 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 		svgs:      newSVGCache(diagramCacheBytes, diagramCacheEntries),
 		drawSlots: make(chan struct{}, drawSlotCount()),
 		lists:     newListCache(listCacheBytes, listCacheEntries),
-		clipsDir:  config.DefaultClipsDir,
-		listDirs:  tree.Dirs,
-		sessions:  session.New(session.DefaultTTL),
-		logins:    newThrottle(),
-		keepalive: 30 * time.Second,
-		hubs:      map[string]*watch.Hub{},
-		watchers:  map[string]*watch.Watcher{},
-		starting:  map[string]chan struct{}{},
-		closing:   make(chan struct{}),
+		sizes:     newSizeCache(sizeCacheEntries),
+
+		measureBudget: measureBudget,
+		clipsDir:      config.DefaultClipsDir,
+		listDirs:      tree.Dirs,
+		sessions:      session.New(session.DefaultTTL),
+		logins:        newThrottle(),
+		keepalive:     30 * time.Second,
+		hubs:          map[string]*watch.Hub{},
+		watchers:      map[string]*watch.Watcher{},
+		starting:      map[string]chan struct{}{},
+		closing:       make(chan struct{}),
 	}
 	s.buildList = s.listNote
 	for _, o := range opts {
@@ -869,7 +875,11 @@ func (s *Server) noteHandler(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not render note")
 		return
 	}
-	note.Diagrams = s.measureDiagrams(r.Context(), note.Diagrams)
+	// Only the reading view asks for sizes; the editor's title fetch, and
+	// anything else, gets the list as it is and costs no layout.
+	if r.URL.Query().Get("sizes") == "1" {
+		note.Diagrams = s.measureDiagrams(r.Context(), note.Diagrams)
+	}
 	w.Header().Set("Cache-Control", "no-cache")
 	writeJSON(w, http.StatusOK, note)
 }

@@ -141,7 +141,7 @@ func (s *Server) diagramHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	got, err := s.drawDiagram(r.Context(), hash+"/"+themeName, source, theme)
+	got, err := s.drawDiagram(r.Context(), hash, themeName, source, theme)
 	if err != nil {
 		// The caller went away, or the daemon is shutting down.
 		fail(http.StatusServiceUnavailable, "the diagram was not drawn")
@@ -250,39 +250,75 @@ func (s *Server) listNote(real string) ([]render.Diagram, error) {
 	return s.md.Diagrams(src), nil
 }
 
-// measureDiagrams draws each listed diagram in the light palette and
-// gives it its natural size, so the reading view can reserve the image's
-// box before it loads and a scroll to a line below it lands where it
-// should (davison/md-notes#177). The size is the same in every palette.
+// measureDiagrams gives each listed diagram its natural size, so the
+// reading view can reserve the image's box before it loads and a scroll to
+// a line below it lands where it should (davison/md-notes#177). The size
+// is the same in every palette. A block the layout refuses is dropped
+// from the list, so it stays code and no image is asked for.
 //
-// It is the draw the image route would make: through the same cache,
-// slots and deadline, so the light image is then a cache hit and a
-// refusal is remembered. A block the layout refuses is dropped from the
-// list here, so it stays code and no image is ever asked for. One whose
-// draw did not finish — the request went away — is kept unmeasured.
+// It is bounded three ways (review of PR #181, B1):
+//
+//   - Sizes are kept by source hash in a cache of their own, filled by
+//     every draw, the image route's included, so an unchanged block is
+//     never laid out twice however often the note is opened, and however
+//     many drawings the drawing cache has had to let go.
+//   - What is not known is measured for at most measureBudget, and the
+//     note answers then with what it has: a block not reached goes out
+//     unmeasured, and the page keeps its place for it itself.
+//   - At most measureWorkers of the draw slots serve one request, so a
+//     note full of slow blocks cannot hold the others' draws behind it,
+//     and the request's own context stops it when the reader goes away.
+//
+// A draw the budget cuts off is not cached, so its work is lost; the
+// image route draws it in full when the page asks, and records its size.
 func (s *Server) measureDiagrams(ctx context.Context, list []render.Diagram) []render.Diagram {
-	if len(list) == 0 {
-		return list
+	refused := make([]bool, len(list))
+	var todo []int
+	for i := range list {
+		switch sz, ok := s.sizes.get(list[i].Hash); {
+		case !ok:
+			todo = append(todo, i)
+		case sz.refused:
+			refused[i] = true
+		default:
+			list[i].Width, list[i].Height = sz.w, sz.h
+		}
 	}
-	results := make([]drawn, len(list))
-	errs := make([]error, len(list))
-	var wg sync.WaitGroup
-	for i, d := range list {
-		wg.Go(func() {
-			results[i], errs[i] = s.drawDiagram(ctx, d.Hash+"/light", d.Source, diagram.Light)
-		})
+	if len(todo) > 0 {
+		mctx, cancel := context.WithTimeout(ctx, s.measureBudget)
+		defer cancel()
+		next := make(chan int)
+		var wg sync.WaitGroup
+		for range min(measureWorkers, len(todo)) {
+			wg.Go(func() {
+				for i := range next {
+					d, err := s.drawDiagram(mctx, list[i].Hash, "light", list[i].Source, diagram.Light)
+					switch {
+					case err != nil:
+					case d.refusal != nil:
+						refused[i] = true
+					default:
+						list[i].Width, list[i].Height = d.width, d.height
+					}
+				}
+			})
+		}
+	feed:
+		for _, i := range todo {
+			select {
+			case next <- i:
+			case <-mctx.Done():
+				break feed
+			}
+		}
+		close(next)
+		wg.Wait()
 	}
-	wg.Wait()
 	kept := list[:0]
 	for i, d := range list {
-		switch {
-		case errs[i] != nil:
-		case results[i].refusal != nil:
-			continue
-		default:
-			d.Width, d.Height = results[i].width, results[i].height
+		if !refused[i] {
+			kept = append(kept, d)
 		}
-		kept = append(kept, d)
 	}
 	return kept
 }
@@ -291,7 +327,8 @@ func (s *Server) measureDiagrams(ctx context.Context, list []render.Diagram) []r
 // — and caches the answer. A refusal is cached as well as an SVG, so a
 // hostile block costs its render deadline once rather than at every view.
 // An error means the context ended; nothing is cached for it.
-func (s *Server) drawDiagram(ctx context.Context, key string, src []byte, theme diagram.Theme) (drawn, error) {
+func (s *Server) drawDiagram(ctx context.Context, hash, themeName string, src []byte, theme diagram.Theme) (drawn, error) {
+	key := hash + "/" + themeName
 	if d, ok := s.svgs.get(key); ok {
 		return d, nil
 	}
@@ -313,10 +350,12 @@ func (s *Server) drawDiagram(ctx context.Context, key string, src []byte, theme 
 		d := drawn{svg: svg, etag: `"` + base64.RawURLEncoding.EncodeToString(sum[:16]) + `"`}
 		d.width, d.height, _ = diagram.Size(svg)
 		s.svgs.put(key, d)
+		s.sizes.put(hash, drawnSize{w: d.width, h: d.height})
 		return d, nil
 	case errors.As(err, &refusal):
 		d := drawn{refusal: refusal}
 		s.svgs.put(key, d)
+		s.sizes.put(hash, drawnSize{refused: true})
 		return d, nil
 	default:
 		return drawn{}, err
@@ -421,6 +460,69 @@ func diagramPath(p string) bool {
 // millisecond each; a block not reached goes out unmeasured, and the page
 // keeps its place for it as it loads.
 const measureBudget = 150 * time.Millisecond
+
+// measureWorkers is how many draw slots one note request may use to
+// measure: enough to overlap two layouts, and few enough that the other
+// slots stay free for other notes and for images.
+const measureWorkers = 2
+
+// sizeCacheEntries bounds the size cache. An entry is a hash and two
+// numbers, a few hundred bytes with its bookkeeping, so this is a few
+// megabytes at most: every diagram in a large collection of notes.
+const sizeCacheEntries = 32768
+
+// drawnSize is what the size cache keeps for one source: its drawing's
+// natural size, or that the layout refused it.
+type drawnSize struct {
+	w, h    float64
+	refused bool
+}
+
+// sizeCache is a least-recently-used map from source hash to drawnSize,
+// bounded by entries. Sizes are palette-independent, so one entry serves
+// all three palettes.
+type sizeCache struct {
+	mu    sync.Mutex
+	max   int
+	order *list.List
+	items map[string]*list.Element
+}
+
+type sizeItem struct {
+	hash string
+	size drawnSize
+}
+
+func newSizeCache(max int) *sizeCache {
+	return &sizeCache{max: max, order: list.New(), items: map[string]*list.Element{}}
+}
+
+func (c *sizeCache) get(hash string) (drawnSize, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.items[hash]
+	if !ok {
+		return drawnSize{}, false
+	}
+	c.order.MoveToFront(e)
+	return e.Value.(*sizeItem).size, true
+}
+
+func (c *sizeCache) put(hash string, sz drawnSize) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e, ok := c.items[hash]; ok {
+		e.Value.(*sizeItem).size = sz
+		c.order.MoveToFront(e)
+		return
+	}
+	c.items[hash] = c.order.PushFront(&sizeItem{hash: hash, size: sz})
+	for c.order.Len() > c.max {
+		last := c.order.Back()
+		c.order.Remove(last)
+		delete(c.items, last.Value.(*sizeItem).hash)
+	}
+}
 
 // drawSlotCount is how many diagrams may be drawn at once: half the
 // processors, so a note full of expensive blocks queues rather than taking
