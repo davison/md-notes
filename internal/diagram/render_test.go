@@ -158,11 +158,14 @@ func (c *countdown) Err() error {
 }
 
 // The layout stops at whichever of its checks first sees the deadline —
-// the first, the last, and every one between — so no phase runs on past
-// it. This is the deadline test that cannot flake: it counts checks rather
-// than timing them.
+// the first, the last, and every one between — and each of its three
+// costly phases (rank, order, position) has checks of its own, so none
+// runs on past a deadline. The phase a stop happened in is read from the
+// error, so a phase whose check is removed is missing from the stops and
+// the test fails; no timing is involved, so it cannot flake.
 func TestLayoutChecksContext(t *testing.T) {
-	// A graph with subgraphs and cycles, so every phase has work to do.
+	// A graph with subgraphs, cycles and crossings, so every phase has
+	// work to do.
 	src := append(randomSource(40, 70, 3), []byte("subgraph s\nn1\nn2\nend\nsubgraph t\nn3\nend\n")...)
 	f, err := Parse(src, DefaultLimits)
 	if err != nil {
@@ -172,9 +175,9 @@ func TestLayoutChecksContext(t *testing.T) {
 	if _, err := layout(full, f, DefaultLimits); err != nil {
 		t.Fatal(err)
 	}
-	if full.calls < 20 {
-		t.Fatalf("the layout checked its context %d times; want a check in every round of every phase", full.calls)
-	}
+	phases := []string{"rank", "order", "position"}
+	stops := map[string]int{}
+	var sequence []string
 	for n := 0; n < full.calls; n++ {
 		c := &countdown{Context: context.Background(), left: n}
 		d, err := layout(c, f, DefaultLimits)
@@ -184,6 +187,27 @@ func TestLayoutChecksContext(t *testing.T) {
 		if c.calls != n+1 {
 			t.Fatalf("deadline at check %d: the layout checked %d times", n+1, c.calls)
 		}
+		phase := ""
+		for _, p := range phases {
+			if strings.Contains(err.Error(), "layout stopped in "+p+":") {
+				phase = p
+			}
+		}
+		if phase == "" {
+			t.Fatalf("deadline at check %d: %v names no phase", n+1, err)
+		}
+		stops[phase]++
+		if len(sequence) == 0 || sequence[len(sequence)-1] != phase {
+			sequence = append(sequence, phase)
+		}
+	}
+	for _, p := range phases {
+		if stops[p] == 0 {
+			t.Errorf("the %s phase never checked its context (checks by phase: %v)", p, stops)
+		}
+	}
+	if strings.Join(sequence, ",") != strings.Join(phases, ",") {
+		t.Errorf("the phases checked in the order %v, want %v", sequence, phases)
 	}
 }
 

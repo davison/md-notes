@@ -2,6 +2,7 @@ package diagram
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 )
@@ -104,9 +105,13 @@ type engine struct {
 	lines    [][]string // wrapped label per model node
 }
 
-func (e *engine) check() error {
+// check reports the context's error, if it has one, naming the phase of
+// the layout it stopped: rank, order or position. Every round of each of
+// those phases calls it, and TestLayoutChecksContext holds each phase to
+// that by where the layout stops.
+func (e *engine) check(phase string) error {
 	if err := e.ctx.Err(); err != nil {
-		return err
+		return fmt.Errorf("layout stopped in %s: %w", phase, err)
 	}
 	return nil
 }
@@ -436,7 +441,7 @@ func (e *engine) rank() error {
 	// Pull tight: move each node, within the ranks its edges allow, to the
 	// median of where its edges would like it.
 	for pass := 0; pass < 8; pass++ {
-		if err := e.check(); err != nil {
+		if err := e.check("rank"); err != nil {
 			return err
 		}
 		moved := false
@@ -630,7 +635,7 @@ func (e *engine) order() error {
 	bestCross := e.crossings()
 	stale := 0
 	for it := 0; it < orderRounds && bestCross > 0; it++ {
-		if err := e.check(); err != nil {
+		if err := e.check("order"); err != nil {
 			return err
 		}
 		sib = e.siblingOrder()
@@ -992,7 +997,7 @@ func (e *engine) positionX() error {
 	}
 	type pair struct{ x, w float64 }
 	for round := 0; round < relaxRounds; round++ {
-		if err := e.check(); err != nil {
+		if err := e.check("position"); err != nil {
 			return err
 		}
 		// Loosen every subgraph border as far as its neighbours allow, so
