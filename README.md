@@ -35,10 +35,12 @@ last-modified order beside its alphanumeric one, and made the UI an app a phone 
 install from the tailnet name. Milestone eight made the whole of it something a
 stranger can install: a tag cuts a versioned release, the daemon is published to
 the Arch User Repository and as a `.deb`, and the extension ships as a zip on the
-release page. The inbox is still ahead.
+release page. Milestone nine drew mermaid flowcharts as diagrams, on the daemon
+rather than in the browser. The inbox is still ahead.
 
 - **Daemon.** One static Go binary. Serves the web UI, watches one or more
-  root folders, renders markdown server-side, shells out to ripgrep for
+  root folders, renders markdown server-side — mermaid flowcharts included, drawn
+  as SVG images by a renderer of its own — shells out to ripgrep for
   search and tags, and pushes changes over Server-Sent Events. Binds to
   localhost only.
 - **Web UI.** TypeScript. Navigator, rendered note, search panel, and a
@@ -55,8 +57,8 @@ release page. The inbox is still ahead.
   A Playwright suite under
   `ui/e2e` drives the built daemon in a real browser as a CI job of its own,
   so the layout, the display settings, the tap targets, the asset cache, the
-  create and delete flows, the navigator's two orders and removing a root are
-  held by a check rather than by a
+  create and delete flows, the navigator's two orders, removing a root and the
+  flowcharts are held by a check rather than by a
   measurement in a comment.
 - **Browser extension.** Chromium Manifest V3. Clips a readable page or a
   selection as markdown and posts it to the daemon. Also intercepts local
@@ -486,6 +488,25 @@ than as the kernel's watch limit, every dependency is current or held back for a
 recorded reason with `govulncheck` and `pnpm audit` in CI, and the search and tag
 pane sits under the navigator at middle widths while every scrollbar takes the
 theme's colours.
+
+Milestone nine made a mermaid flowchart in a note read as a diagram. Mermaid's own
+library was vetted and declined: it has critical cross-site-scripting advisories
+under its strictest setting, and any script on the app's origin can read and write
+every note. So the daemon draws the flowchart itself — it parses the block into plain
+data, lays it out and writes an SVG from elements it chooses, with every piece of the
+note's text escaped — and the page shows it through `<img>`, never inline, with a
+sandboxing content security policy and `nosniff` on every answer at a diagram URL.
+The drawing follows the light, dark or e-ink palette the page is using and changes
+when the note changes on disk. The supported subset covers every direction, the
+common node shapes, solid, dotted and thick links with their labels, chains, `&` and
+subgraphs; styling and `click` statements are skipped, and a block outside the
+subset, over a size bound or past the two-second drawing deadline, or of any other
+diagram type, stays the code block it always was.
+[Flowcharts](docs/introduction.md#flowcharts) has the subset and every case that
+shows as code. The renderer is the project's own code with no new dependency, so the
+binary stays static and the licence below, and the packages' licence fields, are
+unchanged.
+
 [docs/introduction.md](docs/introduction.md) describes what the daemon does
 today, [docs/extension.md](docs/extension.md) the extension,
 [docs/e-ink.md](docs/e-ink.md) the e-ink tablet, and the milestone
@@ -497,7 +518,8 @@ records
 [five](docs/milestones/5-create-and-delete-notes.md),
 [six](docs/milestones/6-tailnet-clipping-and-the-m5-backlog.md),
 [seven](docs/milestones/7-roots-recency-and-the-installable-app.md),
-[eight](docs/milestones/8-the-first-release.md))
+[eight](docs/milestones/8-the-first-release.md),
+[nine](docs/milestones/9-flowcharts-drawn-by-the-daemon.md))
 record the decisions behind them. The inbox, which turns URLs shared from a
 phone into clips, follows in a later milestone. Progress is tracked in
 [ROADMAP.md](ROADMAP.md) and in the GitHub issues of this repository, which
@@ -508,4 +530,6 @@ request, and how a release is cut.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The flowchart renderer brings in no third-party code: the label
+widths it lays text out with are Noto Sans Regular's advance widths, numbers only,
+generated from the font by `internal/diagram/genmetrics`, with no glyph data.
