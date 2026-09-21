@@ -168,3 +168,42 @@ export function decorate(
     pool.delete(key);
   }
 }
+
+/** What the reader does to take the scroll over from the page. */
+const TAKEOVER = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+
+/**
+ * Keeps a scroll target in place while the diagram images above it that the
+ * daemon did not measure settle (#177). Such an image has no box until it
+ * loads, and each one that loads, or fails and brings its code block back,
+ * moves everything below it; the target is scrolled to again each time. The
+ * measured ones need nothing: their boxes are reserved.
+ *
+ * The page lets go as soon as the reader scrolls, clicks or types, when
+ * every such image has settled, or when the returned function is called.
+ */
+export function holdInView(target: Element): () => void {
+  const scope = target.closest(".markdown") ?? target.ownerDocument;
+  const pending = [...scope.querySelectorAll<HTMLImageElement>(`img.${DIAGRAM_CLASS}:not([height])`)].filter(
+    (img) => !img.complete && img.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  if (pending.length === 0) return () => {};
+  let left = pending.length;
+  const settle = () => {
+    target.scrollIntoView({ block: "center" });
+    if (--left === 0) release();
+  };
+  const release = () => {
+    for (const img of pending) {
+      img.removeEventListener("load", settle);
+      img.removeEventListener("error", settle);
+    }
+    for (const type of TAKEOVER) window.removeEventListener(type, release, true);
+  };
+  for (const img of pending) {
+    img.addEventListener("load", settle, { once: true });
+    img.addEventListener("error", settle, { once: true });
+  }
+  for (const type of TAKEOVER) window.addEventListener(type, release, { capture: true, passive: true });
+  return release;
+}

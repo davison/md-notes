@@ -42,6 +42,47 @@ const fence = (src) => "```mermaid\n" + src + "```\n";
  * the shape QA's regression was found on (davison/md-notes#177). The source
  * lines of three scroll-to-line targets are recorded as it is built.
  */
+/**
+ * More diagrams than the daemon's measuring budget covers (review of PR
+ * #181): sixty dense graphs, each tens of milliseconds to lay out, then a
+ * block the layout refuses, then the target paragraph. Most go out
+ * unmeasured, the refused block among them, so the page meets both the
+ * boxes it has to keep its place for and the route's 422.
+ */
+function manyNote(start) {
+  let seed = start;
+  const rand = (n) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % n;
+  };
+  const lines = ["# Many", ""];
+  const at = {};
+  for (let d = 1; d <= 60; d++) {
+    lines.push("```mermaid", "flowchart TD");
+    const fenceLine = lines.length - 1;
+    for (let e = 0; e < 160; e++) {
+      const a = rand(80);
+      const b = rand(80);
+      if (a !== b) lines.push(`  G${d}N${a} --> G${d}N${b}`);
+    }
+    if (d === 40) at.inDiagram = fenceLine + 3;
+    lines.push("```", "");
+  }
+  // Its own names, so the daemon has not already refused it for another note.
+  lines.push("```mermaid", ...layoutRefused().replaceAll("A", `R${start}x`).trimEnd().split("\n"), "```", "");
+  lines.push("The needle-word paragraph.", "");
+  at.paragraph = lines.length - 1;
+  for (let i = 0; i < 40; i++) lines.push(`Trailing paragraph ${i}.`, "");
+  return { text: lines.join("\n"), at };
+}
+
+/**
+ * One such note per case, each with graphs of its own: the daemon keeps
+ * every size it has measured, so a note another case has opened would no
+ * longer be one it has to measure.
+ */
+const MANY = Array.from({ length: 4 }, (_, i) => manyNote(7 + i));
+
 const FLOWS = (() => {
   const lines = ["# Flows", ""];
   const at = {};
@@ -75,6 +116,7 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
     write("refused.md", "# Refused\n\n" + fence(layoutRefused()));
     write("live.md", "# Live\n\n" + fence("graph TD; P-->Q\n") + "\n" + fence("graph TD; X-->Y\n"));
     write("flows.md", FLOWS.text);
+    MANY.forEach((m, i) => write(`many-${i}.md`, m.text));
     write("unreachable.md", "# Unreachable\n\n" + fence(FLOW));
     browser = await playwright.chromium.launch({ headless: true });
   });
@@ -293,30 +335,42 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
    * must end in view once every image has settled, which the pre-M9 build
    * did and the first M9 build did not.
    */
-  const landsOn = async (profile, line, { fail = false } = {}) => {
+  const landsOn = async (profile, line, { fail = false, file = "flows.md" } = {}) => {
     const { name, ...options } = profile;
     const ctx = await browser.newContext({ ...options, colorScheme: "light", serviceWorkers: "block" });
     try {
       const page = await ctx.newPage();
+      const statuses = [];
+      let listed = null;
+      page.on("response", async (r) => {
+        if (r.url().includes("/diagram/")) statuses.push(r.status());
+        if (r.url().includes("/note/")) listed = (await r.json().catch(() => ({}))).diagrams ?? [];
+      });
       await page.route("**/api/r/*/diagram/**", async (route) => {
         await new Promise((r) => setTimeout(r, 400));
         if (fail) await route.abort("internetdisconnected");
         else await route.continue();
       });
-      await openNote(page, fixture.url("flows.md", `?l=${line}`));
+      await openNote(page, fixture.url(file, `?l=${line}`));
       await page.waitForFunction(() => document.querySelectorAll(".markdown pre").length > 0);
-      // Settled: every image loaded, or taken away for its code block.
+      // Settled: every image near the screen loaded, or taken away for its
+      // code block. One far off stays unloaded, being lazy, and is not waited
+      // for; it has no box to move anything by until the reader goes to it.
       await page.waitForFunction(
         () =>
-          [...document.querySelectorAll(".markdown img.diagram")].every((i) => i.complete && i.naturalWidth > 0) &&
+          [...document.querySelectorAll(".markdown img.diagram")].every((i) => {
+            const r = i.getBoundingClientRect();
+            const near = r.bottom > -innerHeight && r.top < 2 * innerHeight;
+            return !near || (i.complete && i.naturalWidth > 0);
+          }) &&
           [...document.querySelectorAll(".markdown pre")].every(
             (p) => getComputedStyle(p).display !== "none" || p.previousElementSibling?.matches("img.diagram"),
           ),
         null,
-        { timeout: 10000 },
+        { timeout: 20000 },
       );
-      await page.waitForTimeout(100);
-      return await page.evaluate((l) => {
+      await page.waitForTimeout(300);
+      const seen = await page.evaluate((l) => {
         let best = null;
         let bestLine = -1;
         for (const el of document.querySelectorAll(".markdown [data-line]")) {
@@ -332,21 +386,37 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
         const r = shown.getBoundingClientRect();
         return { tag: shown.tagName, top: Math.round(r.top), bottom: Math.round(r.bottom), height: innerHeight };
       }, line);
+      const unmeasured = (listed ?? []).filter((d) => !d.width).length;
+      return { ...seen, statuses, listed: listed?.length ?? 0, unmeasured };
     } finally {
       await ctx.close();
     }
   };
 
-  for (const profile of [DESKTOP, PIXEL_7]) {
+  for (const [p, profile] of [DESKTOP, PIXEL_7].entries()) {
+    const many = (i) => ({ m: MANY[2 * p + i], file: `many-${2 * p + i}.md` });
     for (const [what, line, tag, opts] of [
       ["inside the ninth diagram", FLOWS.at.inDiagram, "IMG", {}],
       ["on a block shown as code below the diagrams", FLOWS.at.codeBlock, "PRE", {}],
       ["on a paragraph below the diagrams", FLOWS.at.paragraph, "P", {}],
       ["on a paragraph below diagrams that all fail to load", FLOWS.at.paragraph, "P", { fail: true }],
+      ["inside a diagram the daemon had no time to measure", many(0).m.at.inDiagram, "IMG", { file: many(0).file, many: true }],
+      ["below more diagrams than the daemon had time to measure", many(1).m.at.paragraph, "P", { file: many(1).file, many: true, refused: true }],
     ]) {
       it(`lands a hit ${what}, at ${profile.name}`, async () => {
         const seen = await landsOn(profile, line, opts);
         assert.equal(seen.tag, tag);
+        if (opts.many) {
+          // The case is what it says: the budget left most of the note's
+          // diagrams without a size.
+          assert.ok(seen.unmeasured >= 10, `only ${seen.unmeasured} of ${seen.listed} diagrams went out unmeasured`);
+        }
+        if (opts.refused) {
+          // The block the layout refuses was not reached either, so the
+          // route answered its image with 422 and the page fell back to its
+          // code (review of PR #181, N1).
+          assert.ok(seen.statuses.includes(422), `no 422 among ${seen.statuses.join(", ")}`);
+        }
         // Centred, as the pre-M9 build centres it: the scroll puts the
         // block's start in the middle of the screen, and it stays there.
         assert.ok(
