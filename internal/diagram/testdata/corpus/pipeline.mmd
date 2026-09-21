@@ -1,0 +1,18 @@
+graph TB
+    push --> lint & unit
+    subgraph ci [Continuous integration]
+        lint --> build
+        unit --> build
+        unit --> coverage
+    end
+    subgraph package [Packaging]
+        deb
+        aur
+    end
+    build --> deb & aur
+    subgraph release [Release]
+        direction LR
+        publish ==> notify
+    end
+    deb --> publish
+    aur --> publish

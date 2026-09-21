@@ -1,0 +1,10 @@
+flowchart RL
+    subgraph Client [The browser]
+      ui[Reading view] --> img["#lt;img#gt; tag"]
+    end
+    subgraph Daemon [mdn serve]
+      route[Diagram route] --> cache[(Cache)]
+      route --> render[Renderer]
+    end
+    img -->|GET /diagram| route
+    render -->|SVG| img

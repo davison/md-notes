@@ -1,0 +1,11 @@
+flowchart TD
+    Start([Start]) --> Note{Is it a note?}
+    Note -->|yes| Render[Render markdown]
+    Note -->|no| Raw[/Serve raw/]
+    Render --> Has{Has mermaid?}
+    Has -- yes --> Parse[[Parse flowchart]]
+    Has -- no --> Done((Done))
+    Parse --> Subset{In subset?}
+    Subset -->|yes| Layout[Lay out] --> Write[(Write SVG)]
+    Subset -.->|no| Code>Code block]
+    Write & Code & Raw --> Done

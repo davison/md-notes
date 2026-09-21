@@ -1,0 +1,20 @@
+flowchart TB
+    c1-->a2
+    subgraph one
+    a1-->a2
+    end
+    subgraph two
+    b1-->b2
+    end
+    subgraph three
+    c1-->c2
+    subgraph inner ["An inner group with a long title"]
+      i1 --> i2
+    end
+    end
+    one --> two
+    three --> two
+    two --> c2
+    i2 --> a1
+    subgraph empty [Nothing here]
+    end
