@@ -12,6 +12,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -89,8 +90,7 @@ func (s *Server) diagramHandler(w http.ResponseWriter, r *http.Request) {
 	// this path, opened directly, runs nothing and is not sniffed into
 	// something that could.
 	h := w.Header()
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Security-Policy", diagramCSP)
+	setDiagramHeaders(h)
 	fail := func(status int, msg string) {
 		h.Set("Cache-Control", "no-store")
 		writeError(w, status, msg)
@@ -324,6 +324,25 @@ func (c *listCache) put(key noteKey, l []render.Diagram) {
 		delete(c.items, it.key)
 		c.size -= listSize(it.key, it.list)
 	}
+}
+
+// setDiagramHeaders puts on an answer at a diagram URL the two headers
+// that keep whatever it is from being sniffed into, or run as, anything.
+func setDiagramHeaders(h http.Header) {
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", diagramCSP)
+}
+
+// diagramPath reports whether p, as the request wrote it, is under a
+// root's diagram route: /api/r/{slug}/diagram/…. The guard asks, so the
+// answers written before the handler runs carry the headers too.
+func diagramPath(p string) bool {
+	rest, ok := strings.CutPrefix(p, "/api/r/")
+	if !ok {
+		return false
+	}
+	_, sub, ok := strings.Cut(rest, "/")
+	return ok && (sub == "diagram" || strings.HasPrefix(sub, "diagram/"))
 }
 
 // drawSlotCount is how many diagrams may be drawn at once: half the
