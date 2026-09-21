@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -510,4 +511,58 @@ func TestListCacheIsBounded(t *testing.T) {
 	if _, ok := c.get(k("huge")); ok {
 		t.Error("a list larger than the whole cache was kept")
 	}
+}
+
+// Some answers under the diagram path are written before its handler runs:
+// the guard's refusals, and the mux's own 404 and redirect for a path it
+// will not route as written. They carry the same two headers, so nothing
+// answered at a diagram URL is sniffed or runs, whoever answers it
+// (round-one review of PR #175, N2).
+func TestDiagramPathHeadersBeforeTheHandler(t *testing.T) {
+	ts, base := newTailnetServer(t)
+	writeNote(t, base, "d.md", fence(testFlow))
+	q := "?h=" + render.HashSource([]byte(testFlow)) + "&theme=light"
+	for _, c := range []struct {
+		name   string
+		resp   *http.Response
+		status int
+	}{
+		{"cross-origin on loopback", do(t, ts, "GET", "/api/r/notes/diagram/d.md"+q, "", map[string]string{"Origin": "http://evil.example"}), 403},
+		{"tailnet without a session", tdo(t, ts, "GET", "/api/r/notes/diagram/d.md"+q, "", nil), 401},
+		// Whoever answers this one — the mux or the handler — it is refused.
+		{"a dot-dot segment", do(t, ts, "GET", "/api/r/notes/diagram/%2e%2e/d.md"+q, "", nil), 0},
+		{"a doubled slash", doNoRedirect(t, ts, "/api/r/notes/diagram//d.md"+q), 307},
+	} {
+		if c.status == 0 && c.resp.StatusCode < 400 {
+			t.Errorf("%s: status %d, want a refusal", c.name, c.resp.StatusCode)
+		}
+		if c.status != 0 && c.resp.StatusCode != c.status {
+			t.Errorf("%s: status %d, want %d", c.name, c.resp.StatusCode, c.status)
+		}
+		if got := c.resp.Header.Get("Content-Security-Policy"); got != diagramCSP {
+			t.Errorf("%s: CSP %q, want %q", c.name, got, diagramCSP)
+		}
+		if got := c.resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("%s: X-Content-Type-Options %q, want nosniff", c.name, got)
+		}
+	}
+	// Elsewhere the guard adds nothing.
+	if got := do(t, ts, "GET", "/api/r/notes/note/d.md", "", nil).Header.Get("Content-Security-Policy"); got != "" {
+		t.Errorf("the note API gained a CSP: %q", got)
+	}
+}
+
+func doNoRedirect(t *testing.T, ts *httptest.Server, p string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest("GET", ts.URL+p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = "localhost:7337"
+	resp, err := noRedirect.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	return resp
 }
