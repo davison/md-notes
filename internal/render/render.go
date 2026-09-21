@@ -36,6 +36,10 @@ type Note struct {
 	Title       string         `json:"title"`
 	Frontmatter map[string]any `json:"frontmatter,omitempty"`
 	HTML        string         `json:"html"`
+	// Diagrams are the note's fenced mermaid flowcharts that the diagram
+	// package will draw, in document order. They are listed beside the HTML
+	// rather than marked in it: see Diagram.
+	Diagrams []Diagram `json:"diagrams,omitempty"`
 }
 
 // Renderer is safe for concurrent use.
@@ -66,6 +70,7 @@ func New() *Renderer {
 			parser.WithASTTransformers(
 				util.Prioritized(&linkRewriter{}, 100),
 				util.Prioritized(&lineMarker{}, 200),
+				util.Prioritized(diagramFinder{}, 300),
 			),
 		),
 		goldmark.WithRendererOptions(
@@ -84,14 +89,7 @@ func New() *Renderer {
 // Render renders src, the content of the note at notePath inside the root
 // named slug.
 func (r *Renderer) Render(slug, notePath string, src []byte) (Note, error) {
-	fm, body := splitFrontmatter(src)
-	ctx := parser.NewContext()
-	ctx.Set(linkContextKey, linkContext{slug: slug, noteDir: path.Dir(notePath)})
-	// Lines removed with the frontmatter, so markers count from the file's
-	// first line as ripgrep does.
-	ctx.Set(lineOffsetKey, bytes.Count(src[:len(src)-len(body)], []byte{'\n'}))
-
-	doc := r.md.Parser().Parse(text.NewReader(body), parser.WithContext(ctx))
+	fm, body, doc, ctx := r.parse(slug, notePath, src)
 
 	// The app shows the title above the note, so a heading that supplied it
 	// is removed from the body rather than shown twice.
@@ -115,7 +113,29 @@ func (r *Renderer) Render(slug, notePath string, src []byte) (Note, error) {
 		Title:       title,
 		Frontmatter: fm,
 		HTML:        r.policy.Sanitize(buf.String()),
+		Diagrams:    diagramsOf(ctx),
 	}, nil
+}
+
+// Diagrams lists the flowcharts in a note's source exactly as Render lists
+// them, without rendering the rest: the diagram route finds a block again
+// with it, so what a hash names is decided in one place.
+func (r *Renderer) Diagrams(src []byte) []Diagram {
+	_, _, _, ctx := r.parse("", ".", src)
+	return diagramsOf(ctx)
+}
+
+// parse splits off the frontmatter and parses the body, running the
+// transformers: the link rewriting, the line markers and the diagram list.
+func (r *Renderer) parse(slug, notePath string, src []byte) (map[string]any, []byte, ast.Node, parser.Context) {
+	fm, body := splitFrontmatter(src)
+	ctx := parser.NewContext()
+	ctx.Set(linkContextKey, linkContext{slug: slug, noteDir: path.Dir(notePath)})
+	// Lines removed with the frontmatter, so markers count from the file's
+	// first line as ripgrep does.
+	ctx.Set(lineOffsetKey, bytes.Count(src[:len(src)-len(body)], []byte{'\n'}))
+	doc := r.md.Parser().Parse(text.NewReader(body), parser.WithContext(ctx))
+	return fm, body, doc, ctx
 }
 
 // splitFrontmatter separates a leading YAML block delimited by "---" lines.
