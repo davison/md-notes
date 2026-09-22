@@ -13,7 +13,7 @@ var version = "dev"
 const usage = `usage: mdn <command> [flags]
 
 commands:
-  serve     run the daemon against the configured notes root
+  serve     run the daemon against the configured roots
   open DIR  register DIR with the running daemon and open it in the browser
             (--no-browser prints the URL instead)
   token     print the daemon's bearer token (--rotate replaces it)
