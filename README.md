@@ -150,8 +150,10 @@ configuration file, the systemd unit, the token and several folders at once.
 
 ## Status
 
-[v0.1.0](https://github.com/davison/md-notes/releases/tag/v0.1.0) is the current
-release; [ROADMAP.md](ROADMAP.md) tracks what each milestone delivered and its
+The [releases page](https://github.com/davison/md-notes/releases) has every
+version and its notes, and the [latest
+release](https://github.com/davison/md-notes/releases/latest) is the one to
+install; [ROADMAP.md](ROADMAP.md) tracks what each milestone delivered and its
 record, and the [issues](https://github.com/davison/md-notes/issues) what is
 next.
 
