@@ -142,8 +142,8 @@ func writeSVG(d *drawing, t Theme) []byte {
 		w.el("rect", true, "x", num(c.x), "y", num(c.y), "width", num(c.w), "height", num(c.h),
 			"rx", "4", "fill", t.ClusterFill, "stroke", t.ClusterStroke, "stroke-width", sw)
 		if len(c.title) > 0 {
-			_, h := textBox(c.title)
-			w.text(c.title, c.x+c.w/2, c.y+clusterPad/2+h/2+2, t.ClusterText)
+			x0, y0, x1, y1 := c.titleBox()
+			w.text(c.title, (x0+x1)/2, (y0+y1)/2, t.ClusterText)
 		}
 	}
 	for _, e := range d.edges {
@@ -328,28 +328,18 @@ func (t Theme) hollowFill() string {
 	return t.NodeFill
 }
 
-// basis draws a uniform cubic B-spline through the polyline's control
-// points, from its first point to its last — d3's curveBasis, which is how
-// mermaid draws its edges.
+// basis writes the path data of a B-spline through the polyline's control
+// points (basisPieces).
 func basis(p []point) string {
 	var b bytes.Buffer
+	ps := basisPieces(p)
 	b.WriteString("M" + num(p[0].x) + "," + num(p[0].y))
-	if len(p) == 2 {
-		b.WriteString(" L" + num(p[1].x) + "," + num(p[1].y))
-		return b.String()
+	for _, pc := range ps {
+		if pc.cubic {
+			fmt.Fprintf(&b, " C%s,%s %s,%s %s,%s", num(pc.b.x), num(pc.b.y), num(pc.c.x), num(pc.c.y), num(pc.d.x), num(pc.d.y))
+		} else {
+			b.WriteString(" L" + num(pc.d.x) + "," + num(pc.d.y))
+		}
 	}
-	bez := func(p0, p1, p2 point) {
-		fmt.Fprintf(&b, " C%s,%s %s,%s %s,%s",
-			num((2*p0.x+p1.x)/3), num((2*p0.y+p1.y)/3),
-			num((p0.x+2*p1.x)/3), num((p0.y+2*p1.y)/3),
-			num((p0.x+4*p1.x+p2.x)/6), num((p0.y+4*p1.y+p2.y)/6))
-	}
-	b.WriteString(" L" + num((5*p[0].x+p[1].x)/6) + "," + num((5*p[0].y+p[1].y)/6))
-	for i := 2; i < len(p); i++ {
-		bez(p[i-2], p[i-1], p[i])
-	}
-	n := len(p)
-	bez(p[n-2], p[n-1], p[n-1])
-	b.WriteString(" L" + num(p[n-1].x) + "," + num(p[n-1].y))
 	return b.String()
 }
