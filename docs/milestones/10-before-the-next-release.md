@@ -520,9 +520,9 @@ Dispositions: [#186](https://github.com/davison/md-notes/issues/186#issuecomment
 - **Round one** ([changes requested](https://github.com/davison/md-notes/pull/203#issuecomment-5774949425)):
   the privacy page said the per-tab record, which holds a `file:` URL, is dropped when the tab
   moves on. After a service-worker restart it was not. This was fixed in the code, with an e2e
-  case that stops the worker. The nits: a stale README pointer, PNGs that oxipng made a third smaller at no cost,
-  and a test header that claimed it never skips. The stale pointer was to a `README.md` in
-  `extension/scripts/`, left from the store-era script.
+  case that stops the worker. The nits: a stale README pointer, PNGs that oxipng made a third
+  smaller at no cost, and a test header that claimed it never skips. The stale pointer was to a
+  `README.md` in `extension/scripts/`, left from the store-era script.
 - **Round two** [approved](https://github.com/davison/md-notes/pull/203#issuecomment-5775157856),
   with three nits, fixed before merge. The first was a sentence on the privacy page that was false
   in the safe direction: moving between notes in the app does drop the record.
@@ -572,7 +572,8 @@ the reference host that is **about 0.69 s, roughly 2.9× inside the deadline**
 [#186](https://github.com/davison/md-notes/issues/186#issuecomment-5774325248)). The implementer's
 own figure was 0.72 s, about 2.8×, and the reviewer judged the two to agree. The implementer's
 reply says its machine was shared and gives its figures as ±50%
-([PR #200](https://github.com/davison/md-notes/pull/200#issuecomment-5774193175)). M9's record is sealed and stays as it is. This is the correction.
+([PR #200](https://github.com/davison/md-notes/pull/200#issuecomment-5774193175)). M9's record is
+sealed and stays as it is. This is the correction.
 
 **#180 was reinterpreted after measurement.** #180, from M9 QA, said the e-ink drawing sat in a
 faint white box on the light page's `--bg`. Measurement on `df276bd` showed that the reading
@@ -713,7 +714,8 @@ flowchart pair is drawn after #189 as well as #187 and #188
 **#188, the titles decision, not corrected on the issue.** It gives `pipeline.mmd` in TB as
 growing from 227 to 457 px, and `nested-title.mmd` in TB from 301 to 389 px. Round one's fix
 reserved only the missing room, and the widths became 326.4 px and 371.8 px. PR #200's body and
-the approving review give the new figures, but no correction was posted on #188 ([PR #200](https://github.com/davison/md-notes/pull/200)).
+the approving review give the new figures, but no correction was posted on #188
+([PR #200](https://github.com/davison/md-notes/pull/200)).
 
 **The introduction's e2e count.** It said 83 browser checks, the count at the end of M9. This
 task's stage one measured 116 on `53e6bed`, and QA's floor ran 116 of 116.
