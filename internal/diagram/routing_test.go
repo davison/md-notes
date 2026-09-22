@@ -172,3 +172,109 @@ func titlesClear(d *drawing) error {
 	}
 	return nil
 }
+
+// A self-loop and a back edge at the same node are drawn apart: neither
+// runs along or into the other (review of PR #200, finding 2).
+func TestLoopsApartFromBackEdges(t *testing.T) {
+	const apart = 8.0
+	for _, dir := range []string{"LR", "RL", "TB", "BT"} {
+		t.Run(dir, func(t *testing.T) {
+			f, d := layoutFixture(t, "loops-back-edges.mmd", dir)
+			var loops, back []dedge
+			for _, e := range d.edges {
+				ed := f.Edges[e.edge]
+				switch {
+				case e.loop:
+					loops = append(loops, e)
+				case ed.From.Node >= 0 && ed.To.Node >= 0 &&
+					nodeIndex(t, f, f.Nodes[ed.From.Node].ID) > nodeIndex(t, f, f.Nodes[ed.To.Node].ID):
+					back = append(back, e)
+				}
+			}
+			if len(loops) != 3 || len(back) != 2 {
+				t.Fatalf("%d loops and %d back edges, want 3 and 2", len(loops), len(back))
+			}
+			for _, l := range loops {
+				lp := sample(l.pieces())
+				for _, b := range back {
+					if dist, at := curveDistance(sample(b.pieces()), lp); dist < apart {
+						n := f.Nodes[f.Edges[l.edge].From.Node].ID
+						bed := f.Edges[b.edge]
+						t.Errorf("back edge %s->%s comes %.1f px from %s's self-loop (at %.0f,%.0f)",
+							f.Nodes[bed.From.Node].ID, f.Nodes[bed.To.Node].ID, dist, n, at.x, at.y)
+					}
+				}
+			}
+		})
+	}
+}
+
+// curveDistance is the least distance between two polylines, 0 where they
+// cross, and a point of the first where it is reached.
+func curveDistance(a, b []point) (float64, point) {
+	best, at := math.Inf(1), point{}
+	for i := 0; i+1 < len(a); i++ {
+		for j := 0; j+1 < len(b); j++ {
+			if d := segmentDistance(a[i], a[i+1], b[j], b[j+1]); d < best {
+				best, at = d, a[i]
+			}
+		}
+	}
+	return best, at
+}
+
+func segmentDistance(p, q, r, s point) float64 {
+	cross := func(o, a, b point) float64 { return (a.x-o.x)*(b.y-o.y) - (a.y-o.y)*(b.x-o.x) }
+	d1, d2 := cross(r, s, p), cross(r, s, q)
+	d3, d4 := cross(p, q, r), cross(p, q, s)
+	if (d1 > 0) != (d2 > 0) && (d3 > 0) != (d4 > 0) && d1 != 0 && d2 != 0 && d3 != 0 && d4 != 0 {
+		return 0
+	}
+	toSeg := func(x, a, b point) float64 {
+		dx, dy := b.x-a.x, b.y-a.y
+		l := dx*dx + dy*dy
+		t := 0.0
+		if l > 0 {
+			t = math.Max(0, math.Min(1, ((x.x-a.x)*dx+(x.y-a.y)*dy)/l))
+		}
+		return math.Hypot(x.x-a.x-t*dx, x.y-a.y-t*dy)
+	}
+	return math.Min(math.Min(toSeg(p, r, s), toSeg(q, r, s)), math.Min(toSeg(r, p, q), toSeg(s, p, q)))
+}
+
+// Back edges whose spans interleave, and two parallel ones, each still
+// run in one straight lane (review of PR #200, finding 5): every control
+// point of a lane between its two ends sits on one line along the ranks.
+func TestLanesStraight(t *testing.T) {
+	for _, dir := range []string{"LR", "RL", "TB", "BT"} {
+		t.Run(dir, func(t *testing.T) {
+			f, d := layoutFixture(t, "interleaved-back-edges.mmd", dir)
+			lanes := 0
+			for _, e := range d.edges {
+				ed := f.Edges[e.edge]
+				if e.loop || nodeIndex(t, f, f.Nodes[ed.From.Node].ID) < nodeIndex(t, f, f.Nodes[ed.To.Node].ID) {
+					continue
+				}
+				lanes++
+				across := func(p point) float64 {
+					if directions[dir].horizontal() {
+						return p.y
+					}
+					return p.x
+				}
+				// The ends and the corners level with them are off the lane.
+				mid := e.pts[2 : len(e.pts)-2]
+				for _, p := range mid {
+					if math.Abs(across(p)-across(mid[0])) > 0.5 {
+						t.Errorf("back edge %s->%s leaves its lane: %.1f against %.1f",
+							f.Nodes[ed.From.Node].ID, f.Nodes[ed.To.Node].ID, across(p), across(mid[0]))
+						break
+					}
+				}
+			}
+			if lanes != 5 {
+				t.Fatalf("%d back edges, want 5", lanes)
+			}
+		})
+	}
+}

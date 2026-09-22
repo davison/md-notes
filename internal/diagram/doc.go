@@ -42,10 +42,13 @@
 // # Drawing
 //
 // The layout is layered, as mermaid's is. A link back against the flow
-// runs in its own lane outside the nodes, leaving and entering them by the
-// side that faces it; the longest chain of links is drawn straight; and a
-// subgraph's title is placed where no link crosses it, the subgraph
-// widening to make room if there is none (davison/md-notes#188).
+// runs in its own straight lane outside the nodes, leaving and entering
+// them by the side that faces it; self-loops go on the other side. The
+// longest chains of links are drawn straight where the layout allows. A
+// subgraph's title is placed where no link crosses it. In TB and BT, if
+// there is no such place, the subgraph is widened by the room the title
+// lacks, at most twice; otherwise the title stays centred
+// (davison/md-notes#188).
 //
 // # Bounds
 //
