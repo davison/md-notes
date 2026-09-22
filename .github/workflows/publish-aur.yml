@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The push could sit behind a GitHub Environment with the operator as a
     # required reviewer — `environment: aur` here, and the environment created
     # with that reviewer. It does not, by the decision recorded on
@@ -41,10 +41,10 @@ jobs:
       # The release's tag, not the default branch: the renderer, the licence
       # and the unit that go into the package are the ones the release was
       # built from, whatever main has moved on to since.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
