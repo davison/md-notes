@@ -25,6 +25,8 @@ for a kitchen at about 21 °C.
 
 ## Day two
 
+Weekend bakes suit this best: mix on Saturday, bake on Sunday morning.
+
 Bake from cold in a lidded pot: 20 minutes at 250 °C with the lid on, then
 25 minutes at 230 °C without it. Leave it an hour before cutting, however good
 it smells.

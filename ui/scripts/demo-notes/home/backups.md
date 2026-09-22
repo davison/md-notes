@@ -14,6 +14,9 @@ the only machine anyone edits on; everything else is a copy of it.
 | Photos | NAS, then the offsite bucket | every night | for ever |
 | Home directory | external disk | every Sunday | 8 weeks |
 
+Weekend runs also restore one file at random and compare it with the
+original, because a backup nobody has restored from is only a hope.
+
 ## The nightly run
 
 The NAS runs this at 02:30, and mails me only when it fails:
@@ -39,5 +42,3 @@ flowchart LR
   snap -->|nightly| bucket[(Offsite)]
   nas -.->|weekly| verify{Restore test?}
 ```
-
-A restore test that has not been run is a hope, not a backup. #restic
