@@ -25,6 +25,10 @@ on:
 # - Every action is on a major that runs on Node 24. The Node 20 majors were
 #   deprecated on the runners and are forced onto Node 24 until they are
 #   refused outright.
+# - Go comes from go.mod's `toolchain` line and Node from .node-version, both
+#   exact, so the tag names the toolchain a release was built with and a
+#   rebuild with it gives the same bytes (docs/releasing.md, "Checking a
+#   release").
 jobs:
   check:
     runs-on: ubuntu-24.04
@@ -35,7 +39,7 @@ jobs:
           version: 10
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: |
             ui/pnpm-lock.yaml
@@ -72,7 +76,7 @@ jobs:
           version: 10
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: |
             ui/pnpm-lock.yaml

@@ -1,6 +1,6 @@
 // Assertions over what every workflow pins (davison/md-notes#193): the runner
-// image and the Node runtime each action runs on. The reasons are written
-// once, at the top of ci.yml's jobs.
+// image, the Node runtime each action runs on, and the Go and Node a release is
+// built with. The reasons are written once, at the top of ci.yml's jobs.
 //
 // Each of these regresses silently. A job copied from an older workflow
 // brings `ubuntu-latest` or an `@v4` with it and still goes green: the runner
@@ -112,5 +112,53 @@ func TestEveryActionRunsOnNode24(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestTheReleaseToolchainIsPinnedExactly: the Go and the Node that build a
+// release are named by the tag, exactly, so "rebuild it and compare" has an
+// answer (davison/md-notes#167, measured there). A floating `node-version: 24`
+// or a go.mod without a toolchain line would still build, from whatever the
+// runner resolved on the day.
+func TestTheReleaseToolchainIsPinnedExactly(t *testing.T) {
+	exact := regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+
+	raw, err := os.ReadFile(filepath.Join(repoRoot, ".node-version"))
+	if err != nil {
+		t.Fatalf("no .node-version: %v", err)
+	}
+	if node := strings.TrimSpace(string(raw)); !exact.MatchString(node) {
+		t.Errorf(".node-version is %q, want one exact version such as 24.21.0", node)
+	}
+
+	gomod, err := os.ReadFile(filepath.Join(repoRoot, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`(?m)^toolchain go[0-9]+\.[0-9]+\.[0-9]+$`).Match(gomod) {
+		t.Error("go.mod has no exact `toolchain goX.Y.Z` line, so setup-go builds a release with whichever patch release it finds")
+	}
+
+	setups := 0
+	for file, w := range allWorkflows(t) {
+		for name, job := range w.Jobs {
+			for _, step := range job.Steps {
+				switch {
+				case strings.HasPrefix(step.Uses, "actions/setup-node@"):
+					setups++
+					if step.With["node-version-file"] != ".node-version" || step.With["node-version"] != "" {
+						t.Errorf("%s: job %q sets up Node with node-version-file %q and node-version %q, want the file .node-version and no node-version", file, name, step.With["node-version-file"], step.With["node-version"])
+					}
+				case strings.HasPrefix(step.Uses, "actions/setup-go@"):
+					setups++
+					if step.With["go-version-file"] != "go.mod" || step.With["go-version"] != "" {
+						t.Errorf("%s: job %q sets up Go with go-version-file %q and go-version %q, want the file go.mod and no go-version", file, name, step.With["go-version-file"], step.With["go-version"])
+					}
+				}
+			}
+		}
+	}
+	if setups == 0 {
+		t.Fatal("found no setup-node or setup-go step at all: the parse is broken, not the workflows")
 	}
 }

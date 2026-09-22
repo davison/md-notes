@@ -2,6 +2,14 @@ module github.com/davison/md-notes
 
 go 1.27
 
+// The Go a release is built with, exactly: setup-go reads this line, so the tag
+// names the compiler its binaries came from, and a rebuild with the same one
+// reproduces them byte for byte (davison/md-notes#167, docs/releasing.md).
+// Upstream's build, not a distribution's: Arch's go1.27.1-X:nodwarf5 makes
+// different bytes. A local toolchain at or above this one is still used for
+// everyday work; GOTOOLCHAIN=go1.27.1 asks for this one exactly.
+toolchain go1.27.1
+
 require (
 	// Held at v2.2.0 (current is v2.27.0). chroma's `github` style, which
 	// internal/render/gencss tones both colour schemes from, no longer
