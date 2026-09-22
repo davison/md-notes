@@ -17,6 +17,7 @@ type dnode struct {
 }
 
 type dedge struct {
+	edge       int // the model edge drawn
 	line       Line
 	head, tail Head
 	pts        []point // the curve's control polyline, ends already clipped
@@ -29,6 +30,14 @@ type dedge struct {
 type dcluster struct {
 	x, y, w, h float64
 	title      []string
+	tx         float64 // the title's centre across the box
+}
+
+// titleBox is the rectangle a subgraph's title is drawn in.
+func (c dcluster) titleBox() (x0, y0, x1, y1 float64) {
+	w, h := textBox(c.title)
+	y := c.y + clusterPad/2 + h/2 + 2
+	return c.tx - w/2, y - h/2, c.tx + w/2, y + h/2
 }
 
 type drawing struct {
@@ -78,6 +87,7 @@ func (e *engine) draw() *drawing {
 			x: math.Min(a.x, b.x), y: math.Min(a.y, b.y),
 			w: math.Abs(b.x - a.x), h: math.Abs(b.y - a.y),
 			title: e.f.Subgraphs[c].Title,
+			tx:    (a.x + b.x) / 2,
 		})
 	}
 	// Outer boxes first, so inner ones are drawn over them.
@@ -94,6 +104,7 @@ func (e *engine) draw() *drawing {
 	}
 	// Each chain's polyline, ends not yet clipped.
 	type pending struct {
+		edge  int
 		ed    Edge
 		pts   []point
 		label int
@@ -113,7 +124,7 @@ func (e *engine) draw() *drawing {
 				pts[i], pts[j] = pts[j], pts[i]
 			}
 		}
-		ps = append(ps, pending{ed, pts, c.label})
+		ps = append(ps, pending{c.edge, ed, pts, c.label})
 	}
 	// Where more than one edge meets a node on the same side, their ends
 	// are spread across that side in the order they arrive from, rather
@@ -137,7 +148,7 @@ func (e *engine) draw() *drawing {
 		} else {
 			pts[len(pts)-1] = clipFrom(d.nodes[ed.To.Node], anchors[i][1], pts[len(pts)-2])
 		}
-		de := dedge{line: ed.Line, head: ed.Head, tail: ed.Tail, pts: pts}
+		de := dedge{edge: p.edge, line: ed.Line, head: ed.Head, tail: ed.Tail, pts: pts}
 		if p.label >= 0 {
 			nd := e.nodes[p.label]
 			lp := tf(nd.x, nd.y)
@@ -154,7 +165,7 @@ func (e *engine) draw() *drawing {
 				continue
 			}
 			reach := loopReach + loopStep*float64(k)
-			de := dedge{line: ed.Line, head: ed.Head, tail: ed.Tail, loop: true, label: ed.Label}
+			de := dedge{edge: i, line: ed.Line, head: ed.Head, tail: ed.Tail, loop: true, label: ed.Label}
 			// Each further loop leaves and returns further apart as well as
 			// reaching further out, so loops on one node nest rather than
 			// cross.
@@ -332,4 +343,70 @@ func clipToBox(pts []point, x0, y0, x1, y1 float64) []point {
 	edge(a.y, b.y, y1)
 	cut := point{a.x + (b.x-a.x)*t, a.y + (b.y-a.y)*t}
 	return append([]point{cut}, pts[last+1:]...)
+}
+
+// A piece of a drawn edge: a straight line from a to d, or a cubic Bézier
+// from a to d through the control points b and c.
+type piece struct {
+	cubic      bool
+	a, b, c, d point
+}
+
+// pieces is the curve an edge's control polyline is drawn as: a uniform
+// cubic B-spline from its first point to its last — d3's curveBasis, which
+// is how mermaid draws its edges — or, for a self-loop, its one Bézier.
+func (e dedge) pieces() []piece {
+	p := e.pts
+	if e.loop && len(p) == 4 {
+		return []piece{{true, p[0], p[1], p[2], p[3]}}
+	}
+	return basisPieces(p)
+}
+
+func basisPieces(p []point) []piece {
+	if len(p) < 2 {
+		return nil
+	}
+	if len(p) == 2 {
+		return []piece{{a: p[0], d: p[1]}}
+	}
+	out := []piece{{a: p[0], d: point{(5*p[0].x + p[1].x) / 6, (5*p[0].y + p[1].y) / 6}}}
+	bez := func(p0, p1, p2 point) {
+		from := out[len(out)-1].d
+		out = append(out, piece{true, from,
+			point{(2*p0.x + p1.x) / 3, (2*p0.y + p1.y) / 3},
+			point{(p0.x + 2*p1.x) / 3, (p0.y + 2*p1.y) / 3},
+			point{(p0.x + 4*p1.x + p2.x) / 6, (p0.y + 4*p1.y + p2.y) / 6}})
+	}
+	for i := 2; i < len(p); i++ {
+		bez(p[i-2], p[i-1], p[i])
+	}
+	n := len(p)
+	bez(p[n-2], p[n-1], p[n-1])
+	return append(out, piece{a: out[len(out)-1].d, d: p[n-1]})
+}
+
+// sample is the drawn curve as a polyline, close enough to measure
+// clearances against.
+func sample(ps []piece) []point {
+	var out []point
+	for i, pc := range ps {
+		if i == 0 {
+			out = append(out, pc.a)
+		}
+		if !pc.cubic {
+			out = append(out, pc.d)
+			continue
+		}
+		const steps = 16
+		for k := 1; k <= steps; k++ {
+			t := float64(k) / steps
+			u := 1 - t
+			out = append(out, point{
+				u*u*u*pc.a.x + 3*u*u*t*pc.b.x + 3*u*t*t*pc.c.x + t*t*t*pc.d.x,
+				u*u*u*pc.a.y + 3*u*u*t*pc.b.y + 3*u*t*t*pc.c.y + t*t*t*pc.d.y,
+			})
+		}
+	}
+	return out
 }
