@@ -38,10 +38,16 @@ part of it a human would also read.
 
   Do this before running either browser suite. Both drive a real browser
   against the real built daemon — which is why a browser is needed at all,
-  rather than a DOM shim — and with the download missing they do not skip.
-  They fail at the call that would have started the browser, with
-  `Executable doesn't exist at …` and Playwright's own box telling you to
-  install one: `make e2e` exits 2, `pnpm --dir extension e2e` exits 1.
+  rather than a DOM shim. With the download missing, each suite that needs it
+  skips before starting anything, with one line naming the command above:
+
+  ```
+  # skipped: Playwright's Chromium is not downloaded (run pnpm --dir ui exec playwright install chromium)
+  ```
+
+  and the run exits 0. That is a skip, not a pass — read the output, not the
+  exit status. Under CI (`CI` set, and not `false` or `0`) the same missing
+  download is a failure instead, so CI's e2e job cannot go green by skipping.
 
 ## Building
 
@@ -135,8 +141,9 @@ red scan means something was published, not that the build broke.
 phone layout, the drawer, the middle-width layout, the display settings and
 the scrollbars, the tap targets, the asset cache, creating and deleting a
 note, the navigator's two orders, removing a root, the installable app, the
-service worker's cache name and flowcharts drawn as images: nine suites, 83
-tests. It is CI's second job.
+service worker's cache name, flowcharts drawn as images, and what a suite
+does when the browser is missing: ten suites, 88 tests. It is CI's second
+job.
 
 The extension has a browser suite of its own, which CI does not run, because
 it needs both the extension and the daemon built:
@@ -148,11 +155,10 @@ pnpm --dir extension e2e
 ```
 
 It loads the built extension into a real browser profile and clips into a
-daemon it starts itself. With either of those two halves missing it skips and
-names what is missing (`no mdn binary at …`) — worth knowing, because a suite
-that skips still exits 0 and reads like a pass. The browser download is not
-one of the halves it checks for: without it, this suite and `make e2e` both
-fail at launch, as above.
+daemon it starts itself. With either of those two halves missing, or the
+browser download, it skips and names what is missing (`no mdn binary at …`)
+— worth knowing, because a suite that skips still exits 0 and reads like a
+pass. Under CI it fails instead, as `make e2e` does.
 
 ## Running it while you work
 
