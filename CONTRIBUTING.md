@@ -46,20 +46,28 @@ part of it a human would also read.
 ## Building
 
 ```
-make build      # the UI bundle, the static ./mdn binary and ./mdn.1
+make build      # the UI bundle, ./mdn and its manual page ./mdn.1
 make extension  # the browser extension, into extension/dist, and a zip
 make install    # installs what make build made; needs root (PREFIX=... to change)
 make clean      # removes what build, extension and release produce
 make distclean  # clean, and both node_modules trees as well
 ```
 
+The Go and the Node that build a release are pinned exactly: `go.mod`'s
+`toolchain` line and `.node-version`. The pins exist for releases, so that a
+tag names the toolchain it was built with ([Checking a
+release](docs/releasing.md#checking-a-release)). For everyday work a newer
+local Go or Node is fine and is used as it is. An older Go makes Go's default
+`GOTOOLCHAIN=auto` download the pinned one on the first `go` command, which
+fails offline; `GOTOOLCHAIN=local` keeps the Go you have. Version managers that
+read `.node-version` (fnm, nodenv, volta) will ask for exactly that Node.
+
 `make install` is a copy and nothing else. It has no prerequisite: it installs
 the `./mdn` and `./mdn.1` that `make build` already made and
 `contrib/mdn.service` beside them, and refuses in one line, having copied
-nothing, if any of them is missing. So build
-as yourself and install as root — never the other way round, which is what used
-to run `pnpm install` and `go build` under `sudo` and leave root-owned files in
-your checkout (#163):
+nothing, if any of them is missing. So build as yourself and install as root —
+never the other way round, which is what used to run `pnpm install` and
+`go build` under `sudo` and leave root-owned files in your checkout (#163):
 
 ```
 make build
@@ -67,11 +75,12 @@ sudo make install
 ```
 
 The three destinations are `/usr/bin/mdn`, `/usr/share/man/man1/mdn.1.gz` and
-`/usr/lib/systemd/user/mdn.service`, which are paths the `.deb` installs too. **If the `md-notes` package is installed, do not:** both write
-`/usr/bin/mdn`, so `make install` would overwrite the packaged binary behind
-dpkg's back (`dpkg -V md-notes` then reports it modified) and a later
-`apt remove` would delete your build. Use a prefix or a staging directory of
-your own instead, which is also how to try an install without root:
+`/usr/lib/systemd/user/mdn.service`, which are paths the `.deb` installs too.
+**If the `md-notes` package is installed, do not:** both write `/usr/bin/mdn`,
+so `make install` would overwrite the packaged binary behind dpkg's back
+(`dpkg -V md-notes` then reports it modified) and a later `apt remove` would
+delete your build. Use a prefix or a staging directory of your own instead,
+which is also how to try an install without root:
 
 ```
 make install DESTDIR=$PWD/dist/scratch  # ./dist/scratch/usr/{bin,lib,share}/..., gitignored
@@ -95,9 +104,9 @@ search — `~/.local` is one — the unit needs copying to
 
 `make clean` removes the binary and its page, `ui/dist`, `extension/dist`, the
 extension zip and `dist/`, and nothing else; it attempts all of them and names
-what it could not remove rather than stopping at the first. `make distclean` also removes
-`ui/node_modules` and `extension/node_modules`, so the next build re-runs
-`pnpm install` and needs the network.
+what it could not remove rather than stopping at the first. `make distclean`
+also removes `ui/node_modules` and `extension/node_modules`, so the next build
+re-runs `pnpm install` and needs the network.
 
 The UI is built into the binary, so `make build` builds both halves; there is
 no separate step to remember. The version the binary reports comes from
