@@ -9,9 +9,11 @@
  * and — under CI, where a skipped suite would be a green job that checked
  * nothing — fails instead.
  *
- * This file needs no browser, so it never skips: it runs one real suite in a
- * child process whose `PLAYWRIGHT_BROWSERS_PATH` is an empty directory, which
- * is exactly a machine that never ran `playwright install`.
+ * This file needs no browser: it runs one real suite in a child process whose
+ * `PLAYWRIGHT_BROWSERS_PATH` is an empty directory, which is exactly a machine
+ * that never ran `playwright install`. It does need the Playwright package,
+ * and without it goes through `gate` like every other suite — a skip here, a
+ * failure under CI.
  */
 
 import { after, describe, it } from "node:test";
@@ -20,11 +22,13 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { INSTALL_CHROMIUM, loadPlaywright, missingBrowser, underCI, uiDir } from "./harness.mjs";
+import { INSTALL_CHROMIUM, gate, loadPlaywright, missingBrowser, underCI, uiDir } from "./harness.mjs";
 
 const playwright = loadPlaywright();
 
-describe("a browser suite without the browser", { skip: playwright === null && "playwright is not installed" }, () => {
+const blocker = gate(playwright === null ? "playwright is not installed (run make ui-deps, or set PLAYWRIGHT_ROOT)" : null);
+
+describe("a browser suite without the browser", { skip: blocker ?? false }, () => {
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), "mdn-no-browsers-"));
   after(() => fs.rmSync(empty, { recursive: true, force: true }));
 
@@ -55,7 +59,7 @@ describe("a browser suite without the browser", { skip: playwright === null && "
   it("fails under CI instead of skipping", () => {
     const { status, output } = run("true");
     assert.notEqual(status, 0, output);
-    assert.match(output, /under CI a browser suite fails rather than skipping/);
+    assert.match(output, /under CI an e2e suite fails rather than skipping/);
     assert.doesNotMatch(output, /# skipped:/);
   });
 

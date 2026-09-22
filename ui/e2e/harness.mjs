@@ -99,7 +99,7 @@ export function underCI(env = process.env) {
 export function gate(blocker, env = process.env) {
   if (blocker === null) return null;
   if (underCI(env)) {
-    throw new Error(`${blocker}; under CI a browser suite fails rather than skipping`);
+    throw new Error(`${blocker}; under CI an e2e suite fails rather than skipping`);
   }
   console.log(`# skipped: ${blocker}`);
   return blocker;
