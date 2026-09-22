@@ -307,8 +307,8 @@ If the device you are on can reach the daemon's machine, you do not need a
 local copy at all: `tailnet_host` lets the daemon answer to one extra host name
 behind `tailscale serve`, and the whole UI — reading, editing, creating,
 deleting, search, live update — works from another node on the tailnet after a
-token login, as does the extension's clipping. The
-README's [Over the tailnet](../README.md#over-the-tailnet) section and
+token login, as does the extension's clipping. [Running
+md-notes](running.md#from-another-device) and
 [the introduction](introduction.md#reaching-the-daemon-over-the-tailnet) cover
 the setup and what it narrows.
 

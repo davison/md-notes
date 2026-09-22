@@ -51,13 +51,21 @@ part of it a human would also read.
 
 ## Building
 
+Building from source is the developer route, and where the released binaries
+come from. A person who only wants to run md-notes has the packages instead:
+[Installing md-notes](docs/install.md).
+
 ```
 make build      # the UI bundle, ./mdn and its manual page ./mdn.1
 make extension  # the browser extension, into extension/dist, and a zip
 make install    # installs what make build made; needs root (PREFIX=... to change)
 make clean      # removes what build, extension and release produce
 make distclean  # clean, and both node_modules trees as well
+make release    # everything a release publishes, into dist/ (VERSION=v0.1.0)
 ```
+
+`make check`, `make e2e` and `make vuln` are under [Testing](#testing), and
+`make release` under [Cutting a release](#cutting-a-release).
 
 The Go and the Node that build a release are pinned exactly: `go.mod`'s
 `toolchain` line and `.node-version`. The pins exist for releases, so that a
@@ -217,9 +225,10 @@ Bare `mdn token` reads the token under your home directory instead — and
 creates one there if there is none — so against a scratch daemon it prints a
 token that daemon has never heard of.
 
-The README's [Running](README.md#running) section describes the configuration
-file, the tailnet host and the rest of the daemon's behaviour; there is no
-need to repeat it here.
+[Running md-notes](docs/running.md) describes the configuration file, the
+roots, the token and the tailnet host, and
+[the introduction](docs/introduction.md) the rest of the daemon's behaviour;
+there is no need to repeat either here.
 
 ## Commit messages
 
