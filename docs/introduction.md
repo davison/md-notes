@@ -961,10 +961,14 @@ scrolling both ways if it is larger than the window. **Escape**, the Close butto
 a click beside the drawing closes it, and focus goes back to the diagram. This view is
 in the page's palette, e-ink included, and has no animation. It shows the diagram as
 it is now: a change of palette while it is open redraws it, and so does an edit to
-the diagram's source through [live update](#live-update). If the diagram leaves the
-note or its drawing fails while the view is open, the view closes and focus goes to
-the note's title
-([PR #202](https://github.com/davison/md-notes/pull/202#issuecomment-5774856964)).
+the diagram's source through [live update](#live-update), with focus staying in the
+view. If the diagram leaves the note or its drawing fails while the view is open, the
+view closes and focus goes to the note's title. The same happens when one save both
+removes the diagram and adds or reorders others: the view never moves to a diagram
+you did not open. If the whole note goes, focus goes to the title of what the pane
+shows instead
+([PR #202](https://github.com/davison/md-notes/pull/202#issuecomment-5774856964),
+[round two](https://github.com/davison/md-notes/pull/202#issuecomment-5775029763)).
 
 **Sized before they load.** So that a search hit or a line link lands on its target
 rather than being pushed away as the drawings above it arrive, the reading view asks
