@@ -173,7 +173,10 @@ notes_root:
 The recent roots, added with
 .B mdn open
 or by the browser extension, with their slugs, so they survive a restart.
-Permanent roots are configuration and are never written here.
+The notes root and permanent roots are configuration: the daemon never adds them
+here. A recent root whose folder is now configured is served once, as
+configured, and its entry stays in this file, so a start without that
+configuration serves it as a recent root again, under its old slug.
 .TP
 .I ~/.local/state/mdn/token
 The bearer token clients present, created on first start.
