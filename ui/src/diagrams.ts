@@ -290,18 +290,21 @@ export function decorate(
 const TAKEOVER = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
 
 /**
- * Keeps a scroll target in place while the diagram images above it that the
- * daemon did not measure settle (#177). Such an image has no box until it
- * loads, and each one that loads, or fails and brings its code block back,
- * moves everything below it; the target is scrolled to again each time. The
- * measured ones need nothing: their boxes are reserved.
+ * Keeps a scroll target in place while the diagram images above it settle
+ * (#177). An image the daemon did not measure has no box until it loads,
+ * and any image that fails — measured or not — gives its place back to its
+ * code block, which is another height (review of PR #202, nit 2, taken by
+ * #189). Each settles by loading or failing, and moves everything below it
+ * when it does; the target is scrolled to again each time. A measured image
+ * that loads moves nothing, and scrolling to the target again then changes
+ * nothing either.
  *
  * The page lets go as soon as the reader scrolls, clicks or types, when
  * every such image has settled, or when the returned function is called.
  */
 export function holdInView(target: Element): () => void {
   const scope = target.closest(".markdown") ?? target.ownerDocument;
-  const pending = [...scope.querySelectorAll<HTMLImageElement>(`img.${DIAGRAM_CLASS}:not([height])`)].filter(
+  const pending = [...scope.querySelectorAll<HTMLImageElement>(`img.${DIAGRAM_CLASS}`)].filter(
     (img) => !img.complete && img.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING,
   );
   if (pending.length === 0) return () => {};
