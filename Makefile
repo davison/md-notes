@@ -109,10 +109,12 @@ e2e: build
 # The frames are then squeezed with oxipng, losslessly — the pixels are
 # unchanged and the files about a third smaller, which is a third less for
 # every regeneration to add to the history. Without oxipng on PATH the target
-# says so and fails, rather than leaving frames that should not be committed.
-extension-screenshots: build extension
+# says so and fails before it builds or photographs anything, so it never
+# leaves frames in the tree that should not be committed.
+extension-screenshots:
+	@command -v oxipng >/dev/null || { echo "oxipng is not on PATH, and extension-screenshots finishes with it: install it first (https://github.com/oxipng/oxipng)" >&2; exit 1; }
+	$(MAKE) build extension
 	node extension/scripts/screenshots.mjs
-	@command -v oxipng >/dev/null || { echo "oxipng is not on PATH: install it and run oxipng -o max --strip safe docs/images/extension/*.png before committing" >&2; exit 1; }
 	oxipng -o max --strip safe docs/images/extension/*.png
 
 ## vuln: scan the Go module graph and both lockfiles for published vulnerabilities

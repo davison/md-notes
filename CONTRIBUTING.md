@@ -174,8 +174,8 @@ unshare --user --map-root-user --net -- \
 
 The target finishes by running `oxipng -o max --strip safe` over the four
 files, which is lossless and makes them about a third smaller, so it needs
-[oxipng](https://github.com/oxipng/oxipng) on `PATH` and stops with a message
-if it is not there. Rerun it when the popup, the options page or the app's
+[oxipng](https://github.com/oxipng/oxipng) on `PATH`; it looks for it first,
+and stops with a message before building anything if it is not there. Rerun it when the popup, the options page or the app's
 layout changes, and look at what moved before committing the result.
 
 ## Running it while you work

@@ -415,15 +415,17 @@ extension sends and keeps with them is in [Privacy](privacy.md).
 `chrome.storage.local`: the URL of your own daemon and the bearer token that
 daemon printed for you. You type both on the options page. Every request goes
 to that URL; the token goes with every request to a daemon that is not on this
-machine, and to one that is only with the writes and the connection test —
-the intercept's read of the registered folders carries none. Two further
+machine, and to one that is only with the writes and the connection test's
+last request — the intercept's read of the registered folders carries none
+([Privacy](privacy.md#what-leaves-your-browser-and-where-it-goes) has each
+request). Two further
 values are held in `chrome.storage.session`, which is discarded when the
 browser closes: the clip you have prepared but not yet saved, which has to
 survive the popup closing and the service worker being shut down between
 preparing it and pressing **Save to notes**, and the per-tab record the popup
 reads to explain the toolbar badge. That record holds the `file:` address the
-extension last acted on in that tab, and it is dropped when the tab loads
-another page or closes. Nothing is kept about the web pages you visit.
+extension last acted on in that tab, and it is dropped when the tab goes
+anywhere else or closes. Nothing is kept about the web pages you visit.
 
 **`contextMenus`.** Two entries in the page's right-click menu, **Clip page to
 md-notes** and **Clip selection to md-notes**, which are the second of the two
