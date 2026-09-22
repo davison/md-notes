@@ -33,6 +33,10 @@
  *     unshare --user --map-root-user --net -- \
  *       sh -c 'ip link set lo up; make extension-screenshots'
  *
+ * `make extension-screenshots` then runs `oxipng -o max --strip safe` over
+ * the four files: lossless, and about a third smaller. Running this script on
+ * its own skips that step, so do it by hand before committing.
+ *
  * Consecutive runs give the same pictures, and usually the same bytes. Two
  * things can still move them: the date, which the daemon names a clip for and
  * which is in the app's navigator in one shot, and a few antialiased pixels
@@ -71,7 +75,7 @@ const HEIGHT = 800;
  * the port it was started with (`internal/server/server.go`, the loopback
  * guard), which is a defence against DNS rebinding and not one to work
  * around. So this refuses to run rather than rendering an address the app did
- * not produce. `README.md` in this directory says how to run it without
+ * not produce. The `unshare` line in this file's header runs it without
  * stopping a daemon you already have on 7337.
  */
 const DAEMON_PORT = 7337;
