@@ -15,9 +15,10 @@ function stubChrome() {
   const session: Record<string, unknown> = {};
   const local: Record<string, unknown> = {};
   const area = (items: Record<string, unknown>) => ({
-    get: async (keys: string[]) => {
+    // `null` is the whole area, as in chrome.storage.
+    get: async (keys: string[] | null) => {
       const out: Record<string, unknown> = {};
-      for (const k of keys) if (k in items) out[k] = items[k];
+      for (const k of keys ?? Object.keys(items)) if (k in items) out[k] = items[k];
       return out;
     },
     set: async (next: Record<string, unknown>) => {
@@ -30,6 +31,9 @@ function stubChrome() {
   const badge = { text: new Map<number, string>(), title: new Map<number, string>(), colour: "" };
   const updated: { tabId: number; url: string }[] = [];
   const listener = { addListener: (_fn: unknown) => undefined };
+  /** The navigation listeners, kept so a test can deliver an event. */
+  type OnUpdated = (tabId: number, change: { status?: string; url?: string }, tab: { url?: string }) => void;
+  const onUpdated: OnUpdated[] = [];
   const chrome = {
     storage: { session: area(session), local: area(local) },
     action: {
@@ -47,13 +51,13 @@ function stubChrome() {
       update: async (tabId: number, o: { url: string }) => {
         updated.push({ tabId, url: o.url });
       },
-      onUpdated: listener,
+      onUpdated: { addListener: (fn: OnUpdated) => void onUpdated.push(fn) },
       onRemoved: listener,
     },
     runtime: { onInstalled: listener, onStartup: listener, onMessage: listener },
     contextMenus: { onClicked: listener, removeAll: async () => undefined, create: () => undefined },
   };
-  return { chrome, session, local, badge, updated };
+  return { chrome, session, local, badge, updated, onUpdated };
 }
 
 const stub = stubChrome();
@@ -124,5 +128,62 @@ describe("the file-URL intercept in the worker", () => {
     expect(stub.updated).toEqual([{ tabId: 5, url: "http://localhost:7337/r/scratch/todo.md" }]);
     expect(stub.badge.text.get(5)).toBe("");
     expect((stub.session["status:5"] as { kind: string }).kind).toBe("opened");
+  });
+});
+
+describe("a tab that moves on to a local file that is not a note", () => {
+  // `file:` URLs are delivered to the worker whatever they name, and one the
+  // intercept ignores — a text file, a directory listing — is still the tab
+  // moving on from the note its record names.
+  it("drops the record the last note left", async () => {
+    vi.stubGlobal("fetch", daemon([]));
+    await handleNavigation(6, "file:///tmp/scratch/no-such-note.md");
+    expect(stub.session["status:6"]).toBeDefined();
+
+    const result = await handleNavigation(6, "file:///tmp/scratch/list.txt");
+    expect(result).toMatchObject({ status: "ignored" });
+    expect(stub.session["status:6"]).toBeUndefined();
+    expect(stub.badge.text.get(6)).toBe("");
+  });
+});
+
+describe("a worker that was stopped between the record and the navigation", () => {
+  // Chromium stops an idle MV3 worker after about thirty seconds, and the
+  // next event starts a fresh one whose in-memory state is empty. The record
+  // the popup reads is in session storage and outlives it; it carries the
+  // `file:` URL the tab was showing, so it must not outlive the tab moving on
+  // (the review of PR #203, finding 1).
+  it("still drops the record, and the badge, when the tab moves on", async () => {
+    stub.session["status:9"] = {
+      kind: "unreachable",
+      message: "daemon not reachable at http://localhost:7337",
+      source: "file:///home/you/elsewhere/a.md",
+      at: 1,
+    };
+    stub.badge.text.set(9, "!");
+
+    // A fresh module is a fresh worker.
+    vi.resetModules();
+    stub.onUpdated.length = 0;
+    await import("./background");
+    expect(stub.onUpdated).toHaveLength(1);
+
+    // A `loading` with no URL: an origin outside the extension's permissions,
+    // which is to say the ordinary web.
+    stub.onUpdated[0](9, { status: "loading" }, {});
+    await vi.waitFor(() => expect(stub.session["status:9"]).toBeUndefined());
+    expect(stub.badge.text.get(9)).toBe("");
+  });
+
+  it("leaves another tab's record alone", async () => {
+    stub.session["status:9"] = { kind: "unreachable", message: "m", source: "file:///a.md", at: 1 };
+    stub.session["status:10"] = { kind: "opened", message: "m", source: "file:///b.md", at: 1 };
+    vi.resetModules();
+    stub.onUpdated.length = 0;
+    await import("./background");
+
+    stub.onUpdated[0](9, { status: "loading" }, {});
+    await vi.waitFor(() => expect(stub.session["status:9"]).toBeUndefined());
+    expect(stub.session["status:10"]).toBeDefined();
   });
 });

@@ -8,7 +8,7 @@ function fakeStore(): StatusStore & { items: Record<string, unknown> } {
     items,
     async get(keys) {
       const out: Record<string, unknown> = {};
-      for (const k of keys) if (k in items) out[k] = items[k];
+      for (const k of keys ?? Object.keys(items)) if (k in items) out[k] = items[k];
       return out;
     },
     async set(next) {

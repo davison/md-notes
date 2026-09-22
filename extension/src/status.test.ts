@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clearTabStatus, getTabStatus, setTabStatus, statusKey, type StatusStore } from "./status";
+import { clearTabStatus, getTabStatus, setTabStatus, statusKey, tabsWithStatus, type StatusStore } from "./status";
 
 function fakeStore(): StatusStore & { items: Record<string, unknown> } {
   const items: Record<string, unknown> = {};
@@ -7,7 +7,7 @@ function fakeStore(): StatusStore & { items: Record<string, unknown> } {
     items,
     async get(keys) {
       const out: Record<string, unknown> = {};
-      for (const k of keys) if (k in items) out[k] = items[k];
+      for (const k of keys ?? Object.keys(items)) if (k in items) out[k] = items[k];
       return out;
     },
     async set(next) {
@@ -42,6 +42,14 @@ describe("tab status", () => {
     await setTabStatus(7, { kind: "opened", message: "ok", source: "file:///n/a.md", at: 1 }, store);
     await clearTabStatus(7, store);
     expect(await getTabStatus(7, store)).toBeNull();
+  });
+
+  it("lists the tabs that have a record, and nothing else in the area", async () => {
+    const store = fakeStore();
+    await setTabStatus(7, { kind: "opened", message: "ok", source: "file:///n/a.md", at: 1 }, store);
+    await setTabStatus(12, { kind: "unreachable", message: "no", source: "file:///n/b.md", at: 2 }, store);
+    store.items.pendingClip = { tabId: 3 };
+    expect((await tabsWithStatus(store)).sort((a, b) => a - b)).toEqual([7, 12]);
   });
 
   it("ignores a stored value of the wrong shape", async () => {

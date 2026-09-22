@@ -407,6 +407,54 @@ describe("file URL intercept", { skip: blocker ?? false }, () => {
     assert.match(await page.textContent("#status"), /daemon not reachable/);
     await page.close();
   });
+
+  // Last in the file on purpose: it stops the worker, and Playwright's handle
+  // on it is not one to lean on after that.
+  it("forgets a tab that has moved on even when the worker was stopped in between", async () => {
+    // Chromium stops an idle worker after about thirty seconds and starts a
+    // fresh one for the next event. The record is in session storage and
+    // outlives the worker; it names the `file:` URL the tab showed, so it has
+    // to go when the tab moves on whichever worker sees the navigation (the
+    // review of PR #203, finding 1, measured it staying).
+    await stopDaemon();
+    const page = await context.newPage();
+    const fileUrl = noteFileUrl();
+    await page.goto(fileUrl);
+    const tabId = await waitFor(() => pageTabId(worker, fileUrl), "the tab to appear");
+    assert.equal((await waitFor(() => tabStatus(worker, tabId), "the failure to be recorded")).kind, "unreachable");
+
+    // Stopped the way the idle timer stops it, through DevTools, and waited
+    // for on DevTools' own report of the worker's state.
+    const cdp = await context.newCDPSession(page);
+    const stopped = new Promise((resolve) =>
+      cdp.on("ServiceWorker.workerVersionUpdated", ({ versions }) => {
+        if (versions.some((v) => v.scriptURL.endsWith("/background.js") && v.runningStatus === "stopped")) resolve();
+      }),
+    );
+    await cdp.send("ServiceWorker.enable");
+    await cdp.send("ServiceWorker.stopAllWorkers");
+    await withTimeout(stopped, 10000, "the worker to stop");
+    await cdp.detach();
+
+    // The navigation is the event that starts a fresh worker. The record is
+    // read from an extension page from here on, not through the old handle.
+    await page.goto(elsewhereOrigin);
+    const reader = await context.newPage();
+    await reader.goto(`chrome-extension://${extensionId}/options.html`);
+    await waitFor(
+      () => reader.evaluate((key) => chrome.storage.session.get([key]).then((s) => !(key in s)), `status:${tabId}`),
+      "the restarted worker to drop the record",
+      5000,
+    );
+    await reader.close();
+
+    // and the popup over that page has nothing to say either
+    await page.goto(`chrome-extension://${extensionId}/popup.html`);
+    await page.waitForSelector("#status");
+    assert.equal(await page.textContent("#status"), "Nothing to report for this tab.");
+    await page.close();
+    await startDaemon();
+  });
 });
 
 /** The Chromium tab id showing a URL, or null while it has not settled. */
@@ -416,6 +464,15 @@ function pageTabId(worker, url) {
     const tab = tabs.find((t) => t.url === u || t.pendingUrl === u);
     return tab === undefined ? null : tab.id;
   }, url);
+}
+
+/** A promise, or a failure naming what never happened, rather than a hang. */
+function withTimeout(promise, ms, what) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out waiting for ${what}`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /** What the extension last recorded about a tab, or null if nothing yet. */
