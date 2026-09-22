@@ -435,14 +435,20 @@ and their failures, the HTML-to-markdown conversion on fixtures, the clip
 request built from an extraction, every failure the popup has to tell apart,
 and the manifest's permission set.
 
-There are also two end-to-end checks that load the built extension into
-headless Chromium against a real daemon on a temporary root — one for the
-file-URL intercept, one for clipping a page and a selection from a local
-static page. They need a Chromium binary and a built `mdn`, so they are not
-part of `make check`; they skip themselves, saying which prerequisite is
-missing, when those are absent:
+There are also three end-to-end suites that load the built extension into
+headless Chromium against a real daemon on a temporary root — the file-URL
+intercept, clipping a page and a selection from a local static page, and both
+of those against a daemon reached under a tailnet name. They need
+Playwright's Chromium, a built `mdn` and a built extension, so they are not
+part of `make check` and CI does not run them. When any of the three is
+missing they skip, with one line saying which and how to get it, and exit 0
+— except under CI, where a missing prerequisite fails them instead:
 
 ```
+make ui-deps
+pnpm --dir ui exec playwright install chromium
 make build extension
-PLAYWRIGHT_ROOT=/path/to/a/playwright/install pnpm --dir extension e2e
+pnpm --dir extension e2e
 ```
+
+Playwright comes from `ui/`'s install; `PLAYWRIGHT_ROOT` names another one.

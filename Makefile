@@ -87,7 +87,10 @@ check: vet test build extension
 #
 #     pnpm --dir ui exec playwright install chromium
 #
-# The suite skips rather than fails when the browser or the binary is absent.
+# Without the download each browser suite skips, with one line naming that
+# command, and exits 0 — except under CI (`CI` set, and not `false` or `0`),
+# where a missing prerequisite fails the run instead, so CI's e2e job can
+# never go green by skipping (davison/md-notes#153).
 # The script names the files by glob rather than passing the directory:
 # `node --test e2e/` is a module path to Node 24, not a directory to walk.
 e2e: build
