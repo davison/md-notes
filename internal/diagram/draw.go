@@ -233,21 +233,24 @@ func (e *engine) draw() *drawing {
 			// reaching further out, so loops on one node nest rather than
 			// cross.
 			spread := func(size float64) float64 { return math.Min(size/2-2, size/6+5*float64(k)) }
+			// Loops stand off the TB-space left of their node, above it
+			// when ranks run across and to its left otherwise: the right
+			// is where back edges leave and enter.
 			if e.dir.horizontal() {
-				y := nd.y + nd.h/2
+				y := nd.y - nd.h/2
 				a := spread(nd.w)
-				de.pts = []point{{nd.x - a, y}, {nd.x - a - 6, y + reach}, {nd.x + a + 6, y + reach}, {nd.x + a, y}}
+				de.pts = []point{{nd.x - a, y}, {nd.x - a - 6, y - reach}, {nd.x + a + 6, y - reach}, {nd.x + a, y}}
 				if len(ed.Label) > 0 {
 					w, h := textBox(ed.Label)
-					de.lx, de.ly, de.lw, de.lh = nd.x, y+reach+4+h/2, w, h
+					de.lx, de.ly, de.lw, de.lh = nd.x, y-reach-4-h/2, w, h
 				}
 			} else {
-				x := nd.x + nd.w/2
+				x := nd.x - nd.w/2
 				a := spread(nd.h)
-				de.pts = []point{{x, nd.y - a}, {x + reach, nd.y - a - 6}, {x + reach, nd.y + a + 6}, {x, nd.y + a}}
+				de.pts = []point{{x, nd.y - a}, {x - reach, nd.y - a - 6}, {x - reach, nd.y + a + 6}, {x, nd.y + a}}
 				if len(ed.Label) > 0 {
 					w, h := textBox(ed.Label)
-					de.lx, de.ly, de.lw, de.lh = x+reach+4+w/2, nd.y, w, h
+					de.lx, de.ly, de.lw, de.lh = x-reach-4-w/2, nd.y, w, h
 				}
 			}
 			if len(ed.Label) == 0 {
@@ -265,13 +268,23 @@ const titleGap = 3.0
 // placeTitles puts each subgraph's title in its band, at the place nearest
 // the centre that no edge crosses (davison/md-notes#174). Where there is
 // no such place the title stays centred, and the subgraph is returned with
-// the room its title needs, to be kept clear of its contents on the side
-// of the box the edges leave freer: negative on the left, positive on the
-// right.
-func placeTitles(d *drawing) map[int]float64 {
-	var curves [][]point
-	for _, e := range d.edges {
-		curves = append(curves, sample(e.pieces()))
+// the room its title lacks: how much wider than the free end of its band,
+// on the side whose end is the wider, the band would have to be. Negative
+// is on the left, positive on the right. It checks the context once per
+// subgraph, and only looks at the parts of edges that could cross the band.
+func (e *engine) placeTitles(d *drawing) (map[int]float64, error) {
+	type curve struct {
+		pts            []point
+		x0, y0, x1, y1 float64
+	}
+	var curves []curve
+	for _, ed := range d.edges {
+		c := curve{pts: sample(ed.pieces()), x0: math.Inf(1), y0: math.Inf(1), x1: math.Inf(-1), y1: math.Inf(-1)}
+		for _, p := range c.pts {
+			c.x0, c.y0 = math.Min(c.x0, p.x), math.Min(c.y0, p.y)
+			c.x1, c.y1 = math.Max(c.x1, p.x), math.Max(c.y1, p.y)
+		}
+		curves = append(curves, c)
 	}
 	blocked := map[int]float64{}
 	for i := range d.clusters {
@@ -279,12 +292,20 @@ func placeTitles(d *drawing) map[int]float64 {
 		if len(c.title) == 0 {
 			continue
 		}
+		if err := e.check("title"); err != nil {
+			return nil, err
+		}
 		tw, _ := textBox(c.title)
 		_, ty0, _, ty1 := c.titleBox()
 		ty0, ty1 = ty0-titleGap, ty1+titleGap
+		left, right := c.x+clusterPad/2, c.x+c.w-clusterPad/2
 		type span struct{ a, b float64 }
 		var busy []span
-		for _, pts := range curves {
+		for _, cv := range curves {
+			if cv.y1 < ty0 || cv.y0 > ty1 || cv.x1 < left-titleGap || cv.x0 > right+titleGap {
+				continue
+			}
+			pts := cv.pts
 			for k := 0; k+1 < len(pts); k++ {
 				p, q := pts[k], pts[k+1]
 				if math.Max(p.y, q.y) < ty0 || math.Min(p.y, q.y) > ty1 {
@@ -300,21 +321,27 @@ func placeTitles(d *drawing) map[int]float64 {
 				busy = append(busy, span{math.Min(xa, xb) - titleGap, math.Max(xa, xb) + titleGap})
 			}
 		}
+		// Merged, in order, so the gaps between them are the free places.
+		sort.Slice(busy, func(a, b int) bool { return busy[a].a < busy[b].a })
+		merged := busy[:0]
+		for _, s := range busy {
+			if n := len(merged); n > 0 && s.a <= merged[n-1].b {
+				merged[n-1].b = math.Max(merged[n-1].b, s.b)
+				continue
+			}
+			merged = append(merged, s)
+		}
 		mid := c.x + c.w/2
-		lo, hi := c.x+clusterPad/2+tw/2, c.x+c.w-clusterPad/2-tw/2
+		lo, hi := left+tw/2, right-tw/2
 		if lo > hi {
 			lo, hi = mid, mid
 		}
 		free := func(x float64) bool {
-			for _, s := range busy {
-				if x-tw/2 < s.b && s.a < x+tw/2 {
-					return false
-				}
-			}
-			return true
+			k := sort.Search(len(merged), func(k int) bool { return merged[k].b > x-tw/2 })
+			return k == len(merged) || merged[k].a >= x+tw/2
 		}
 		cands := []float64{mid}
-		for _, s := range busy {
+		for _, s := range merged {
 			cands = append(cands, s.a-tw/2, s.b+tw/2)
 		}
 		best, found := mid, false
@@ -325,19 +352,17 @@ func placeTitles(d *drawing) map[int]float64 {
 			}
 		}
 		c.tx = best
-		if !found {
-			left, right := c.x+clusterPad/2, c.x+c.w-clusterPad/2
-			first, last := right, left
-			for _, s := range busy {
-				first, last = math.Min(first, s.a), math.Max(last, s.b)
-			}
-			blocked[c.ref] = tw + 2*titleGap
-			if first-left >= right-last {
-				blocked[c.ref] = -blocked[c.ref]
+		if !found && len(merged) > 0 {
+			l := math.Max(0, merged[0].a-left)
+			r := math.Max(0, right-merged[len(merged)-1].b)
+			if l >= r {
+				blocked[c.ref] = -(tw - l + titleGap)
+			} else {
+				blocked[c.ref] = tw - r + titleGap
 			}
 		}
 	}
-	return blocked
+	return blocked, nil
 }
 
 func sortByDepth(out []dcluster, cs []*cluster) {

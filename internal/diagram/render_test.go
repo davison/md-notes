@@ -175,7 +175,9 @@ func TestLayoutChecksContext(t *testing.T) {
 	if _, err := layout(full, f, DefaultLimits); err != nil {
 		t.Fatal(err)
 	}
-	phases := []string{"rank", "order", "position"}
+	// Title placement checks too, and when it makes room for a title the
+	// position and title phases run again.
+	phases := []string{"rank", "order", "position", "title"}
 	stops := map[string]int{}
 	var sequence []string
 	for n := 0; n < full.calls; n++ {
@@ -206,8 +208,12 @@ func TestLayoutChecksContext(t *testing.T) {
 			t.Errorf("the %s phase never checked its context (checks by phase: %v)", p, stops)
 		}
 	}
-	if strings.Join(sequence, ",") != strings.Join(phases, ",") {
-		t.Errorf("the phases checked in the order %v, want %v", sequence, phases)
+	ok := len(sequence) >= len(phases) && strings.Join(sequence[:len(phases)], ",") == strings.Join(phases, ",")
+	for i := len(phases); ok && i < len(sequence); i++ {
+		ok = sequence[i] == "position" || sequence[i] == "title"
+	}
+	if !ok {
+		t.Errorf("the phases checked in the order %v, want %v, then only position and title", sequence, phases)
 	}
 }
 
