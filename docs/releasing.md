@@ -51,9 +51,10 @@ version literal that has to be bumped by hand.
 1. **Checks the commit** by calling `ci.yml` itself, so a release runs exactly
    the checks every other commit runs — `make check` and the browser suite —
    and cannot drift from them.
-2. **Builds** with `make release VERSION=<tag>`: the static daemon for
-   `linux/amd64` and `linux/arm64` with `CGO_ENABLED=0`, the extension zip, and
-   `SHA256SUMS` over all three, into `dist/`.
+2. **Builds** with `make release VERSION=<tag>`, using the Go and the Node the
+   tag pins (see [Checking a release](#checking-a-release)): the static daemon
+   for `linux/amd64` and `linux/arm64` with `CGO_ENABLED=0`, the extension
+   zip, and `SHA256SUMS` over all three, into `dist/`.
 3. **Checks the versions agree**, as above.
 4. **Drafts the GitHub Release** with `gh release create --draft
    --generate-notes --verify-tag`, carrying every file in `dist/`. The notes
@@ -143,6 +144,68 @@ uploaded rather than failing on a name that is already there. `--clobber`
 deletes the existing asset *before* it uploads the new one, so an upload that
 fails half way leaves neither: a re-run of the channel is the recovery, and
 there is nothing else to undo.
+
+## Checking a release
+
+A release can be rebuilt from its tag to the same bytes. For v0.1.0 this was
+measured, not assumed: two builds in one runner job, a third in another job, a
+fourth on Ubuntu 26.04, and a local rebuild on Arch all reproduced the three
+published SHA-256 sums exactly
+([#193](https://github.com/davison/md-notes/issues/193#issuecomment-5773496854)).
+It holds on one condition, which is **the toolchain**. The tag names it:
+
+- **Go** is the `toolchain` line in `go.mod`, for example `toolchain go1.27.1`.
+  It has to be upstream's build of that version. Arch's `go1.27.1-X:nodwarf5`
+  is patched and makes different binaries at the same version number.
+  `GOTOOLCHAIN=go1.27.1` fetches upstream's from the Go proxy, whatever Go you
+  have installed. A release built before the pin (v0.1.0) records its Go in the
+  binary: `go version -m mdn-v0.1.0-linux-amd64` prints `go1.27.1` on its first
+  line.
+- **Node** is `.node-version`. It has to be a nodejs.org build of that version.
+  The daemon embeds `ui/dist`, which includes gzip copies of every asset, and
+  the extension zip is deflated too. Both come from Node's own zlib, so a Node
+  linked against a distribution's zlib (Arch's is one) changes the zip *and*
+  both binaries while every `.js` file stays identical. v0.1.0 predates the
+  pin and was built with Node 24.20.0.
+
+pnpm's version doesn't matter: the lockfiles pin everything it installs, and
+10.33 and 10.34 measured the same.
+
+To check a release:
+
+```
+git clone https://github.com/davison/md-notes && cd md-notes
+git checkout v0.2.0                        # the tag you are checking
+export GOTOOLCHAIN=$(sed -n 's/^toolchain //p' go.mod)
+# from https://nodejs.org/dist/v<version>/, unpacked anywhere:
+export PATH=/path/to/node-v$(cat .node-version)-linux-x64/bin:$PATH
+make release VERSION=v0.2.0
+gh release download v0.2.0 --pattern SHA256SUMS --output published.sha256
+diff dist/SHA256SUMS published.sha256 && echo reproduced
+```
+
+Rebuild in a clean checkout, and keep the output in `dist/`, which is
+gitignored. The binaries carry a `vcs.modified` flag, so any untracked file
+that isn't ignored (a `DIST=` of your own, say) flips it and changes both
+binaries. `make release` wants an `amd64` or `arm64` Linux host because it runs
+one of the binaries it builds; the runner image makes no difference.
+
+**If you can't rebuild**, check the assets against `SHA256SUMS` instead, which
+is what every channel does. The packages carry the release's binaries
+unchanged: the `/usr/bin/mdn` inside the `.deb` and the AUR package is the
+release asset byte for byte, because `publish-deb.yml` checks the downloaded
+binaries against `SHA256SUMS` before packaging them and the PKGBUILD's
+`sha256sums_*` are copied out of the same file. So `sha256sum /usr/bin/mdn`
+on an installed system should print the matching line of the release's
+`SHA256SUMS`.
+
+**Moving the pins** is a one-line change each, reviewed like any other. Bump
+the `toolchain` line when a Go point release comes out. CI will prompt you:
+`make vuln` scans the pinned standard library, so a Go security release turns
+it red until the line moves. Bump `.node-version` when there's a reason to;
+Node builds the bundle but doesn't ship in it. The runner image is pinned the
+same way (`ubuntu-24.04` in every workflow; the reasons are at the top of
+`ci.yml`'s jobs), and `scripts/workflows/pins_test.go` holds all three.
 
 ## Proving it before you push
 
