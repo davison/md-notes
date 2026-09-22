@@ -60,6 +60,7 @@ func TestTheRenderIsByteStable(t *testing.T) {
 		PkgRel:     1,
 		SumLicense: strings.Repeat("a", 64),
 		SumUnit:    strings.Repeat("b", 64),
+		SumManpage: strings.Repeat("e", 64),
 		SumAMD64:   strings.Repeat("c", 64),
 		SumARM64:   strings.Repeat("d", 64),
 	}
@@ -104,10 +105,12 @@ func TestTheVersionAndTheChecksumsAreSubstituted(t *testing.T) {
 	// it is hash it, but a fixture that still carried the old ~/.local/bin line
 	// would read as though something here still rewrote it.
 	write(t, unit, "[Service]\nExecStart=/usr/bin/mdn serve\n")
+	manpage := filepath.Join(dir, "mdn.1")
+	write(t, manpage, ".TH MDN 1 \"@DATE@\" \"md-notes @VERSION@\"\n")
 	out := filepath.Join(dir, "out")
 
 	if err := run([]string{
-		"-version", "v1.2.3", "-sums", sums, "-license", license, "-unit", unit,
+		"-version", "v1.2.3", "-sums", sums, "-license", license, "-unit", unit, "-manpage", manpage,
 		"-maintainer", maintainerFileWithout(t, dir, placeholderMarker), "-out", out,
 	}, os.Stderr); err != nil {
 		t.Fatal(err)
@@ -145,19 +148,35 @@ func TestTheVersionAndTheChecksumsAreSubstituted(t *testing.T) {
 		"releases/download/v1.2.3/mdn-v1.2.3-linux-amd64",
 		"releases/download/v1.2.3/mdn-v1.2.3-linux-arm64",
 		"raw.githubusercontent.com/davison/md-notes/v1.2.3/contrib/mdn.service",
+		// The manual page, from the tag like the unit (davison/md-notes#168).
+		"md-notes-1.2.3-mdn.1::https://raw.githubusercontent.com/davison/md-notes/v1.2.3/contrib/mdn.1",
+		"sha256sums = " + sha256Of(t, manpage),
 	} {
 		if !strings.Contains(srcinfo, want) {
 			t.Errorf("the rendered .SRCINFO does not contain %q", want)
 		}
 	}
-	// The licence and the unit are hashed from the tree rather than read from
-	// the release, which carries neither.
+	// The licence, the unit and the page are hashed from the tree rather than
+	// read from the release, which carries none of them — in that order, the
+	// order of source=().
 	if strings.Contains(pkgbuild, zipSum) {
 		t.Error("the extension zip's checksum reached the PKGBUILD")
 	}
-	if !strings.Contains(pkgbuild, "sha256sums=('"+sha256Of(t, license)+"'") ||
-		!strings.Contains(pkgbuild, "            '"+sha256Of(t, unit)+"')") {
-		t.Errorf("the licence and the unit are not hashed from the files given:\n%s", pkgbuild)
+	if want := "sha256sums=('" + sha256Of(t, license) + "'\n" +
+		"            '" + sha256Of(t, unit) + "'\n" +
+		"            '" + sha256Of(t, manpage) + "')"; !strings.Contains(pkgbuild, want) {
+		t.Errorf("the licence, the unit and the page are not hashed from the files given, in source order:\n%s", pkgbuild)
+	}
+	// package() installs the page where the .deb does, less the .gz makepkg's
+	// zipman adds, and fills in both placeholders.
+	for _, want := range []string{
+		`"$srcdir/md-notes-$pkgver-mdn.1" >"$pkgdir/usr/share/man/man1/mdn.1"`,
+		`s/@VERSION@/$pkgver/g`,
+		`s/@DATE@/$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%d)/g`,
+	} {
+		if !strings.Contains(pkgbuild, want) {
+			t.Errorf("package() does not contain %q:\n%s", want, pkgbuild)
+		}
 	}
 }
 
@@ -244,6 +263,7 @@ func TestTheSRCINFOIsWhatMakepkgPrints(t *testing.T) {
 				PkgRel:     1,
 				SumLicense: strings.Repeat("a", 64),
 				SumUnit:    strings.Repeat("b", 64),
+				SumManpage: strings.Repeat("e", 64),
 				SumAMD64:   strings.Repeat("c", 64),
 				SumARM64:   strings.Repeat("d", 64),
 			}

@@ -2,9 +2,10 @@
 //
 // The package is md-notes-bin: it installs the binaries a release publishes
 // rather than building them, so everything that changes between releases is a
-// version and four checksums. Two of those checksums are the release's own,
-// read from its SHA256SUMS asset; the other two are of files in the tagged
-// tree, hashed here rather than guessed.
+// version and five checksums. Two of those checksums are the release's own,
+// read from its SHA256SUMS asset; the other three are of files in the tagged
+// tree — the licence, the unit and the manual page — hashed here rather than
+// guessed.
 //
 //	go run ./scripts/aurgen -version v0.1.0 -sums SHA256SUMS
 //
@@ -53,6 +54,7 @@ func run(args []string, stderr io.Writer) error {
 		sums        = fs.String("sums", "", "the release's SHA256SUMS asset")
 		licensePath = fs.String("license", "LICENSE", "the packaged software's licence, hashed into the source array")
 		unitPath    = fs.String("unit", filepath.Join("contrib", "mdn.service"), "the systemd user unit, hashed into the source array")
+		manPath     = fs.String("manpage", filepath.Join("contrib", "mdn.1"), "the manual page, placeholders and all, hashed into the source array")
 		maintainer  = fs.String("maintainer", filepath.Join("packaging", "aur", "MAINTAINER"), "file holding the # Maintainer: line's content")
 		pkgrel      = fs.Int("pkgrel", 1, "package release, bumped only for packaging changes at the same version")
 		out         = fs.String("out", filepath.Join("packaging", "aur"), "directory to write PKGBUILD and .SRCINFO into")
@@ -74,7 +76,7 @@ func run(args []string, stderr io.Writer) error {
 			return fmt.Errorf("-placeholder renders the committed template and takes neither -version nor -sums")
 		}
 		in.Version = placeholderVersion
-		in.SumLicense, in.SumUnit, in.SumAMD64, in.SumARM64 = skip, skip, skip, skip
+		in.SumLicense, in.SumUnit, in.SumManpage, in.SumAMD64, in.SumARM64 = skip, skip, skip, skip, skip
 	default:
 		if *version == "" {
 			return fmt.Errorf("-version is required (or -placeholder for the committed template)")
@@ -93,6 +95,9 @@ func run(args []string, stderr io.Writer) error {
 			return err
 		}
 		if in.SumUnit, err = fileSum(*unitPath); err != nil {
+			return err
+		}
+		if in.SumManpage, err = fileSum(*manPath); err != nil {
 			return err
 		}
 	}
@@ -141,6 +146,7 @@ type inputs struct {
 	PkgRel     int
 	SumLicense string
 	SumUnit    string
+	SumManpage string
 	SumAMD64   string
 	SumARM64   string
 }
@@ -172,6 +178,7 @@ func render(in inputs) (pkgbuild, srcinfo string, err error) {
 	for _, sum := range []struct{ what, value string }{
 		{"the licence", in.SumLicense},
 		{"the unit", in.SumUnit},
+		{"the manual page", in.SumManpage},
 		{"the amd64 binary", in.SumAMD64},
 		{"the arm64 binary", in.SumARM64},
 	} {
@@ -269,9 +276,18 @@ func fileSum(path string) (string, error) {
 // package() needs no branch on $CARCH — and the sources are renamed at all
 // because the guidelines require them to be unique in srcdir.
 //
-// The licence and the unit come from the tagged tree over raw.githubusercontent
-// rather than from the Release, because the release's assets are the bare
-// binaries, the extension zip and SHA256SUMS: no tarball carries the other two.
+// The licence, the unit and the manual page come from the tagged tree over
+// raw.githubusercontent rather than from the Release, because the release's
+// assets are the bare binaries, the extension zip and SHA256SUMS: no tarball
+// carries the other three. A tag cut before the page moved to contrib/
+// (v0.1.0) has no page at that URL, so this renders a package only for a
+// release made after davison/md-notes#168.
+//
+// The page is fetched with its @VERSION@ and @DATE@ placeholders and filled in
+// by package(): the version from $pkgver, as the .deb writes it, and the date
+// from SOURCE_DATE_EPOCH, which makepkg always sets — to the build time, or to
+// the recorded one when a package is rebuilt to be checked, so the page does
+// not stop the package being reproducible. makepkg's zipman compresses it.
 var pkgbuildTemplate = template.Must(template.New("PKGBUILD").Parse(
 	`# Maintainer: {{.Maintainer}}
 # Rendered by scripts/aurgen in davison/md-notes, from the version and the
@@ -293,9 +309,11 @@ conflicts=('md-notes')
 options=('!strip' '!debug')
 install={{.PkgName}}.install
 source=("md-notes-$pkgver-LICENSE::https://raw.githubusercontent.com/davison/md-notes/v$pkgver/LICENSE"
-        "md-notes-$pkgver-mdn.service::https://raw.githubusercontent.com/davison/md-notes/v$pkgver/contrib/mdn.service")
+        "md-notes-$pkgver-mdn.service::https://raw.githubusercontent.com/davison/md-notes/v$pkgver/contrib/mdn.service"
+        "md-notes-$pkgver-mdn.1::https://raw.githubusercontent.com/davison/md-notes/v$pkgver/contrib/mdn.1")
 sha256sums=('{{.SumLicense}}'
-            '{{.SumUnit}}')
+            '{{.SumUnit}}'
+            '{{.SumManpage}}')
 source_x86_64=("md-notes-$pkgver-mdn::https://github.com/davison/md-notes/releases/download/v$pkgver/mdn-v$pkgver-linux-amd64")
 sha256sums_x86_64=('{{.SumAMD64}}')
 source_aarch64=("md-notes-$pkgver-mdn::https://github.com/davison/md-notes/releases/download/v$pkgver/mdn-v$pkgver-linux-arm64")
@@ -312,6 +330,12 @@ package() {
 		"$pkgdir/usr/lib/systemd/user/mdn.service"
 	install -Dm644 "$srcdir/md-notes-$pkgver-LICENSE" \
 		"$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+	# The same page the .deb and make install carry, filled in the same way.
+	install -d "$pkgdir/usr/share/man/man1"
+	sed -e "s/@VERSION@/$pkgver/g" \
+		-e "s/@DATE@/$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%d)/g" \
+		"$srcdir/md-notes-$pkgver-mdn.1" >"$pkgdir/usr/share/man/man1/mdn.1"
+	chmod 644 "$pkgdir/usr/share/man/man1/mdn.1"
 }
 `))
 
@@ -337,8 +361,10 @@ var srcinfoTemplate = template.Must(template.New(".SRCINFO").Parse(
 	options = !debug
 	source = md-notes-{{.PkgVer}}-LICENSE::https://raw.githubusercontent.com/davison/md-notes/v{{.PkgVer}}/LICENSE
 	source = md-notes-{{.PkgVer}}-mdn.service::https://raw.githubusercontent.com/davison/md-notes/v{{.PkgVer}}/contrib/mdn.service
+	source = md-notes-{{.PkgVer}}-mdn.1::https://raw.githubusercontent.com/davison/md-notes/v{{.PkgVer}}/contrib/mdn.1
 	sha256sums = {{.SumLicense}}
 	sha256sums = {{.SumUnit}}
+	sha256sums = {{.SumManpage}}
 	source_x86_64 = md-notes-{{.PkgVer}}-mdn::https://github.com/davison/md-notes/releases/download/v{{.PkgVer}}/mdn-v{{.PkgVer}}-linux-amd64
 	sha256sums_x86_64 = {{.SumAMD64}}
 	source_aarch64 = md-notes-{{.PkgVer}}-mdn::https://github.com/davison/md-notes/releases/download/v{{.PkgVer}}/mdn-v{{.PkgVer}}-linux-arm64

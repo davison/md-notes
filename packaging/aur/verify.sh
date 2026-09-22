@@ -20,13 +20,22 @@
 # namcap has nothing to say about either the PKGBUILD or the built package;
 # that installing it puts the release's own binary on PATH, the tagged tree's
 # unit — byte for byte, and one systemd reads without complaint — where
-# systemd --user looks for it, and the licence where pacman expects it; and
-# that removing it leaves nothing behind.
+# systemd --user looks for it, the licence where pacman expects it, and the
+# manual page, filled in for this version, where man finds it; and that
+# removing it leaves nothing behind.
+#
+# The page is fetched from the tag, like the unit, and only tags cut after
+# davison/md-notes#168 have it at contrib/mdn.1: for v0.1.0 makepkg's download
+# of it 404s. Seed the build directory with it under its source name
+# (md-notes-<pkgver>-mdn.1) to check such a tag's package anyway; makepkg uses
+# a source file that is already there and still checks it against the PKGBUILD.
+# The fourth argument does that, and nothing else passes it.
 set -euo pipefail
 
 version=${1:?the release tag the package must report, e.g. v0.1.0}
 packaging=${2:-packaging/aur}
 unit_source=${3:-contrib/mdn.service}
+seed_manpage=${4:-}
 
 # This installs packages, installs the built package and removes it again. In a
 # container that is a clean room; on a real machine it is somebody's system,
@@ -37,7 +46,8 @@ if [ ! -e /run/.containerenv ] && [ ! -e /.dockerenv ] && [ -z "${container:-}" 
 	exit 1
 fi
 
-pacman -Syu --needed --noconfirm base-devel namcap sudo
+# man-db for `man -w`, the check that the page is where man looks.
+pacman -Syu --needed --noconfirm base-devel namcap sudo man-db
 
 # makepkg refuses to run as root, and rightly: the build is somebody else's
 # code. It needs sudo only to install the package's own dependencies.
@@ -47,6 +57,9 @@ build=/home/builder/build
 install -d -o builder -g builder "$build"
 install -o builder -g builder -m644 \
 	"$packaging/PKGBUILD" "$packaging/.SRCINFO" "$packaging"/*.install "$build/"
+if [ -n "$seed_manpage" ]; then
+	install -o builder -g builder -m644 "$seed_manpage" "$build/md-notes-${version#v}-mdn.1"
+fi
 
 sudo -u builder --login bash -euo pipefail -s <<'BUILD'
 cd ~/build
@@ -72,6 +85,17 @@ fi
 BUILD
 
 package=$(echo "$build"/*.pkg.tar.zst)
+
+# The archlinux image keeps itself small by telling pacman never to extract
+# manual pages (a `NoExtract = usr/share/man/* ...` line in /etc/pacman.conf),
+# so without this the package's page would be skipped on install and the check
+# below would fail for a reason that is the container's, not the package's.
+# A normal Arch system has no such line.
+sed -i 's#^\(NoExtract *= *\)usr/share/man/\* *#\1#' /etc/pacman.conf
+if grep -E '^NoExtract.*usr/share/man/' /etc/pacman.conf; then
+	echo "/etc/pacman.conf still keeps manual pages out; the page check below would be meaningless" >&2
+	exit 1
+fi
 echo "== pacman -U $(basename "$package") =="
 pacman -U --noconfirm "$package"
 
@@ -95,6 +119,22 @@ if ! cmp -s "$unit" "$unit_source"; then
 	exit 1
 fi
 test -s /usr/share/licenses/md-notes-bin/LICENSE
+
+page=/usr/share/man/man1/mdn.1.gz
+if [ "$(man -w mdn)" != "$page" ]; then
+	echo "man -w mdn answers '$(man -w mdn 2>&1)', want $page" >&2
+	exit 1
+fi
+if zgrep -q '@[A-Z]*@' "$page"; then
+	echo "$page still carries a placeholder" >&2
+	exit 1
+fi
+if ! zgrep -qF "\"md-notes ${version#v}\"" "$page"; then
+	echo "$page does not name md-notes ${version#v} in its footer:" >&2
+	zgrep '^\.TH' "$page" >&2 || true
+	exit 1
+fi
+zgrep '^\.TH' "$page"
 # systemd's own reading of the unit. The comparison above says the package did
 # not change the file; this says the file is one systemd accepts — a bad
 # directive, a missing [Install], an ExecStart pointing nowhere. In a container
@@ -106,7 +146,7 @@ pacman -Qi md-notes-bin | grep -E '^(Name|Version|Depends On|Optional Deps|Provi
 
 echo "== pacman -Rns =="
 pacman -Rns --noconfirm md-notes-bin
-for path in /usr/bin/mdn "$unit" /usr/share/licenses/md-notes-bin; do
+for path in /usr/bin/mdn "$unit" /usr/share/licenses/md-notes-bin "$page"; do
 	if [ -e "$path" ]; then
 		echo "$path survived the removal" >&2
 		exit 1

@@ -41,10 +41,15 @@ func runMake(t *testing.T, dir string, args ...string) (string, error) {
 	return string(out), err
 }
 
+// renderedPage stands in for the ./mdn.1 `make build` writes: install copies
+// it and must not care what is in it, but the tests compare what lands.
+const renderedPage = ".TH MDN 1 \"2026-09-19\" \"md-notes 0.1.0\" \"User Commands\"\n.SH NAME\nmdn \\- a stand-in\n"
+
 // installTree lays out a temporary tree that `make install` can run in: the
-// repository's Makefile, and whichever of the two payload files the caller
-// asked for. It returns the tree and the DESTDIR to install into.
-func installTree(t *testing.T, withBinary, withUnit bool) (tree, destdir string) {
+// repository's Makefile, and whichever of the three payload files the caller
+// asked for — the built binary, the page `make build` renders, and the unit.
+// It returns the tree and the DESTDIR to install into.
+func installTree(t *testing.T, withBinary, withPage, withUnit bool) (tree, destdir string) {
 	t.Helper()
 	tree = t.TempDir()
 
@@ -59,6 +64,11 @@ func installTree(t *testing.T, withBinary, withUnit bool) (tree, destdir string)
 	if withBinary {
 		// Not a real binary; `install` copies bytes and must not care.
 		if err := os.WriteFile(filepath.Join(tree, "mdn"), []byte("#!/bin/sh\necho mdn\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if withPage {
+		if err := os.WriteFile(filepath.Join(tree, "mdn.1"), []byte(renderedPage), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -97,7 +107,7 @@ func TestInstallNeverBuilds(t *testing.T) {
 				forbidden, out)
 		}
 	}
-	for _, want := range []string{"install -Dm755 mdn", "lib/systemd/user/mdn.service"} {
+	for _, want := range []string{"install -Dm755 mdn", "lib/systemd/user/mdn.service", "share/man/man1/mdn.1"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("`make -n install` does not mention %q:\n%s", want, out)
 		}
@@ -110,14 +120,17 @@ func TestInstallNeverBuilds(t *testing.T) {
 func TestInstallRefusesWhatIsNotThere(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
-		binary, unit       bool
+		binary, page, unit bool
 		names, alsoMention string
 	}{
-		{name: "no binary", binary: false, unit: true, names: "mdn", alsoMention: "make build"},
-		{name: "no unit", binary: true, unit: false, names: "contrib/mdn.service"},
+		{name: "no binary", binary: false, page: true, unit: true, names: "./mdn ", alsoMention: "make build"},
+		// A tree built before the page was part of `make build`
+		// (davison/md-notes#168): the binary is there, the page is not.
+		{name: "no manual page", binary: true, page: false, unit: true, names: "./mdn.1", alsoMention: "make build"},
+		{name: "no unit", binary: true, page: true, unit: false, names: "contrib/mdn.service"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tree, destdir := installTree(t, tc.binary, tc.unit)
+			tree, destdir := installTree(t, tc.binary, tc.page, tc.unit)
 
 			out, err := runMake(t, tree, "install", "DESTDIR="+destdir)
 			if err == nil {
@@ -145,17 +158,17 @@ func TestInstallRefusesWhatIsNotThere(t *testing.T) {
 	}
 }
 
-// TestInstallCopiesTheBinaryAndTheUnit: the two paths the .deb installs, the
-// modes it installs them with, DESTDIR and PREFIX honoured, and the right
-// closing words — the `systemctl --user` lines for a real install, because a
+// TestInstallCopiesTheBinaryThePageAndTheUnit: the three paths the .deb
+// installs, the modes it installs them with, DESTDIR and PREFIX honoured, and
+// the right closing words — the `systemctl --user` lines for a real install, because a
 // user unit cannot be enabled for the invoking user from under sudo (the
 // decision on #164), and a staged-under-DESTDIR line instead when nothing has
 // been installed anywhere systemd looks (the review of PR #166, nit (a)).
-func TestInstallCopiesTheBinaryAndTheUnit(t *testing.T) {
+func TestInstallCopiesTheBinaryThePageAndTheUnit(t *testing.T) {
 	systemctlLines := []string{"systemctl --user daemon-reload", "systemctl --user enable --now mdn"}
 
 	t.Run("into a prefix", func(t *testing.T) {
-		tree, _ := installTree(t, true, true)
+		tree, _ := installTree(t, true, true, true)
 		prefix := filepath.Join(tree, "prefix")
 
 		out, err := runMake(t, tree, "install", "PREFIX="+prefix)
@@ -164,6 +177,7 @@ func TestInstallCopiesTheBinaryAndTheUnit(t *testing.T) {
 		}
 		assertInstalled(t, out,
 			filepath.Join(prefix, "bin", "mdn"),
+			filepath.Join(prefix, "share", "man", "man1", "mdn.1.gz"),
 			filepath.Join(prefix, "lib", "systemd", "user", "mdn.service"))
 
 		for _, want := range systemctlLines {
@@ -174,7 +188,7 @@ func TestInstallCopiesTheBinaryAndTheUnit(t *testing.T) {
 	})
 
 	t.Run("staged under DESTDIR", func(t *testing.T) {
-		tree, destdir := installTree(t, true, true)
+		tree, destdir := installTree(t, true, true, true)
 
 		out, err := runMake(t, tree, "install", "DESTDIR="+destdir)
 		if err != nil {
@@ -182,6 +196,7 @@ func TestInstallCopiesTheBinaryAndTheUnit(t *testing.T) {
 		}
 		assertInstalled(t, out,
 			filepath.Join(destdir, "usr", "bin", "mdn"),
+			filepath.Join(destdir, "usr", "share", "man", "man1", "mdn.1.gz"),
 			filepath.Join(destdir, "usr", "lib", "systemd", "user", "mdn.service"))
 
 		// Nothing is where systemd looks, so those two lines would either do
@@ -197,14 +212,16 @@ func TestInstallCopiesTheBinaryAndTheUnit(t *testing.T) {
 	})
 }
 
-// assertInstalled: the binary and the unit, at the paths given, with the modes
-// the .deb uses, and the unit byte for byte from contrib/.
-func assertInstalled(t *testing.T, out, binary, unit string) {
+// assertInstalled: the binary, the manual page and the unit, at the paths
+// given, with the modes the .deb uses; the page gzipped, as the .deb ships it,
+// and holding the page `make build` rendered; the unit byte for byte from
+// contrib/.
+func assertInstalled(t *testing.T, out, binary, page, unit string) {
 	t.Helper()
 	for _, want := range []struct {
 		path string
 		mode os.FileMode
-	}{{binary, 0o755}, {unit, 0o644}} {
+	}{{binary, 0o755}, {page, 0o644}, {unit, 0o644}} {
 		info, err := os.Stat(want.path)
 		if err != nil {
 			t.Errorf("`make install` did not install %s: %v\n%s", want.path, err, out)
@@ -213,6 +230,15 @@ func assertInstalled(t *testing.T, out, binary, unit string) {
 		if got := info.Mode().Perm(); got != want.mode {
 			t.Errorf("%s has mode %o, want %o", want.path, got, want.mode)
 		}
+	}
+
+	if _, err := os.Stat(page); err == nil {
+		if got := gunzip(t, page); got != renderedPage {
+			t.Errorf("%s does not hold the page `make build` rendered:\n%s", page, got)
+		}
+	}
+	if _, err := os.Stat(strings.TrimSuffix(page, ".gz")); err == nil {
+		t.Errorf("%s was left beside %s: man would find two copies of the page", strings.TrimSuffix(page, ".gz"), page)
 	}
 
 	installed, err := os.ReadFile(unit)
@@ -238,7 +264,7 @@ func assertInstalled(t *testing.T, out, binary, unit string) {
 // only way to see a parse-time $(shell): `make -n` does not show it, and the
 // output of a successful `make install` says nothing about it either.
 func TestInstallAndCleanForkNothing(t *testing.T) {
-	tree, destdir := installTree(t, true, true)
+	tree, destdir := installTree(t, true, true, true)
 
 	shims := filepath.Join(tree, "shims")
 	if err := os.MkdirAll(shims, 0o755); err != nil {
@@ -464,4 +490,114 @@ func makefilePrefix(t *testing.T) string {
 		t.Fatal("the Makefile declares no `PREFIX ?=` default; `make install` and contrib/mdn.service have to agree on one, and this is half of it")
 	}
 	return prefix
+}
+
+// TestTheInstalledPageAndThePackageAgree: `make install` puts the manual page
+// where the .deb does, gzipped as the .deb has it, so a machine that has had
+// both has one page rather than two that man chooses between
+// (davison/md-notes#168).
+func TestTheInstalledPageAndThePackageAgree(t *testing.T) {
+	prefix := makefilePrefix(t)
+
+	var packaged string
+	for _, entry := range packageConfig(t).Contents {
+		if entry.Src == "mdn.1.gz" {
+			packaged = entry.Dst
+		}
+	}
+	if packaged == "" {
+		t.Fatal("packaging/deb/nfpm.yaml installs no mdn.1.gz")
+	}
+	if want := prefix + "/share/man/man1/mdn.1.gz"; packaged != want {
+		t.Errorf("the .deb installs the manual page at %q but `make install` puts it at %q (PREFIX ?= %s)", packaged, want, prefix)
+	}
+}
+
+// TestManFillsInTheVersionAndTheCommitsDate runs `make man` in a throwaway
+// repository with one commit at a known date. The page carries VERSION without
+// its v, as both packages write it, and a date that belongs to the commit —
+// SOURCE_DATE_EPOCH's when that is set, the commit's otherwise — so the same
+// commit renders the same page on any day (davison/md-notes#168).
+func TestManFillsInTheVersionAndTheCommitsDate(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git supplies the commit date")
+	}
+	tree := t.TempDir()
+	makefile, err := os.ReadFile(filepath.Join(repoRoot, "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tree, "Makefile"), makefile, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(tree, "contrib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	copyFile(t, filepath.Join(repoRoot, "contrib", "mdn.1"), filepath.Join(tree, "contrib", "mdn.1"))
+
+	// Everything but SOURCE_DATE_EPOCH, which the second half sets itself.
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "SOURCE_DATE_EPOCH=") && !strings.HasPrefix(kv, "GIT_") {
+			env = append(env, kv)
+		}
+	}
+	env = append(env, "MAKEFLAGS=",
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.invalid",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.invalid",
+		"GIT_AUTHOR_DATE=2026-09-19T12:00:00Z", "GIT_COMMITTER_DATE=2026-09-19T12:00:00Z")
+	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"commit", "-q", "-m", "one"}} {
+		cmd := exec.Command(git, args...)
+		cmd.Dir = tree
+		cmd.Env = env
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+
+	render := func(t *testing.T, extraEnv ...string) string {
+		t.Helper()
+		cmd := exec.Command(makeTool(t), "man", "VERSION=v1.2.3")
+		cmd.Dir = tree
+		cmd.Env = append(append([]string{}, env...), extraEnv...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("make man: %v\n%s", err, out)
+		}
+		page, err := os.ReadFile(filepath.Join(tree, "mdn.1"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(page)
+	}
+
+	for _, tc := range []struct {
+		name, env, date string
+	}{
+		{name: "from the commit", date: "2026-09-19"},
+		{name: "from SOURCE_DATE_EPOCH", env: "SOURCE_DATE_EPOCH=1758153600", date: "2025-09-18"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var extra []string
+			if tc.env != "" {
+				extra = append(extra, tc.env)
+			}
+			page := render(t, extra...)
+			want := `.TH MDN 1 "` + tc.date + `" "md-notes 1.2.3" "User Commands"`
+			if !strings.Contains(page, want+"\n") {
+				t.Errorf("the rendered page has no line %q:\n%s", want, firstLines(page, 30))
+			}
+			if strings.Contains(page, "@VERSION@") || strings.Contains(page, "@DATE@") {
+				t.Error("the rendered page still carries a placeholder")
+			}
+		})
+	}
+}
+
+func firstLines(s string, n int) string {
+	lines := strings.SplitN(s, "\n", n+1)
+	if len(lines) > n {
+		lines = lines[:n]
+	}
+	return strings.Join(lines, "\n")
 }
