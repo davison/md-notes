@@ -232,10 +232,10 @@ is the `kind` field of each root in `GET /api/roots`:
   [clips](#clipping-a-web-page) land.
 - **Permanent roots** (`permanent`): every configured root after the first, from
   `notes_root`'s list form or a repeated `--root`. Like the notes root they are the
-  daemon's configuration. They are served from every start, never written to the
+  daemon's configuration. They are served from every start, never added to the
   state file, and cannot be removed from the home page. A folder that is in the
-  state file as a recent root and is now configured is served once, as permanent,
-  and the start logs it. Its entry stays in the state file, so a start without that
+  state file as a recent root and is now configured is served once, as configured
+  (the notes root if it is first, a permanent root otherwise), and the start logs it. Its entry stays in the state file, so a start without that
   configuration serves it as a recent root again, under its old slug. One
   configured root may sit inside another: each is served as a root of its own, as a
   nested `mdn open` is.
