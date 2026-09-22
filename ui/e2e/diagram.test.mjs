@@ -16,7 +16,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { DESKTOP, PIXEL_7, loadPlaywright, missingPrerequisite, openNote, startFixture, waitFor } from "./harness.mjs";
+import { DESKTOP, MIDDLE, PHONES, PIXEL_7, loadPlaywright, missingPrerequisite, openNote, startFixture, waitFor } from "./harness.mjs";
 
 const playwright = loadPlaywright();
 const blocker = missingPrerequisite(playwright);
@@ -26,6 +26,52 @@ const FLOW = "flowchart LR\n  A[Start] --> B{Ready?}\n  B -->|yes| C[Ship]\n  B 
 const SEQUENCE = "sequenceDiagram\n  Alice->>Bob: Hello\n";
 /** A long left-to-right chain: wider than the reading column. */
 const WIDE = "flowchart LR\n  " + Array.from({ length: 14 }, (_, i) => `N${i}[Step number ${i}]`).join(" --> ") + "\n";
+
+/**
+ * The shape of the operator's note that #183 was found on: an eight-node
+ * left-to-right chain with one side input and two links back. About 1900 px
+ * wide at natural size, with 14 px labels.
+ */
+const LONG_LR = `flowchart LR
+  A[Team notes and correspondence] --> B[Evidence store with provenance]
+  R[Versioned policy rules] --> C[Eligibility and budget checks]
+  B --> C
+  C --> D[Case workflow and agent tasks]
+  D --> E[Grounded application packet]
+  E --> F[Team approval and authorised filing]
+  F --> G[Receipt and reviewer response]
+  G --> D
+  G --> H[Award obligations and reporting]
+  H --> B
+`;
+/** A chain a little wider than the 720 px column: it shrinks to fit without reaching the floor. */
+const JUST_WIDE = "flowchart LR\n  " + Array.from({ length: 6 }, (_, i) => `M${i}[Middle ${i}]`).join(" --> ") + "\n";
+
+/**
+ * The smallest scale a diagram is shown at (the decision on
+ * davison/md-notes#187): its 14 px labels never drawn below 12 px.
+ */
+const MIN_SCALE = 12 / 14;
+const LABEL_PX = 14;
+
+/** A note with the long chain near the top and a paragraph to land on well below it. */
+const WIDE_NOTE = (() => {
+  const lines = ["# Wide", "", "A paragraph above.", "", "```mermaid", ...LONG_LR.trimEnd().split("\n"), "```", ""];
+  for (let i = 0; i < 30; i++) lines.push(`Filler paragraph ${i}.`, "");
+  lines.push("The needle-word paragraph.", "");
+  const paragraph = lines.length - 1;
+  for (let i = 0; i < 40; i++) lines.push(`Trailing paragraph ${i}.`, "");
+  return { text: lines.join("\n"), paragraph };
+})();
+
+/** The widths M10-R1 names: wide, middle and three phones. */
+const WIDTHS = [
+  DESKTOP,
+  MIDDLE,
+  PIXEL_7,
+  PHONES[2],
+  { name: "320 px phone", viewport: { width: 320, height: 640 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
+];
 
 /** Parses, so the note lists it, and is refused by the layout's node bound. */
 function layoutRefused() {
@@ -123,6 +169,8 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
     const write = (rel, text) => fs.writeFileSync(fixture.file(rel), text);
     write("flow.md", "# Flow\n\nA diagram and one the daemon does not draw.\n\n" + fence(FLOW) + "\n" + fence(SEQUENCE));
     write("wide.md", "# Wide\n\n" + fence(WIDE));
+    write("wide-lr.md", WIDE_NOTE.text);
+    write("just-wide.md", "# Just wide\n\n" + fence(JUST_WIDE));
     write("refused.md", "# Refused\n\n" + fence(layoutRefused()));
     write("live.md", "# Live\n\n" + fence("graph TD; P-->Q\n") + "\n" + fence("graph TD; X-->Y\n"));
     write("flows.md", FLOWS.text);
@@ -196,8 +244,10 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
           return {
             src: img.getAttribute("src"),
             alt: img.alt,
-            anchor: img.previousElementSibling?.className,
-            codeHidden: getComputedStyle(img.nextElementSibling).display === "none",
+            // The image stands in its box, the box right after the block's
+            // line anchor and right before the code block.
+            anchor: img.closest(".diagram-box")?.previousElementSibling?.className,
+            codeHidden: getComputedStyle(img.closest(".diagram-box").nextElementSibling).display === "none",
             shown: pres.filter((p) => getComputedStyle(p).display !== "none").map((p) => p.textContent),
             width: img.getBoundingClientRect().width,
             natural: img.naturalWidth,
@@ -237,10 +287,10 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
     }
   });
 
-  it("shrinks a wide diagram to the reading column", async () => {
+  it("shrinks a diagram a little wider than the column to fit it", async () => {
     const { page, close } = await open();
     try {
-      await openNote(page, fixture.url("wide.md"));
+      await openNote(page, fixture.url("just-wide.md"));
       await loaded(page, 1);
       const seen = await page.evaluate(() => {
         const img = document.querySelector(".markdown img.diagram");
@@ -250,11 +300,176 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
           natural: img.naturalWidth,
         };
       });
+      // The case is what it says: wider than the column, and not so wide
+      // that fitting it would take it below the floor.
       assert.ok(seen.natural > seen.column, `the fixture is wider than the column (${seen.natural} > ${seen.column})`);
+      assert.ok(seen.natural * MIN_SCALE <= seen.column, `the fixture fits above the floor (${seen.natural} x ${MIN_SCALE})`);
       assert.ok(Math.abs(seen.width - seen.column) < 1, `the image fits the column: ${seen.width} vs ${seen.column}`);
     } finally {
       await close();
     }
+  });
+
+  /**
+   * Wide diagrams (davison/md-notes#183, #187). A diagram that would have to
+   * shrink below the floor to fit is held at the floor, in a box of its own
+   * that scrolls sideways, and the page does not.
+   */
+  const at = async (profile, url, { settings = null } = {}) => {
+    const { name, ...options } = profile;
+    const ctx = await browser.newContext({ ...options, colorScheme: "light", serviceWorkers: "block" });
+    if (settings !== null) await ctx.addInitScript((s) => localStorage.setItem("mdn:settings", JSON.stringify(s)), settings);
+    const page = await ctx.newPage();
+    await openNote(page, url);
+    return { page, close: () => ctx.close() };
+  };
+
+  for (const profile of WIDTHS) {
+    it(`holds a wide diagram at the floor, scrolling in its own box, and never the page, at ${profile.name}`, async () => {
+      const { page, close } = await at(profile, fixture.url("wide-lr.md"));
+      try {
+        await loaded(page, 1);
+        const seen = await page.evaluate(() => {
+          const img = document.querySelector(".markdown img.diagram");
+          const md = document.querySelector(".markdown").getBoundingClientRect();
+          const box = img.closest(".diagram-box");
+          const r = (box ?? img).getBoundingClientRect();
+          // Scrolled to its far end, the box moves nothing else.
+          if (box) box.scrollLeft = box.scrollWidth;
+          const html = document.documentElement;
+          const main = document.querySelector("main");
+          return {
+            shown: img.getBoundingClientRect().width,
+            natural: img.naturalWidth,
+            box: box ? { left: r.left, right: r.right, scrolls: box.scrollWidth > box.clientWidth } : null,
+            column: { left: md.left, right: md.right },
+            viewport: html.clientWidth,
+            rem: parseFloat(getComputedStyle(html).fontSize),
+            page: { scrollWidth: html.scrollWidth, clientWidth: html.clientWidth, scrollX },
+            pane: main ? { scrollWidth: main.scrollWidth, clientWidth: main.clientWidth } : null,
+          };
+        });
+        const scale = seen.shown / seen.natural;
+        assert.ok(seen.natural * MIN_SCALE > seen.column.right - seen.column.left, "the fixture is too wide to fit above the floor");
+        assert.ok(
+          LABEL_PX * scale >= LABEL_PX * MIN_SCALE - 0.01,
+          `labels drawn at ${(LABEL_PX * scale).toFixed(1)} px (scale ${scale.toFixed(3)}), below the ${(LABEL_PX * MIN_SCALE).toFixed(1)} px floor`,
+        );
+        assert.ok(seen.box, "the diagram stands in a box of its own");
+        assert.equal(seen.box.scrolls, true, "the box scrolls sideways");
+        assert.ok(seen.box.left >= seen.column.left - 0.5 && seen.box.right <= seen.column.right + 0.5, `the box keeps to the column: ${JSON.stringify(seen)}`);
+        assert.ok(seen.page.scrollWidth <= seen.page.clientWidth && seen.page.scrollX === 0, `the page scrolls sideways: ${JSON.stringify(seen.page)}`);
+        if (seen.pane) assert.ok(seen.pane.scrollWidth <= seen.pane.clientWidth, `the note pane scrolls sideways: ${JSON.stringify(seen.pane)}`);
+        // The phone layout keeps its gutter, 1rem either side.
+        assert.ok(seen.column.left >= seen.rem - 0.5 && seen.viewport - seen.column.right >= seen.rem - 0.5, `the gutter: ${JSON.stringify(seen)}`);
+      } finally {
+        await close();
+      }
+    });
+  }
+
+  describe("the natural-size view", () => {
+    /** The view's state: open or not, where focus is, the image's size, its palette. */
+    const viewer = (page) =>
+      page.evaluate(() => {
+        const v = document.querySelector(".diagram-viewer");
+        if (!v) return null;
+        const img = v.querySelector("img");
+        const close = v.querySelector(".diagram-viewer-close")?.getBoundingClientRect();
+        return {
+          role: v.getAttribute("role"),
+          modal: v.getAttribute("aria-modal"),
+          focusInside: v.contains(document.activeElement),
+          width: img?.getBoundingClientRect().width,
+          natural: img?.naturalWidth,
+          loaded: !!img && img.complete && img.naturalWidth > 0,
+          src: img?.getAttribute("src"),
+          background: getComputedStyle(v).backgroundColor,
+          close: close ? { width: close.width, height: close.height } : null,
+          animations: document.getAnimations().length,
+          pageScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+      });
+    const opened = (page) => page.waitForFunction(() => {
+      const img = document.querySelector(".diagram-viewer img");
+      return !!img && img.complete && img.naturalWidth > 0 && document.querySelector(".diagram-viewer").contains(document.activeElement);
+    });
+    const focusedOpener = (page) => page.evaluate(() => document.activeElement?.matches(".diagram-open") ?? false);
+
+    it("opens on a click at natural size, and Escape closes it and hands focus back", async () => {
+      const { page, close } = await at(DESKTOP, fixture.url("wide-lr.md"));
+      try {
+        await loaded(page, 1);
+        await page.locator(".markdown img.diagram").click();
+        await opened(page);
+        const seen = await viewer(page);
+        assert.equal(seen.role, "dialog");
+        assert.equal(seen.modal, "true");
+        assert.ok(Math.abs(seen.width - seen.natural) < 1, `shown at ${seen.width}, natural ${seen.natural}`);
+        assert.equal(seen.animations, 0, "nothing animates");
+        assert.equal(seen.pageScroll, 0, "the page does not scroll sideways under it");
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => !document.querySelector(".diagram-viewer"));
+        assert.equal(await focusedOpener(page), true, "focus is back on the diagram");
+      } finally {
+        await close();
+      }
+    });
+
+    it("opens from the keyboard, and keeps Tab inside while it is open", async () => {
+      const { page, close } = await at(DESKTOP, fixture.url("wide-lr.md"));
+      try {
+        await loaded(page, 1);
+        await page.locator(".markdown .diagram-open").focus();
+        await page.keyboard.press("Enter");
+        await opened(page);
+        for (let i = 0; i < 4; i++) {
+          await page.keyboard.press("Tab");
+          assert.equal((await viewer(page)).focusInside, true, `focus left the view after ${i + 1} Tab presses`);
+        }
+        await page.keyboard.press("Shift+Tab");
+        assert.equal((await viewer(page)).focusInside, true, "Shift+Tab left the view");
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => !document.querySelector(".diagram-viewer"));
+        assert.equal(await focusedOpener(page), true, "focus is back on the diagram");
+        await page.keyboard.press(" ");
+        await opened(page);
+      } finally {
+        await close();
+      }
+    });
+
+    it("opens on a tap on a phone, and its close button is a tap target", async () => {
+      const { page, close } = await at(PIXEL_7, fixture.url("wide-lr.md"));
+      try {
+        await loaded(page, 1);
+        await page.locator(".markdown img.diagram").tap();
+        await opened(page);
+        const seen = await viewer(page);
+        assert.ok(Math.abs(seen.width - seen.natural) < 1, `shown at ${seen.width}, natural ${seen.natural}`);
+        assert.ok(seen.close.width >= 40 && seen.close.height >= 40, `the close button is ${JSON.stringify(seen.close)}`);
+        assert.equal(seen.pageScroll, 0, "the page does not scroll sideways under it");
+        await page.locator(".diagram-viewer-close").tap();
+        await page.waitForFunction(() => !document.querySelector(".diagram-viewer"));
+      } finally {
+        await close();
+      }
+    });
+
+    it("draws in the e-ink palette and with nothing animated when those settings are on", async () => {
+      const { page, close } = await at(DESKTOP, fixture.url("wide-lr.md"), { settings: { light: true, noMotion: true } });
+      try {
+        await loaded(page, 1);
+        await page.locator(".markdown img.diagram").click();
+        await opened(page);
+        const seen = await viewer(page);
+        assert.match(seen.src, /theme=eink$/);
+        assert.equal(seen.background, "rgb(255, 255, 255)");
+        assert.equal(seen.animations, 0);
+      } finally {
+        await close();
+      }
+    });
   });
 
   it("shows as code a block the layout refuses, without ever asking for an image", async () => {
@@ -374,7 +589,7 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
             return !near || (i.complete && i.naturalWidth > 0);
           }) &&
           [...document.querySelectorAll(".markdown pre")].every(
-            (p) => getComputedStyle(p).display !== "none" || p.previousElementSibling?.matches("img.diagram"),
+            (p) => getComputedStyle(p).display !== "none" || !!p.previousElementSibling?.matches(".diagram-box"),
           ),
         null,
         { timeout: 20000 },
@@ -388,13 +603,20 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
           if (n <= l && n >= bestLine) [best, bestLine] = [el, n];
         }
         // An anchor is empty; what the reader sees is the block after it.
-        const shown = best.classList.contains("line-anchor")
+        let shown = best.classList.contains("line-anchor")
           ? [best.nextElementSibling, best.nextElementSibling?.nextElementSibling].find(
               (e) => e && getComputedStyle(e).display !== "none",
             )
           : best;
+        // A drawing stands in a box of its own.
+        shown = shown.querySelector?.("img.diagram") ?? shown;
         const r = shown.getBoundingClientRect();
-        return { tag: shown.tagName, top: Math.round(r.top), bottom: Math.round(r.bottom), height: innerHeight };
+        // Each measured diagram's displayed scale, from its reserved box: a
+        // lazy one far above the hit may not have loaded at all.
+        const scales = [...document.querySelectorAll(".markdown img.diagram[width]")].map(
+          (i) => i.getBoundingClientRect().width / Number(i.getAttribute("width")),
+        );
+        return { tag: shown.tagName, top: Math.round(r.top), bottom: Math.round(r.bottom), height: innerHeight, scales };
       }, line);
       const unmeasured = (listed ?? []).filter((d) => !d.width).length;
       return { ...seen, statuses, listed: listed?.length ?? 0, unmeasured };
@@ -435,6 +657,21 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
         );
       });
     }
+  }
+
+  for (const profile of WIDTHS) {
+    it(`lands a hit below a wide diagram held at the floor, at ${profile.name}`, async () => {
+      const seen = await landsOn(profile, WIDE_NOTE.paragraph, { file: "wide-lr.md" });
+      assert.equal(seen.tag, "P");
+      // The case is what it says: the diagram above the hit is shown at the
+      // floor, not shrunk to the column, so its box is the displayed size.
+      assert.equal(seen.scales.length, 1, `the diagram was measured: ${JSON.stringify(seen)}`);
+      assert.ok(seen.scales[0] >= MIN_SCALE - 0.001, `the diagram is shown at ${seen.scales[0].toFixed(3)}`);
+      assert.ok(
+        Math.abs(seen.top - seen.height / 2) < seen.height / 4,
+        `the target's top is at ${seen.top}px in a ${seen.height}px viewport: ${JSON.stringify(seen)}`,
+      );
+    });
   }
 
   describe("the drawing opened as a document", () => {
