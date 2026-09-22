@@ -902,11 +902,15 @@ later. The layout's size is usually found while the daemon answers for the note 
 the list and shows as code from the start, with no image requested. The deadline, and
 the size of a block the note's answer did not reach, are found when its image is asked
 for, and the block goes back to code then. Either way the daemon remembers the refusal,
-by the block's source, so a hostile block costs its two seconds once rather than at every view. The other side of
-that is a block refused at the deadline only because the machine was busy at that
-moment: it **stays code until the daemon restarts**, however often the note is opened
-([#177](https://github.com/davison/md-notes/issues/177#issuecomment-5768152245),
-captured as [#182](https://github.com/davison/md-notes/issues/182)).
+by the block's source, so a hostile block costs its two seconds once rather than at every
+view. A refusal of the source itself — outside the subset, not parsing, over a size or
+count bound — is remembered until the daemon restarts or the cache lets it go. A
+refusal **at the deadline** may only mean the machine was busy at that moment, so it is
+remembered for **a minute**, and then the block is tried again on the next open. Each
+time the same block is refused at the deadline again, the wait doubles, up to an hour,
+so a block that is always too slow costs one two-second attempt an hour rather than one
+per open ([#182](https://github.com/davison/md-notes/issues/182), the
+[decision on #189](https://github.com/davison/md-notes/issues/189#issuecomment-5775181549)).
 
 **When the image cannot be fetched.** An image that fails for any reason — a refusal
 while drawing, the note changed underneath it, the daemon stopped, the network gone —
@@ -929,6 +933,11 @@ them, changing in place when the setting or the device's scheme changes:
 | In the light scheme | In the light palette, the page's own colours |
 | In the dark scheme | In the dark palette, the page's own colours |
 | Under **Always use the light theme** | In the e-ink palette: black on white, 2-pixel lines, no greys |
+
+In every palette the drawing's background is the note pane's own colour, so a diagram
+sits on the page with no box around it, in the note and in the natural-size view
+([#180](https://github.com/davison/md-notes/issues/180), measured on
+[#189](https://github.com/davison/md-notes/issues/189#issuecomment-5775179056)).
 
 The light override is the app's e-ink setting (see
 [Display settings](#display-settings)), so it is the one signal that the screen may
@@ -979,7 +988,10 @@ however often its note is opened. It spends at most 150 ms, on two of its drawin
 slots, measuring the blocks it has no size for yet, and then answers with what it has.
 On the **first open of a note with many large diagrams**, some go out unmeasured and
 are placed in stages as they load; the page re-centres the search hit or line each
-time one above it arrives, and stops doing so as soon as you scroll, click or type.
+time one above it arrives, and stops doing so as soon as you scroll, click or type. It
+does the same when any image above the target fails, measured or not, since the code
+block that takes its place is another height
+([#189](https://github.com/davison/md-notes/issues/189#issuecomment-5774861925)).
 Later opens find more of the sizes kept, until all of them are
 ([#177](https://github.com/davison/md-notes/issues/177#issuecomment-5768086074)).
 Only the reading view asks for sizes: the editor, which fetches the note for its title
