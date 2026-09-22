@@ -906,10 +906,11 @@ by the block's source, so a hostile block costs its two seconds once rather than
 view. A refusal of the source itself — outside the subset, not parsing, over a size or
 count bound — is remembered until the daemon restarts or the cache lets it go. A
 refusal **at the deadline** may only mean the machine was busy at that moment, so it is
-remembered for **a minute**, and then the block is tried again on the next open. Each
+remembered for **a minute**; after that the next open lists the block again, unmeasured,
+and its image is drawn in full when the page asks for it. Each
 time the same block is refused at the deadline again, the wait doubles, up to an hour,
-so a block that is always too slow costs one two-second attempt an hour rather than one
-per open ([#182](https://github.com/davison/md-notes/issues/182), the
+so a block that is always too slow costs one two-second attempt per wait, in each
+palette asked for — six in its first hour, then one an hour — rather than one per open ([#182](https://github.com/davison/md-notes/issues/182), the
 [decision on #189](https://github.com/davison/md-notes/issues/189#issuecomment-5775181549)).
 
 **When the image cannot be fetched.** An image that fails for any reason — a refusal
