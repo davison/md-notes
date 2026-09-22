@@ -22,6 +22,7 @@ import {
   COARSE_DESKTOP,
   TAP_TARGET,
   dialogReady,
+  gate,
   loadPlaywright,
   missingPrerequisite,
   rect,
@@ -30,8 +31,7 @@ import {
 } from "./harness.mjs";
 
 const playwright = loadPlaywright();
-const blocker = missingPrerequisite(playwright);
-if (blocker) console.log(`# skipped: ${blocker}`);
+const blocker = gate(missingPrerequisite(playwright));
 
 describe("unregistering a root in the browser", { skip: blocker ?? false }, () => {
   let fixture, origin, browser, context, page, scratch;

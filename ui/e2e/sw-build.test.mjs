@@ -21,14 +21,13 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { repoRoot, uiDir } from "./harness.mjs";
+import { gate, repoRoot, uiDir } from "./harness.mjs";
 
 const dist = path.join(uiDir, "dist");
 const shell = path.join(dist, "index.html");
 const worker = path.join(dist, "sw.js");
 
-const blocker = fs.existsSync(worker) ? null : `no built worker at ${worker} (run make ui)`;
-if (blocker) console.log(`# skipped: ${blocker}`);
+const blocker = gate(fs.existsSync(worker) ? null : `no built worker at ${worker} (run make ui)`);
 
 /** Builds dist/sw.js again, against whatever dist currently holds. */
 function buildWorker() {

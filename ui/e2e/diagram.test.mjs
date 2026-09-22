@@ -16,11 +16,10 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { DESKTOP, MIDDLE, PHONES, PIXEL_7, loadPlaywright, missingPrerequisite, openNote, startFixture, waitFor } from "./harness.mjs";
+import { DESKTOP, MIDDLE, PHONES, PIXEL_7, gate, loadPlaywright, missingPrerequisite, openNote, startFixture, waitFor } from "./harness.mjs";
 
 const playwright = loadPlaywright();
-const blocker = missingPrerequisite(playwright);
-if (blocker) console.log(`# skipped: ${blocker}`);
+const blocker = gate(missingPrerequisite(playwright));
 
 const FLOW = "flowchart LR\n  A[Start] --> B{Ready?}\n  B -->|yes| C[Ship]\n  B -->|no| A\n";
 const SEQUENCE = "sequenceDiagram\n  Alice->>Bob: Hello\n";

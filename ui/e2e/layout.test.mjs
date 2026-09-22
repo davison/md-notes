@@ -24,6 +24,7 @@ import {
   TAP_TARGET,
   THREE_COLUMN,
   drawerReady,
+  gate,
   loadPlaywright,
   missingPrerequisite,
   openNote,
@@ -32,8 +33,7 @@ import {
 } from "./harness.mjs";
 
 const playwright = loadPlaywright();
-const blocker = missingPrerequisite(playwright);
-if (blocker) console.log(`# skipped: ${blocker}`);
+const blocker = gate(missingPrerequisite(playwright));
 
 describe("the layout at phone widths and above", { skip: blocker ?? false }, () => {
   let fixture, browser;

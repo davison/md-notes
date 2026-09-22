@@ -15,11 +15,10 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { loadPlaywright, missingPrerequisite, startFixture, waitFor } from "./harness.mjs";
+import { gate, loadPlaywright, missingPrerequisite, startFixture, waitFor } from "./harness.mjs";
 
 const playwright = loadPlaywright();
-const blocker = missingPrerequisite(playwright);
-if (blocker) console.log(`# skipped: ${blocker}`);
+const blocker = gate(missingPrerequisite(playwright));
 
 /** The sizes Android asks for, and the shape of the maskable variant. */
 const ICONS = [

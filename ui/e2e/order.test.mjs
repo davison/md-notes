@@ -18,6 +18,7 @@ import {
   PIXEL_7,
   TAP_TARGET,
   drawerReady,
+  gate,
   loadPlaywright,
   missingPrerequisite,
   startFixture,
@@ -25,8 +26,7 @@ import {
 } from "./harness.mjs";
 
 const playwright = loadPlaywright();
-const blocker = missingPrerequisite(playwright);
-if (blocker) console.log(`# skipped: ${blocker}`);
+const blocker = gate(missingPrerequisite(playwright));
 
 /**
  * The fixture's modification times, set rather than inherited from the

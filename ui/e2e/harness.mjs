@@ -7,8 +7,15 @@
  * `PLAYWRIGHT_ROOT`, then the packages that might declare it — so the two
  * suites share one installation and one browser download. It is declared by
  * `ui/package.json`, which `make ui-deps` installs; the browser itself is a
- * separate download (`pnpm --dir ui exec playwright install chromium`), and
- * without it every test here skips rather than fails.
+ * separate download (`pnpm --dir ui exec playwright install chromium`).
+ *
+ * Every suite that drives the browser asks `missingPrerequisite` first and,
+ * given a reason, skips with one `# skipped:` line saying what is missing —
+ * the package, the browser download (probed for, rather than found missing
+ * by `launch`), the binary or the built UI — so a clone that is not set up
+ * gets a sentence and exit 0 rather than a stack trace. Except under CI:
+ * there a skip would be a green job that checked nothing, so `gate` turns
+ * the same reason into a failure (davison/md-notes#153).
  *
  *     make e2e
  *     pnpm --dir ui e2e
@@ -47,9 +54,62 @@ export function loadPlaywright() {
   return null;
 }
 
+/** The command that downloads the browser, named wherever its absence is. */
+export const INSTALL_CHROMIUM = "pnpm --dir ui exec playwright install chromium";
+
+/**
+ * Why Playwright's Chromium cannot be launched here, or null when it can.
+ *
+ * Installing the package does not download the browser, and without this
+ * check the first anyone heard of it was `browserType.launch` throwing
+ * `Executable doesn't exist at …` from inside a `before` hook
+ * (davison/md-notes#153). `executablePath()` names where the download would
+ * be — under `PLAYWRIGHT_BROWSERS_PATH` when that is set — without looking,
+ * so the looking is done here.
+ *
+ * It asks after the full Chromium, which is what the extension suites launch;
+ * a headless `launch` here starts the smaller headless shell instead, whose
+ * path Playwright does not expose. `playwright install chromium` fetches the
+ * two together, so on any machine that ran the command the answer is the
+ * same for both.
+ */
+export function missingBrowser(playwright) {
+  let executable;
+  try {
+    executable = playwright.chromium.executablePath();
+  } catch {
+    executable = "";
+  }
+  if (executable && fs.existsSync(executable)) return null;
+  return `Playwright's Chromium is not downloaded (run ${INSTALL_CHROMIUM})`;
+}
+
+/** Whether this run is CI's, by the variable every CI service sets. */
+export function underCI(env = process.env) {
+  const value = (env.CI ?? "").trim().toLowerCase();
+  return value !== "" && value !== "false" && value !== "0";
+}
+
+/**
+ * What a suite does with a missing prerequisite: one line and a skip on a
+ * developer's machine, and a failure under CI, where a skipped browser suite
+ * exits 0 and would read as a pass. Returns the reason, for `describe`'s
+ * `skip`, or null when there is nothing missing.
+ */
+export function gate(blocker, env = process.env) {
+  if (blocker === null) return null;
+  if (underCI(env)) {
+    throw new Error(`${blocker}; under CI a browser suite fails rather than skipping`);
+  }
+  console.log(`# skipped: ${blocker}`);
+  return blocker;
+}
+
 /** Why the suite cannot run here, or null when it can. */
 export function missingPrerequisite(playwright) {
   if (playwright === null) return "playwright is not installed (set PLAYWRIGHT_ROOT)";
+  const browser = missingBrowser(playwright);
+  if (browser !== null) return browser;
   if (!fs.existsSync(mdnBin)) return `no mdn binary at ${mdnBin} (set MDN_BIN, or run make build)`;
   if (!fs.existsSync(path.join(uiDir, "dist", "index.html"))) return "ui/dist is not built (run make ui)";
   return null;
