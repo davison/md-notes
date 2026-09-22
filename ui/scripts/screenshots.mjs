@@ -77,37 +77,58 @@ async function main() {
         `If it is a leftover from a run that died, \`rm -rf ${notesDir}\`.`,
     );
   }
+  // Everything from here on is undone in the `finally` below, whichever step
+  // fails: a run that dies must say so, exit non-zero and leave neither the
+  // daemon nor <tmpdir>/notes behind, or the next run refuses on the
+  // directory and `make screenshots` goes on to squeeze the old pictures.
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mdn-app-shots-")));
-  fs.cpSync(demo, notesDir, { recursive: true });
-
-  // Every note the same age, so the navigator and anything that shows a time
-  // come out the same from one run to the next.
-  const when = new Date("2026-09-18T09:30:00Z");
-  for (const entry of fs.readdirSync(notesDir, { recursive: true })) {
-    fs.utimesSync(path.join(notesDir, entry), when, when);
-  }
-
-  const port = await freePort();
-  const origin = `http://localhost:${port}`;
-  const configPath = path.join(tmp, "config.yaml");
-  fs.writeFileSync(configPath, `notes_root: ${notesDir}\n`);
-  const tokenFile = path.join(tmp, "token");
-  execFileSync(mdnBin, ["token", "--token-file", tokenFile]);
-  const daemon = spawn(
-    mdnBin,
-    [
-      "serve",
-      "--config", configPath,
-      "--port", String(port),
-      "--state", path.join(tmp, "state.json"),
-      "--token-file", tokenFile,
-    ],
-    { stdio: ["ignore", "ignore", "inherit"] },
-  );
-
-  const browser = await playwright.chromium.launch();
+  let daemon = null;
+  let exited = null;
+  let browser = null;
   try {
-    await waitFor(() => fetch(`${origin}/api/roots`).then((r) => r.ok).catch(() => false), "the daemon to listen");
+    fs.cpSync(demo, notesDir, { recursive: true });
+
+    // Every note the same age, so the navigator and anything that shows a time
+    // come out the same from one run to the next.
+    const when = new Date("2026-09-18T09:30:00Z");
+    for (const entry of fs.readdirSync(notesDir, { recursive: true })) {
+      fs.utimesSync(path.join(notesDir, entry), when, when);
+    }
+
+    const port = await freePort();
+    const origin = `http://localhost:${port}`;
+    const configPath = path.join(tmp, "config.yaml");
+    fs.writeFileSync(configPath, `notes_root: ${notesDir}\n`);
+    const tokenFile = path.join(tmp, "token");
+    execFileSync(mdnBin, ["token", "--token-file", tokenFile]);
+    daemon = spawn(
+      mdnBin,
+      [
+        "serve",
+        "--config", configPath,
+        "--port", String(port),
+        "--state", path.join(tmp, "state.json"),
+        "--token-file", tokenFile,
+      ],
+      { stdio: ["ignore", "ignore", "inherit"] },
+    );
+    // Taken at spawn, so it settles even when the daemon has already gone by
+    // the time anything awaits it: an `exit` listener added after the event
+    // waits for ever, and node then drains its event loop and exits 0.
+    exited = new Promise((resolve) => daemon.once("exit", (code, signal) => resolve({ code, signal })));
+    // A binary that cannot be started at all emits `error` and no `exit`.
+    let spawnError = null;
+    daemon.once("error", (err) => {
+      spawnError = err;
+    });
+
+    const running = () => spawnError === null && daemon.exitCode === null && daemon.signalCode === null;
+    await waitFor(async () => {
+      if (!running()) throw new Error(`the daemon ${spawnError ? `could not start: ${spawnError.message}` : `exited (${daemon.exitCode ?? daemon.signalCode})`} before it listened`);
+      return fetch(`${origin}/api/roots`).then((r) => r.ok).catch(() => false);
+    }, "the daemon to listen");
+
+    browser = await playwright.chromium.launch();
     fs.mkdirSync(outDir, { recursive: true });
 
     /** A fresh page in `scheme`, with the three folders open in the navigator. */
@@ -142,7 +163,7 @@ async function main() {
       {
         const [page, close] = await open(WIDE, scheme, "/r/notes/home/backups.md");
         const search = page.getByRole("searchbox", { name: "Search notes" });
-        await search.fill("restic");
+        await search.fill("weekend");
         await page.waitForSelector(".search .hit");
         await search.blur();
         await save(page, `wide-${scheme}.png`);
@@ -179,10 +200,14 @@ async function main() {
         await close();
       }
     }
+    if (!running()) throw new Error(`the daemon exited (${daemon.exitCode ?? daemon.signalCode}) during the run`);
   } finally {
-    await browser.close();
-    daemon.kill("SIGTERM");
-    await new Promise((r) => daemon.once("exit", r));
+    if (browser !== null) await browser.close().catch(() => {});
+    if (daemon !== null && daemon.pid !== undefined && daemon.exitCode === null && daemon.signalCode === null) {
+      daemon.kill("SIGTERM");
+      await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);
+      if (daemon.exitCode === null && daemon.signalCode === null) daemon.kill("SIGKILL");
+    }
     fs.rmSync(tmp, { recursive: true, force: true });
     fs.rmSync(notesDir, { recursive: true, force: true });
   }
