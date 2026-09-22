@@ -942,16 +942,29 @@ test.
 **Live, sized and accessible.** A diagram follows its note on disk: an edit elsewhere
 reaches the page through [live update](#live-update) and the changed diagram is drawn
 again, while an unchanged one in the same note keeps its image and is not fetched
-again. The image is drawn at its natural size, never scaled up, and shrinks to the
-reading column when it is wider. Its `alt` text is the diagram's source, which is the
-whole of what it says, in the syntax its author wrote. A search hit on the block
-flashes the image. Images load lazily: one far below the part of the note on screen is
-not fetched until you scroll towards it.
+again. Its `alt` text is the diagram's source, which is the whole of what it says, in
+the syntax its author wrote. A search hit on the block flashes the diagram. Images load
+lazily: one far below the part of the note on screen is not fetched until you scroll
+towards it.
+
+**Wide diagrams.** A diagram is drawn at its natural size and never scaled up. One
+wider than the reading column shrinks to fit it, but only down to 12/14 of its natural
+width, which keeps its 14-pixel labels at 12 pixels or more. That is the floor, and
+it is set against the smallest text the app itself uses
+([#187](https://github.com/davison/md-notes/issues/187#issuecomment-5774372931)). A
+diagram that would have to shrink further, such as a long `LR` chain, keeps the
+floor size and scrolls sideways in a box of its own. The page itself never scrolls
+sideways, at any width, and on a phone the diagram's box keeps within the note's
+margins. To see a diagram as it was drawn, **click or tap it**, or focus it with Tab
+and press Enter or Space. It opens at its natural size over the whole window,
+scrolling both ways if it is larger than the window. **Escape**, the Close button, or
+a click beside the drawing closes it, and focus goes back to the diagram. This view is
+in the page's palette, e-ink included, and has no animation.
 
 **Sized before they load.** So that a search hit or a line link lands on its target
 rather than being pushed away as the drawings above it arrive, the reading view asks
 for the note with each diagram's natural width and height, and the page reserves each
-image's box before its drawing loads. The daemon learns a size by laying the block
+image's box, at the size it will be shown at, before its drawing loads. The daemon learns a size by laying the block
 out, and keeps it by the block's source, so an unchanged diagram is laid out once
 however often its note is opened. It spends at most 150 ms, on two of its drawing
 slots, measuring the blocks it has no size for yet, and then answers with what it has.
