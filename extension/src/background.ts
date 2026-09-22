@@ -25,7 +25,7 @@ import { isClipMessage, type DiscardReply, type PrepareReply, type SaveReply } f
 import { noteUrl } from "./paths";
 import { clearPendingClip, getPendingClip, setPendingClip, type PendingClip } from "./pending";
 import { loadSettings } from "./settings";
-import { clearTabStatus, setTabStatus } from "./status";
+import { clearTabStatus, setTabStatus, tabsWithStatus } from "./status";
 
 const BADGE_COLOUR = "#b3261e";
 /** A clip waiting to be saved is not a failure, so it is not the failure red. */
@@ -42,6 +42,21 @@ const redirected = new Map<number, string>();
 
 /** Tabs carrying a status record, so unrelated navigations cost nothing. */
 const marked = new Set<number>();
+
+/**
+ * `marked` rebuilt from session storage when this worker starts. Chromium
+ * stops an idle worker after about thirty seconds and starts a fresh one for
+ * the next event, and the records outlive it: without this, a tab that moved
+ * on after a restart kept its record — the `file:` URL it had shown included
+ * — until it closed, and the popup showed that record over the new page (the
+ * review of PR #203). Anything that asks `marked` about a navigation waits
+ * for it.
+ */
+const restored: Promise<void> = tabsWithStatus()
+  .then((ids) => {
+    for (const id of ids) marked.add(id);
+  })
+  .catch(() => undefined);
 
 /**
  * The tab the pending clip came from, mirrored here so the navigation
@@ -90,7 +105,9 @@ function moveOn(tabId: number) {
   redirected.delete(tabId);
   inFlight.delete(tabId);
   if (pendingTab === tabId) void forgetPendingClip().catch(() => undefined);
-  if (marked.has(tabId)) void forget(tabId).catch(() => undefined);
+  void restored
+    .then(() => (marked.has(tabId) ? forget(tabId) : undefined))
+    .catch(() => undefined);
 }
 
 /**
@@ -102,6 +119,10 @@ export async function handleNavigation(tabId: number, url: string): Promise<Open
   const result = await resolveOpen(url, settings);
   switch (result.status) {
     case "ignored":
+      // Not a note, but the tab has still moved on from whatever note its
+      // record names — a text file, a directory listing — so the record goes.
+      await restored;
+      if (marked.has(tabId)) await forget(tabId);
       break;
     case "open":
       await showOpened(tabId, url, result.url);

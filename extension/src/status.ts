@@ -16,7 +16,8 @@ export interface TabStatus {
 
 /** The slice of `chrome.storage.StorageArea` the status needs. */
 export interface StatusStore {
-  get(keys: string[]): Promise<Record<string, unknown>>;
+  /** `null` reads the whole area. */
+  get(keys: string[] | null): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
   remove(keys: string[]): Promise<void>;
 }
@@ -45,6 +46,21 @@ export async function getTabStatus(
   const stored = await store.get([key]);
   const value = stored[key];
   return isTabStatus(value) ? value : null;
+}
+
+/**
+ * The tabs that have a record. The worker mirrors this set in memory so that
+ * a navigation costs nothing when there is nothing to drop, and the mirror
+ * dies with the worker; this is what rebuilds it when a fresh worker starts.
+ */
+export async function tabsWithStatus(store: StatusStore = sessionArea()): Promise<number[]> {
+  const all = await store.get(null);
+  const ids: number[] = [];
+  for (const key of Object.keys(all)) {
+    const match = /^status:(\d+)$/.exec(key);
+    if (match !== null) ids.push(Number(match[1]));
+  }
+  return ids;
 }
 
 export async function clearTabStatus(
