@@ -37,16 +37,22 @@ type Theme struct {
 // The three palettes the reading view needs, from the app's own colours
 // (ui/src/style.css). EInk is black on white with heavier lines: a panel
 // with no backlight loses a grey that a screen shows.
+//
+// Each background, and the fill behind an edge label, is the colour of the
+// surface the image sits on — the note pane's --pane, in the reading column
+// and in the natural-size view alike — so no palette draws a box around
+// its diagram (davison/md-notes#180, and the decision on #189 that
+// measured it). ui/e2e/diagram.test.mjs compares the pixels.
 var (
 	Light = Theme{
-		Background: "#fbfbfa", NodeFill: "#ffffff", NodeStroke: "#6b6b6b", Text: "#1f1f1f",
-		Edge: "#4f4f4d", LabelFill: "#fbfbfa",
+		Background: "#ffffff", NodeFill: "#ffffff", NodeStroke: "#6b6b6b", Text: "#1f1f1f",
+		Edge: "#4f4f4d", LabelFill: "#ffffff",
 		ClusterFill: "#f1f1ee", ClusterStroke: "#8a8a86", ClusterText: "#1f1f1f",
 		StrokeWidth: 1.25,
 	}
 	Dark = Theme{
-		Background: "#1b1b1b", NodeFill: "#262626", NodeStroke: "#9a9a96", Text: "#e6e6e3",
-		Edge: "#b4b4b0", LabelFill: "#1b1b1b",
+		Background: "#202020", NodeFill: "#262626", NodeStroke: "#9a9a96", Text: "#e6e6e3",
+		Edge: "#b4b4b0", LabelFill: "#202020",
 		ClusterFill: "#222221", ClusterStroke: "#7a7a76", ClusterText: "#e6e6e3",
 		StrokeWidth: 1.25,
 	}
