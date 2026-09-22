@@ -40,7 +40,7 @@ other.
 | --- | --- | --- |
 | You save a clip of a page or a selection | The page's address, the title you saw in the popup, the content converted to markdown, and whether it was a page or a selection | Your daemon URL |
 | A tab opens a local `.md` or `.markdown` file | A request for the list of registered folders; if the file is in none of them, its folder and its name, so the daemon can register that folder; then the tab itself goes to the note's address on the daemon | Your daemon URL |
-| You press **Test connection** on the options page | A request for the list of registered folders, and — against a daemon on this machine — the same request with a made-up token the daemon cannot have issued, to learn whether it checks tokens at all | Your daemon URL |
+| You press **Test connection** on the options page | A request for the list of registered folders. Against a daemon on this machine it is asked up to three times: without a token, with a made-up token the daemon cannot have issued (to learn whether it checks tokens at all), and with yours | Your daemon URL |
 | You press **Open the note** after a clip | A new tab at the note's address in the app | Your daemon URL |
 
 A clip is prepared when you press **Clip page** or **Clip selection**, in the
@@ -51,10 +51,12 @@ moment you invoke a clip on that page, and only that page: it registers no
 content scripts, so none of its code is running in the pages you browse.
 
 Your token goes to that same daemon URL, as the `Authorization` header that
-proves to your own daemon that the request is yours: on every request to a
-daemon that is not on this machine, and to one that is, on the requests that
-change something (registering a folder, saving a clip) and on the connection
-test.
+proves to your own daemon that the request is yours. To a daemon that is not
+on this machine it goes with every request. To one that is, it goes with the
+requests that change something (registering a folder, saving a clip) and with
+the connection test's last request, and not otherwise: the intercept's request
+for the list of registered folders, and the connection test's first request,
+carry no token, and its second carries only the made-up one.
 
 Nothing else leaves the browser. There is no fallback address, no "anonymous
 usage statistics", and no second request made alongside the first.
@@ -77,11 +79,16 @@ is gone when the browser closes:
 
 - the clip you have prepared but not yet saved — its address, title, markdown
   and kind — so that it survives the popup closing between **Clip** and
-  **Save to notes**;
+  **Save to notes**. It goes when you save it, discard it or take another, and
+  at the latest when the browser closes;
 - per tab, the last thing the extension did there: the `file:` address it
   acted on, if any, and a one-line result — opened in the app, or why not —
   which is what the popup shows when the toolbar badge has something to say.
-  It is dropped when the tab moves on to another page.
+  It is dropped when the tab loads another page — a web page, another file,
+  or another address in the app it was sent to — and when the tab closes.
+  Moving between notes inside the app changes the address without loading a
+  page, so until one of those the record of how the tab got there stays with
+  it.
 
 The extension keeps nothing else: no cookies of its own, no `localStorage`, no
 IndexedDB, and no files. (The daemon's app, once a tab has been sent to it, is
