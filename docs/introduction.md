@@ -839,13 +839,18 @@ syntax:
 - `%%` comments.
 
 **How it is drawn.** Nodes are placed in ranks along the diagram's direction, like
-mermaid's own layout. A link that points back against the flow runs in a lane of its
-own outside the nodes, below the row in `LR` and `RL` and beside the column in `TB`
-and `BT`, and it leaves and enters its nodes by the side that faces that lane. The
-longest chain of links is drawn on one straight line, provided that no node on it
-fans out to more than two links or collects more than two. A subgraph's title sits
-where no link crosses it. If there is no such place, the subgraph is widened to make
-one ([#188](https://github.com/davison/md-notes/issues/188)).
+mermaid's own layout. A link that points back against the flow runs in a straight lane
+of its own outside the nodes: below the row in `LR` and `RL`, and to the right of the
+column in `TB` and `BT`. It leaves and enters its nodes by the side that faces that
+lane. A link from a node to itself is drawn on the other side, above the node or to
+its left. Where the layout allows, the longest chain of links is drawn on one straight
+line, and then each next-longest chain among the nodes that are left. A chain does not
+continue through a node with more than two links out, or more than two in. A
+subgraph's title sits at the place nearest the middle of its band that no link
+crosses. In top-to-bottom and bottom-to-top diagrams, if there is no such place, the
+subgraph is widened by the room the title lacks, up to twice. If that is not enough,
+or the diagram runs across the page, the title stays in the middle with the link
+through it ([#188](https://github.com/davison/md-notes/issues/188)).
 
 **What is skipped.** `style`, `classDef`, `class`, `:::class`, `linkStyle` and `click`
 are recognised and skipped whole, up to the end of their line or their `;`. The drawing
