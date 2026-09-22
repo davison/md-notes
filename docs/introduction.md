@@ -1242,8 +1242,10 @@ The editor is CodeMirror 6 with vim keybindings, markdown highlighting — inclu
 fenced blocks in their own language — line wrapping and undo history. `Tab` indents
 rather than moving focus, so `Ctrl+E` is the way out by keyboard and the mode button
 the way out by mouse. The editor's state is parked on the note between flips, so
-switching to the rendered view and back keeps the cursor position and the undo
-history.
+switching to the rendered view and back keeps the cursor position, the undo
+history and the vim mode: a note left in insert mode comes back in insert mode.
+The same holds wherever the editor is put back over the same text, including
+after **Recreate the note** ([#112](https://github.com/davison/md-notes/issues/112)).
 
 Every vim exit command saves, and none of them closes anything: `:w`, `:q`, `:q!`,
 `:x` and `:wq` all mean "save now". There is no way to quit without saving, because
@@ -1393,6 +1395,7 @@ The note bar shows where the draft stands:
 | `Saving…` | A save is in flight |
 | `Save failed: <reason>. Draft kept.`, with a **Retry** button | The daemon refused the save; the draft is untouched |
 | `Conflict: draft kept` | The file moved on under the draft; see [Conflicts](#conflicts) |
+| `Deleted on disk` | The file was deleted while there were no unsaved edits; see [Conflicts](#conflicts) |
 
 A failed save keeps the draft and shows the reason the daemon gave — a read-only
 file reports `note or directory is not readable/writable`; the rest are the codes
@@ -1439,11 +1442,20 @@ the meantime comes back as the ordinary "already exists" refusal, with the name 
 for correcting. **Copy draft** remains for a draft that is going somewhere else
 entirely. The file recreated any other way — another tool, or **New note** under the
 same name with different text — turns the conflict back into a changed one instead,
-where **Keep my draft** writes the draft over it. A clean note whose file is deleted
-is kept the same way rather than dropped, since the text on screen may be the only
-copy left. This is also the path a note deleted from *another* tab takes, and is why
-deleting a note raises no second dialog there
-([#77](https://github.com/davison/md-notes/issues/77#issuecomment-5701434216)).
+where **Keep my draft** writes the draft over it. This is also the path a note
+deleted from *another* tab takes, and is why deleting a note raises no second dialog
+there ([#77](https://github.com/davison/md-notes/issues/77#issuecomment-5701434216)).
+
+A note deleted on disk while its editor holds **no** unsaved edits is not a
+conflict, since there is nothing of the reader's to protect. The bar reads
+`Deleted on disk`, in the editor and in the rendered view, and a notice says the
+note no longer exists. The text stays in the editor, because it may be the only
+copy left, and **Recreate the note** is offered for it as above. Nothing is kept as
+a draft: the page does not ask before closing and the tab shows no marker. When the
+file comes back, whatever it holds, the note simply carries on from it and the
+notice goes by itself. Typing into the note while it is gone starts a draft of a
+note that does not exist, which is the deleted-on-disk conflict above
+([#30](https://github.com/davison/md-notes/issues/30)).
 
 ### Drafts that outlive the page
 
