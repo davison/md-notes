@@ -15,7 +15,10 @@ today, against a released daemon or one built from `main`.
 The extension is not in any store. It ships as an asset on every release —
 `mdn-extension-<tag>.zip`, beside the daemon binaries on
 [the release page](https://github.com/davison/md-notes/releases/latest) — and is
-loaded unpacked from a folder on disk.
+loaded unpacked from a folder on disk. Before you load it,
+[Privacy](privacy.md) says what it sends, where, and what it keeps, and
+[Permissions, and why each one](#permissions-and-why-each-one) says what each
+thing it asks the browser for is used for.
 
 Download the zip and unzip it into a folder of its own. It has no top-level
 directory inside it, so unzipping it where you stand scatters a dozen files
@@ -403,29 +406,84 @@ alone: it is not a path the daemon could register.
 
 ## Permissions, and why each one
 
-The manifest asks for the least that makes the above work. From
-[`extension/public/manifest.json`](../extension/public/manifest.json):
+The manifest asks for the least that makes the above work, and each grant is
+explained here for a reader who would rather not give it. From
+[`extension/public/manifest.json`](../extension/public/manifest.json); what the
+extension sends and keeps with them is in [Privacy](privacy.md).
 
-| Permission | Why |
-|------------|-----|
-| `storage` | The daemon URL and token on the options page, the per-tab status the popup reports, and the clip waiting to be saved. |
-| `contextMenus` | The two **Clip … to md-notes** entries in the page's right-click menu. |
-| `activeTab` | Reading the page you are clipping — one tab, granted at the moment you invoke the extension on it, and gone again when that tab navigates. It is why the extension can read the page you asked it to clip and no other. |
-| `scripting` | Putting the extractor and the markdown converter into that tab. `activeTab` says *which* page may be read; `scripting` is what allows code to be run in it at all. |
-| `host_permissions: http://localhost:7337/*`, `http://127.0.0.1:7337/*` | Talking to the daemon. Chromium enforces the port, so this grants no access to any other service on your machine. |
-| `host_permissions: file:///*` | Seeing that a tab has navigated to a local markdown file. Inert until you switch **Allow access to file URLs** on. |
-| `optional_host_permissions: http://*/*`, `https://*/*` | Not granted at install. Only requested, with the browser's own prompt, if you set a daemon URL that is not the default — a different port, or a name reached over the tailnet. Under a tailnet name the token is required, and everything works except registering a folder; see [A daemon reached over the tailnet](#a-daemon-reached-over-the-tailnet). |
+**`storage`.** The extension keeps exactly two settings, in
+`chrome.storage.local`: the URL of your own daemon and the bearer token that
+daemon printed for you. You type both on the options page, and every request
+the extension makes to the daemon needs them. Two further values are held in
+`chrome.storage.session`, which is discarded when the browser closes: the clip
+you have prepared but not yet saved, which has to survive the popup closing
+and the service worker being shut down between preparing it and pressing
+**Save to notes**, and the per-tab record the popup reads to explain the
+toolbar badge. Nothing is kept about the pages you visit.
+
+**`contextMenus`.** Two entries in the page's right-click menu, **Clip page to
+md-notes** and **Clip selection to md-notes**, which are the second of the two
+ways a clip starts. Nothing else is added to any menu.
+
+**`activeTab`.** Clipping a page means reading it. `activeTab` is how the
+extension reads the one tab you have just invoked it on — from the toolbar
+button or the right-click menu — at the moment you invoke it, and it loses
+that access when the tab navigates. It is asked for instead of a broad host
+permission precisely so that the extension can read the page you asked it to
+clip and no other: it registers no content scripts, so outside that moment
+none of its code runs in any page.
+
+**`scripting`.** The conversion has to happen in the page. Readability needs a
+live DOM to decide what the article is, and a selection exists nowhere but the
+tab that holds it, so the extension injects its extractor and the markdown
+converter into the one tab `activeTab` has granted, runs them there, and takes
+markdown back. `activeTab` says *which* page may be read; `scripting` is what
+allows any code to run in it at all. Nothing is injected into a tab you have
+not invoked a clip on.
+
+**`http://localhost:7337/*` and `http://127.0.0.1:7337/*`.** The extension's
+whole purpose is talking to the daemon, a program you run on your own machine
+that listens on that port by default: clips are sent there, and roots are read
+and registered there. Chromium enforces the port, so the grant reaches that
+one service and no other program on the machine.
+
+**`file:///*`.** To notice that a tab has navigated to a local markdown file,
+so the file can be opened in the app instead of shown as plain text. The
+extension reads the *address* of such a tab and nothing else — it never reads
+the file, and it registers no content script on `file:` URLs. The permission
+does nothing until you also switch on **Allow access to file URLs** for the
+extension, which Chromium requires as a separate step (see
+[Allowing access to file URLs](#allowing-access-to-file-urls)). It is asked for
+instead of `tabs` or `webNavigation`, either of which would report every
+navigation in the browser, because `file:///*` limits what the extension is
+shown to exactly the case it acts on: `chrome.tabs.onUpdated` delivers a tab's
+URL on the strength of it alone.
+
+**`http://*/*` and `https://*/*`, optional.** Not granted when you load the
+extension, and never requested unless you change the daemon URL. The daemon
+does not always sit at the default address: you may run it on another port,
+or reach your own machine over the tailnet under an `https` name. That address
+cannot be known in advance, and "whatever the user types" cannot be written as
+a manifest pattern, so the options page asks the browser for permission for
+the one address you have just typed, with the browser's own prompt, when you
+save it. Chromium will only prompt for a pattern the manifest declares as
+optional, which is why the broad pair is declared. The extension then talks to
+that one address; granting it does not make the extension visit anything
+else. Under a tailnet name the token is required, and everything works except
+registering a folder; see
+[A daemon reached over the tailnet](#a-daemon-reached-over-the-tailnet).
 
 Deliberately **not** asked for:
 
 - `tabs` and `webNavigation` — either would report every navigation in the
-  browser. The file-URL intercept listens on `chrome.tabs.onUpdated`, which
-  delivers a tab's URL on the strength of `file:///*` alone.
+  browser.
 - `<all_urls>` — the extension never needs to reach an arbitrary site.
 - Content scripts — none are registered, so no code of the extension's runs in
   a page unless you invoke a clip on it, and then only in that tab.
 - Web-accessible resources — nothing in the extension is reachable from a web
   page.
+- Remote code — everything the extension runs is in the zip; it loads no
+  script from any URL and evaluates no fetched code.
 
 ## Testing it
 
