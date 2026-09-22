@@ -178,6 +178,16 @@ files, which is lossless and makes them about a third smaller, so it needs
 and stops with a message before building anything if it is not there. Rerun it when the popup, the options page or the app's
 layout changes, and look at what moved before committing the result.
 
+The README's pictures of the app, in `docs/images/app/`, are generated the same
+way: `make screenshots` builds the daemon, serves a copy of
+`ui/scripts/demo-notes/` — a small notes folder invented for them — and writes
+the wide layout, the phone, a flowchart and the editor, each in the light and
+the dark scheme, then runs oxipng over them. It needs no particular port, but it
+does need `<tmpdir>/notes` free, since that path is in the app's header, so it
+cannot run at the same time as `make extension-screenshots`. Rerun it when the
+layout, the rendering or the diagrams change, and change the demo notes rather
+than the script when a picture needs different content.
+
 ## Running it while you work
 
 The daemon takes its configuration from `~/.config/mdn/config.yml`, and the

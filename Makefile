@@ -14,7 +14,7 @@ DIST ?= dist
 # it reports, so it builds on a host that can run one of its own targets.
 HOST_ARCH = $(shell go env GOHOSTARCH)
 
-.PHONY: all build man ui ui-deps extension extension-dist extension-deps extension-screenshots test vet check e2e vuln release install clean distclean
+.PHONY: all build man ui ui-deps extension extension-dist extension-deps extension-screenshots screenshots test vet check e2e vuln release install clean distclean
 
 # A system-wide install is the default, so that `make install` and the .deb
 # put the binary in the same place and contrib/mdn.service points at one path
@@ -116,6 +116,18 @@ extension-screenshots:
 	$(MAKE) build extension
 	node extension/scripts/screenshots.mjs
 	oxipng -o max --strip safe docs/images/extension/*.png
+
+## screenshots: regenerate docs/images/app/, the README's pictures of the app
+# Needs Playwright's Chromium, as `e2e` does. Unlike extension-screenshots it
+# needs no particular port: no address is in the pictures, so the daemon takes
+# one from the kernel. It does need <tmpdir>/notes free, the root path the
+# app's header shows; the header of ui/scripts/screenshots.mjs says why.
+# Squeezed with oxipng afterwards, for the reason given above.
+screenshots:
+	@command -v oxipng >/dev/null || { echo "oxipng is not on PATH, and screenshots finishes with it: install it first (https://github.com/oxipng/oxipng)" >&2; exit 1; }
+	$(MAKE) build
+	node ui/scripts/screenshots.mjs
+	oxipng -o max --strip safe docs/images/app/*.png
 
 ## vuln: scan the Go module graph and both lockfiles for published vulnerabilities
 # Not part of `check`, and deliberately: govulncheck downloads the
