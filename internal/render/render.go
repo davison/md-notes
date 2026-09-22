@@ -46,11 +46,20 @@ type Note struct {
 type Renderer struct {
 	md     goldmark.Markdown
 	policy *bluemonday.Policy
+	code   *lexerCache
 }
 
 // New builds a Renderer with GitHub-flavoured markdown, footnotes, heading
 // IDs, chroma highlighting emitting classes, and the app's link rewriting.
 func New() *Renderer {
+	// The highlighter draws fenced code, but only once Render has settled
+	// each block's lexer and handed it over: see codeBlock.
+	highlighter := highlighting.NewHTMLRenderer(
+		highlighting.WithFormatOptions(
+			chromahtml.WithClasses(true),
+			chromahtml.ClassPrefix(ClassPrefix),
+		),
+	)
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.NewTable(extension.WithTableCellAlignMethod(extension.TableCellAlignAttribute)),
@@ -58,12 +67,6 @@ func New() *Renderer {
 			extension.Linkify,
 			extension.TaskList,
 			extension.Footnote,
-			highlighting.NewHighlighting(
-				highlighting.WithFormatOptions(
-					chromahtml.WithClasses(true),
-					chromahtml.ClassPrefix(ClassPrefix),
-				),
-			),
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
@@ -80,10 +83,14 @@ func New() *Renderer {
 			renderer.WithNodeRenderers(
 				util.Prioritized(lineAnchorRenderer{}, 500),
 				util.Prioritized(rawHTMLRenderer{}, 500),
+				// Where goldmark-highlighting's own Extend puts it, so it
+				// gets the same options from goldmark.
+				util.Prioritized(highlighter, 200),
+				util.Prioritized(codeBlockRenderer{highlight: funcOf(highlighter, ast.KindFencedCodeBlock)}, 500),
 			),
 		),
 	)
-	return &Renderer{md: md, policy: newPolicy()}
+	return &Renderer{md: md, policy: newPolicy(), code: &lexerCache{names: map[string]string{}}}
 }
 
 // Render renders src, the content of the note at notePath inside the root
@@ -103,6 +110,11 @@ func (r *Renderer) Render(slug, notePath string, src []byte) (Note, error) {
 		title = strings.TrimSuffix(path.Base(notePath), path.Ext(notePath))
 	}
 
+	if r.code != nil {
+		// Without it, which only the tests arrange, goldmark-highlighting
+		// draws every fenced block itself.
+		body = r.code.resolveCode(doc, body)
+	}
 	var buf bytes.Buffer
 	if err := r.md.Renderer().Render(&buf, body, doc); err != nil {
 		return Note{}, fmt.Errorf("render %s: %w", notePath, err)
