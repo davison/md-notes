@@ -1,7 +1,10 @@
 # Installing md-notes
 
 The daemon ships on two channels, the Arch User Repository and a `.deb`, and the
-browser extension is a zip on the same release page. The download commands below
+browser extension is a zip on the same release page. If you're running Arch or a 
+Debian based distro, it's probably easiest to use those.
+
+If you want to install from the source (here) then the commands below
 use a `VERSION` variable, so they stay right from one release to the next. Set it
 to the [latest release](https://github.com/davison/md-notes/releases/latest)'s
 number, without the leading `v`, by asking GitHub for it:
