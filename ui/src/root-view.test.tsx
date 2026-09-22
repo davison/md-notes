@@ -164,6 +164,74 @@ describe("RootView when the listing produces no root", () => {
     await waitFor(() => expect(screen.getByText("Unknown root")).toBeTruthy());
     expect(screen.queryByText(UNREACHABLE)).toBeNull();
   });
+
+  /**
+   * The roots listing for the slug the reader has left, held until they are
+   * on the next one and it has loaded, then settled late (#123). Only the
+   * first listing is held; every later one is the ordinary mock's.
+   */
+  function holdFirstListing() {
+    const ordinary = globalThis.fetch;
+    let settle!: { resolve: (r: Response) => void; reject: (e: Error) => void };
+    let held = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/roots" && !held) {
+          held = true;
+          return new Promise<Response>((resolve, reject) => {
+            settle = { resolve, reject };
+          });
+        }
+        return ordinary(url, init);
+      }),
+    );
+    return () => settle;
+  }
+
+  function moveTo(rerender: (ui: preact.ComponentChild) => void, slug: string) {
+    history.replaceState(null, "", `/r/${slug}/docs/a.md`);
+    rerender(
+      <LocationProvider>
+        <RootView slug={slug} note="docs/a.md" />
+      </LocationProvider>,
+    );
+  }
+
+  it("a listing that fails after the reader has moved on leaves the new root alone", async () => {
+    const held = holdFirstListing();
+    const { rerender } = mountSlug("left");
+    moveTo(rerender, "n");
+    await waitFor(() => expect(document.querySelector(".shell")).not.toBeNull());
+
+    held().reject(new TypeError("Failed to fetch"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".shell")).not.toBeNull();
+    expect(screen.queryByText(UNREACHABLE)).toBeNull();
+    expect(screen.queryByText("Failed to fetch")).toBeNull();
+  });
+
+  it("a listing that answers after the reader has moved on leaves the new root alone", async () => {
+    // The same race by the other door: the left slug's listing does not
+    // name it, and that `null` must not say the root the reader is now on
+    // is unknown.
+    const held = holdFirstListing();
+    const { rerender } = mountSlug("left");
+    moveTo(rerender, "n");
+    await waitFor(() => expect(document.querySelector(".shell")).not.toBeNull());
+
+    held().resolve({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve({ roots: [{ slug: "n", path: "/n", kind: "notes" }] }),
+    } as Response);
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(document.querySelector(".shell")).not.toBeNull();
+    expect(screen.queryByText("Unknown root")).toBeNull();
+  });
 });
 
 describe("RootView live update", () => {

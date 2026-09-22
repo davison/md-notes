@@ -58,13 +58,24 @@ export function RootView({ slug, note }: { slug: string; note?: string }) {
     return new Set(t ? t.notes : []);
   }, [activeTag, tags]);
 
+  // A listing for a slug the reader has already left settles into nothing:
+  // `rootError` is cleared only when the slug changes, so a late rejection
+  // would otherwise stick on the root they moved to (#123).
   useEffect(() => {
     setRoot(undefined);
     setRootError(null);
+    let cancelled = false;
     listRoots().then(
-      (roots) => setRoot(roots.find((r) => r.slug === slug) ?? null),
-      (e: Error) => setRootError(e.message),
+      (roots) => {
+        if (!cancelled) setRoot(roots.find((r) => r.slug === slug) ?? null);
+      },
+      (e: Error) => {
+        if (!cancelled) setRootError(e.message);
+      },
     );
+    return () => {
+      cancelled = true;
+    };
   }, [slug]);
 
   const loadTree = useCallback(() => {
