@@ -495,10 +495,10 @@ func makefilePrefix(t *testing.T) string {
 // TestTheInstalledPageAndThePackageAgree: `make install` puts the manual page
 // where the .deb does, gzipped as the .deb has it, so a machine that has had
 // both has one page rather than two that man chooses between
-// (davison/md-notes#168).
+// (davison/md-notes#168). Read off a real staged install at the default
+// prefix, not built from PREFIX in the test, so it is the recipe's path that
+// has to match nfpm.yaml's.
 func TestTheInstalledPageAndThePackageAgree(t *testing.T) {
-	prefix := makefilePrefix(t)
-
 	var packaged string
 	for _, entry := range packageConfig(t).Contents {
 		if entry.Src == "mdn.1.gz" {
@@ -508,8 +508,23 @@ func TestTheInstalledPageAndThePackageAgree(t *testing.T) {
 	if packaged == "" {
 		t.Fatal("packaging/deb/nfpm.yaml installs no mdn.1.gz")
 	}
-	if want := prefix + "/share/man/man1/mdn.1.gz"; packaged != want {
-		t.Errorf("the .deb installs the manual page at %q but `make install` puts it at %q (PREFIX ?= %s)", packaged, want, prefix)
+
+	tree, destdir := installTree(t, true, true, true)
+	if out, err := runMake(t, tree, "install", "DESTDIR="+destdir); err != nil {
+		t.Fatalf("make install: %v\n%s", err, out)
+	}
+	var pages []string
+	err := filepath.WalkDir(filepath.Join(destdir, "usr", "share", "man"), func(path string, entry os.DirEntry, err error) error {
+		if err == nil && !entry.IsDir() {
+			pages = append(pages, "/"+filepath.ToSlash(strings.TrimPrefix(path, destdir+string(filepath.Separator))))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0] != packaged {
+		t.Errorf("`make install` put %v under share/man; the .deb installs exactly %s", pages, packaged)
 	}
 }
 
