@@ -6,7 +6,7 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { tags } from "@lezer/highlight";
-import { Vim, vim } from "@replit/codemirror-vim";
+import { Vim, getCM, vim } from "@replit/codemirror-vim";
 import type { Session } from "./session";
 
 const markdownStyle = HighlightStyle.define([
@@ -158,6 +158,14 @@ function holdsDraft(state: EditorState, draft: string): boolean {
  * away the selection and the scroll for nothing, which on a long note is
  * the reader's place in it, so a parked state holding this very text is
  * kept and only the counter moves.
+ *
+ * Vim's mode is not part of that state: it lives on the view, and a new
+ * view starts in normal mode. So whether the reader was in insert mode is
+ * parked beside the state and put back whenever the state is, with the
+ * selection restored after it so the caret does not move — a reader who was
+ * typing when the note vanished is typing again when **Recreate the note**
+ * brings it back (#112), and a mode switch and back is the same case. A
+ * rebuilt state is a different document, and starts in normal mode.
  */
 export function Editor({ session }: { session: Session }) {
   const host = useRef<HTMLDivElement>(null);
@@ -171,10 +179,16 @@ export function Editor({ session }: { session: Session }) {
     const state = keep ? parked : createState(session.state.draft, session);
     const view = new EditorView({ state, parent });
     owners.set(view, session);
+    const cm = getCM(view);
+    if (keep && session.editorInsert && cm) {
+      Vim.handleKey(cm, "i", "api");
+      view.dispatch({ selection: state.selection });
+    }
     view.focus();
     return () => {
       session.editorState = view.state;
       session.editorGeneration = generation;
+      session.editorInsert = getCM(view)?.state.vim?.insertMode === true;
       view.destroy();
     };
   }, [session, generation]);

@@ -96,6 +96,8 @@ export class Session {
   /** The editor's own state (cursor, history), parked here between mounts. */
   editorState: unknown = null;
   editorGeneration = -1;
+  /** Whether vim was in insert mode when the editor state above was parked. */
+  editorInsert = false;
 
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;

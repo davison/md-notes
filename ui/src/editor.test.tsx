@@ -186,6 +186,63 @@ describe("Editor", () => {
     expect(s.state.draft).toBe(typed);
   });
 
+  describe("the vim mode across a recreate (#112)", () => {
+    /** An editor over a deleted conflict, caret at the end of the third line. */
+    function orphaned() {
+      const draft = "one\ntwo\nthree\nfour\n";
+      const s = session(draft);
+      s.state = { ...s.state, status: "conflict", conflict: { kind: "deleted", current: null } };
+      const r = render(<Editor session={s} />);
+      const view = viewOf(r.container);
+      view.dispatch({ selection: { anchor: 13 } });
+      return { s, draft, ...r, cm: () => getCM(viewOf(r.container))! };
+    }
+
+    it("returns a reader who was typing to insert mode, caret where it was", () => {
+      const { s, draft, rerender, cm, container } = orphaned();
+      // `a` on the last character of the line: the insert-mode caret sits
+      // after it, at the end of the line, where normal mode cannot put it.
+      viewOf(container).dispatch({ selection: { anchor: 12 } });
+      Vim.handleKey(cm(), "a", "user");
+      expect(cm().state.vim?.insertMode).toBe(true);
+      expect(viewOf(container).state.selection.main.head).toBe(13);
+
+      expect(s.recreated({ source: draft, revision: "r2" })).toBe(true);
+      rerender(<Editor session={s} />);
+
+      expect(cm().state.vim?.insertMode).toBe(true);
+      expect(viewOf(container).state.selection.main.head).toBe(13);
+      // The next key is a character, not a command: vim leaves it to the
+      // editor rather than consuming it (the browser test types it for real).
+      expect(Vim.handleKey(cm(), "x", "user")).toBeFalsy();
+      expect(s.state.draft).toBe(draft);
+    });
+
+    it("leaves a reader who was in normal mode in normal mode", () => {
+      const { s, draft, rerender, cm, container } = orphaned();
+      expect(cm().state.vim?.insertMode).toBeFalsy();
+      const head = viewOf(container).state.selection.main.head;
+
+      expect(s.recreated({ source: draft, revision: "r2" })).toBe(true);
+      rerender(<Editor session={s} />);
+
+      expect(cm().state.vim?.insertMode).toBeFalsy();
+      expect(viewOf(container).state.selection.main.head).toBe(head);
+    });
+
+    it("starts in normal mode when the text is replaced from disk", () => {
+      // A rebuilt state is a different document: the caret is not kept, and
+      // neither is the mode, as before.
+      const s = session("one\n");
+      const r = render(<Editor session={s} />);
+      Vim.handleKey(getCM(viewOf(r.container))!, "i", "user");
+      s.state = { ...s.state, draft: "replaced\n", base: { source: "replaced\n", revision: "r2" }, generation: s.state.generation + 1 };
+      r.rerender(<Editor session={s} />);
+      expect(viewOf(r.container).state.doc.toString()).toBe("replaced\n");
+      expect(getCM(viewOf(r.container))!.state.vim?.insertMode).toBeFalsy();
+    });
+  });
+
   it.each([
     ["a CRLF note normalised to LF", "one\r\ntwo\r\n", "one\ntwo\n", "one\ntwo\nthree\n"],
     ["an LF note gaining CRLF", "one\ntwo\n", "one\r\ntwo\r\n", "one\r\ntwo\r\nthree\r\n"],
