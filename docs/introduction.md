@@ -1442,9 +1442,7 @@ the meantime comes back as the ordinary "already exists" refusal, with the name 
 for correcting. **Copy draft** remains for a draft that is going somewhere else
 entirely. The file recreated any other way — another tool, or **New note** under the
 same name with different text — turns the conflict back into a changed one instead,
-where **Keep my draft** writes the draft over it. This is also the path a note
-deleted from *another* tab takes, and is why deleting a note raises no second dialog
-there ([#77](https://github.com/davison/md-notes/issues/77#issuecomment-5701434216)).
+where **Keep my draft** writes the draft over it.
 
 A note deleted on disk while its editor holds **no** unsaved edits is not a
 conflict, since there is nothing of the reader's to protect. The bar reads
@@ -1456,6 +1454,11 @@ file comes back, whatever it holds, the note simply carries on from it and the
 notice goes by itself. Typing into the note while it is gone starts a draft of a
 note that does not exist, which is the deleted-on-disk conflict above
 ([#30](https://github.com/davison/md-notes/issues/30)).
+
+A note deleted from *another* tab takes one of these two paths here: the banner when
+this tab holds unsaved edits to it, `Deleted on disk` when it does not. Either way,
+this is why deleting a note raises no second dialog in another tab
+([#77](https://github.com/davison/md-notes/issues/77#issuecomment-5701434216)).
 
 ### Drafts that outlive the page
 
