@@ -55,7 +55,9 @@ as a code project's docs.
 ## Diagrams
 
 A mermaid flowchart in a note is drawn as a diagram, in the theme you are
-reading in, and redrawn when the note changes.
+reading in, and redrawn when the note changes. A diagram wider than the page
+scrolls in a box of its own rather than shrinking past the point where its
+labels can be read, and a click or a tap opens any diagram at its natural size.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/app/flowchart-dark.png">
