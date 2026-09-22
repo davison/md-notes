@@ -37,8 +37,9 @@ import (
 
 // Server serves the API and UI for a registry of roots.
 type Server struct {
-	// listening runs once the port is bound, before the first request is
-	// served. Nil for none.
+	// listening runs once the port is bound. The listener is already
+	// serving by then, so it may run while the first requests are being
+	// answered. Nil for none.
 	listening func()
 	reg       *roots.Registry
 	port      int
@@ -218,6 +219,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 	ln, err := net.Listen("tcp", srv.Addr)
 	if err != nil {
+		// New has already started the roots' watchers; a start that never
+		// bound stops them, rather than leaving them running (and logging)
+		// after the caller has given up.
+		s.Close()
 		return err
 	}
 	errc := make(chan error, 1)
@@ -762,9 +767,10 @@ func noSuchNote(w http.ResponseWriter, file string) {
 // ask for. A permanent root — any configured root after the first — is
 // configuration too, and is refused the same way under its own code,
 // `permanent_root`, so the sentence can say which it is. An unknown slug
-// is `not_found`, which is also what removing the same root twice gets. Under the tailnet name the request never reaches
-// here at all — the allow-list admits `GET /api/roots` and nothing else
-// under that path, and this endpoint is refused by that default.
+// is `not_found`, which is also what removing the same root twice gets.
+// Under the tailnet name the request never reaches here at all — the
+// allow-list admits `GET /api/roots` and nothing else under that path,
+// and this endpoint is refused by that default.
 func (s *Server) removeRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	slug := r.PathValue("slug")
