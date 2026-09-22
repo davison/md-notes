@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   deb:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       # gh release upload writes the two packages back to the release.
       contents: write
@@ -46,7 +46,7 @@ jobs:
       # The tag, not the default branch: contrib/mdn.service, LICENSE and
       # packaging/deb/ have to be the ones this release was cut from, or the
       # package would carry files from whatever main had drifted to since.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name }}
 

@@ -13,22 +13,34 @@ on:
   # (davison/md-notes#134).
   workflow_call:
 
+# What every job in this repository's workflows pins, and why
+# (davison/md-notes#193). scripts/workflows/pins_test.go holds all four files
+# to it.
+#
+# - The runner is ubuntu-24.04 by name, never ubuntu-latest. The publish
+#   workflows check out a tag and run when the Release is published, which can
+#   be days later; a label that moved in between (ubuntu-latest became Ubuntu
+#   26 on 2026-10-19) could break a channel in a way only a new tag repairs.
+#   Moving image is a reviewed one-line change instead.
+# - Every action is on a major that runs on Node 24. The Node 20 majors were
+#   deprecated on the runners and are forced onto Node 24 until they are
+#   refused outright.
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: |
             ui/pnpm-lock.yaml
             extension/pnpm-lock.yaml
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
@@ -49,23 +61,23 @@ jobs:
   # so the Go and unit suites still report in their own time and a browser
   # download never sits in front of them.
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The whole job is a build and a seven-second suite; anything near this
     # is hung, and a hung job should not hold a runner for six hours.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: |
             ui/pnpm-lock.yaml
             extension/pnpm-lock.yaml
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       # The daemon lists and searches a root through ripgrep, so a runner
@@ -80,7 +92,7 @@ jobs:
       # changes, so a hit is always the right Chromium.
       - name: Restore the Chromium download
         id: chromium
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: ms-playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
