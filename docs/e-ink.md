@@ -58,8 +58,8 @@ tabs, the top bar's buttons including **New note**, the note bar's including
 prompt's name box and the home page's **Remove** control on a recent root — are
 at least 40 pixels tall wherever the browser
 reports a touch or stylus pointer, including the wide layout you get by zooming
-out. The **Close** button of a diagram's natural-size view is at least 40 pixels
-each way under any pointer. A mouse keeps the compact rows. Links *inside* a note
+out. A mouse keeps the compact rows. Even under a mouse, the **Close** button of a
+diagram's natural-size view is at least 40 pixels each way. Links *inside* a note
 are the exception, and have to be: their size is the line of prose they sit in,
 and a 40-pixel line is not prose.
 
