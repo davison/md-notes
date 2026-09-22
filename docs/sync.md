@@ -76,9 +76,9 @@ essentials:
    other by their tailnet names, and Syncthing's own relays and discovery work
    without one.
 3. **Share the notes folder.** Add your notes root — the directory
-   `notes_root` names in `~/.config/mdn/config.yml` — as a Syncthing folder,
-   give it a **folder ID** you will recognise, and share it with the other
-   devices. They pick their own local path for it; the folder ID is what makes
+   `notes_root` names in `~/.config/mdn/config.yml`, or its first entry if it is
+   a list — as a Syncthing folder, give it a **folder ID** you will
+   recognise, and share it with the other devices. They pick their own local path for it; the folder ID is what makes
    them the same folder.
 4. **Leave the folder type at Send & Receive on every device**, the phone
    included. It is the default, and the one setting on this list that loses

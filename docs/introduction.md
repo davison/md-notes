@@ -109,7 +109,7 @@ One static Go binary, `mdn`, with the web UI compiled into it. It listens on the
 loopback address only and serves every root it knows about.
 
 ```
-mdn serve                run the daemon against the configured notes root
+mdn serve                run the daemon against the configured roots
 mdn open DIR             register DIR with the running daemon and open it
 mdn token                print the bearer token (--rotate replaces it)
 mdn version              print the version
@@ -121,6 +121,14 @@ the file says, `--state FILE` (default `~/.local/state/mdn/roots.json`) for wher
 folders added with `mdn open` are remembered, and `--token-file FILE` (default
 `~/.local/state/mdn/token`) for the bearer token. It stops cleanly on `SIGINT` and
 `SIGTERM`.
+
+`--root` can be given more than once, and every one is served:
+`mdn serve --root ~/notes --root ~/projects` serves both, with `~/notes` as the notes
+root and `~/projects` as a [permanent root](#roots). Any `--root` replaces
+`notes_root` from the file completely rather than adding to it, just as `--port`
+replaces `port`, so the command line alone says what is served and which folder is
+first. The daemon refuses to start if two roots name the same folder, including
+through a symlink.
 
 `mdn open DIR` takes `--config FILE`, `--port N`, and `--no-browser` to print the URL
 instead of launching one. It resolves `DIR` against your working directory, POSTs it
@@ -143,6 +151,19 @@ max_watches: 8192
 clips_dir: clips
 tailnet_host: laptop.tailnet-name.ts.net
 ```
+
+`notes_root` also takes a list, which is how you name several permanent roots in
+the file:
+
+```yaml
+notes_root:
+  - /home/you/notes      # the notes root: clips land here
+  - /home/you/projects   # a permanent root
+```
+
+The first entry is the notes root and the rest are permanent roots, in the order
+given. Each one must be an existing directory, and two entries naming the same
+folder stop the daemon at startup with an error naming both.
 
 A missing file is not an error as long as `--root` supplies the notes root. The
 default port is 7337 and the default watch budget 8192 directories per root; `0`
@@ -169,11 +190,20 @@ gitignored and hidden files stay out of all three.
 ## Roots
 
 A root is a folder the daemon serves, identified in URLs by a slug derived from its
-basename and deduplicated with a numeric suffix. There are two kinds:
+basename and deduplicated with a numeric suffix. There are three kinds, and the kind
+is the `kind` field of each root in `GET /api/roots`:
 
-- The **notes root**, from `notes_root` or `--root`. It is permanent and always
-  present.
-- **Recent roots**, added by `mdn open` or by the browser extension when you open a
+- The **notes root** (`notes`): the first entry in `notes_root`, or the first
+  `--root`. It is permanent and always present, and it is where
+  [clips](#clipping-a-web-page) land.
+- **Permanent roots** (`permanent`): every configured root after the first, from
+  `notes_root`'s list form or a repeated `--root`. Like the notes root they are the
+  daemon's configuration. They are served from every start, never written to the
+  state file, and cannot be removed from the home page. A folder in the state file
+  as a recent root that is now configured is dropped from the state file and served
+  once, as permanent. One configured root may sit inside another: each is served as
+  a root of its own, as a nested `mdn open` is.
+- **Recent roots** (`recent`), added by `mdn open` or by the browser extension when you open a
   local markdown file. They persist to the state file with their slugs, so a root's
   URL survives a restart. A recent root whose directory has since disappeared is
   dropped when the daemon next starts, and any of them can be removed from the home
@@ -212,11 +242,12 @@ directory for ever
 the **Remove** control beside the root, behind a confirmation naming the folder. The
 root leaves the registry and the state file at once. Nothing leaves the disk: the
 folder and every note in it stay exactly as they are, and registering the folder
-again brings the root back. Two things are refused: the configured notes root, with
-`403 {"code":"notes_root"}` — it is the daemon's configuration rather than a
-registration, and the next start would put it back — and a slug that is not
-registered, with `404 {"code":"not_found"}`, which is also what removing the same
-root twice gets.
+again brings the root back. When the last recent root is removed, the state file is
+left as `{"recent": []}`. Three things are refused. The configured notes root gets
+`403 {"code":"notes_root"}`, and a permanent root gets `403 {"code":"permanent_root"}`:
+both are the daemon's configuration rather than registrations, and the next start
+would put them back. A slug that is not registered gets `404 {"code":"not_found"}`,
+which is also what removing the same root twice gets.
 
 A tab left open on a root that has just been removed lands on the home page rather
 than on a dead route. The daemon ends the root's event streams when it unregisters
@@ -234,9 +265,9 @@ Both are loopback-only. Registering a root and unregistering one are refused und
 configured `tailnet_host` — see [What is reachable under that
 name](#what-is-reachable-under-that-name-and-what-is-not).
 
-The home page at `/` lists the notes root under "Notes" and every recent root under
-"Recent", each linking to its three-pane view, and each recent root with the
-**Remove** control beside it.
+The home page at `/` lists the notes root and the permanent roots under "Notes", in
+the order configured, and every recent root under "Recent". Each links to its
+three-pane view, and only the recent roots have the **Remove** control beside them.
 
 ## The HTTP API
 
@@ -248,9 +279,9 @@ the [tailnet section](#reaching-the-daemon-over-the-tailnet) says why.
 
 | Endpoint | What it does |
 |----------|--------------|
-| `GET /api/roots` | `{roots: [{slug, path, kind}]}` |
+| `GET /api/roots` | `{roots: [{slug, path, kind}]}`, `kind` being `notes`, `permanent` or `recent`; the notes root first, then the permanent roots in the order configured, then the recent roots. See [Roots](#roots) |
 | `POST /api/roots` | Registers `{"path": "/absolute/dir"}` and returns the root. Relative paths are refused, and a path that is not a directory is `400` with the filesystem's own sentence. The optional `"file"` names a note inside that folder: with it the daemon registers only once it has found the note, and otherwise answers `404 {"code":"not_found"}` having written nothing. See [Roots](#roots) |
-| `DELETE /api/roots/{slug}` | Unregisters a recent root and returns `204 No Content`; the root leaves the registry and the state file, and no file leaves the disk. `403 {"code":"notes_root"}` for the configured notes root, `404 {"code":"not_found"}` for a slug that is not registered, and `403 {"code":"loopback_only"}` under a configured `tailnet_host`. See [Roots](#roots) |
+| `DELETE /api/roots/{slug}` | Unregisters a recent root and returns `204 No Content`; the root leaves the registry and the state file, and no file leaves the disk. `403 {"code":"notes_root"}` for the configured notes root, `403 {"code":"permanent_root"}` for a permanent root, `404 {"code":"not_found"}` for a slug that is not registered, and `403 {"code":"loopback_only"}` under a configured `tailnet_host`. See [Roots](#roots) |
 | `GET /api/r/{slug}/tree` | The root's markdown tree as nested `{name, path, dir, children}`, each file node also carrying `modified`, its modification time in Unix milliseconds — absent on a directory, and on a file whose time the daemon could not read. See [the navigator's order](#the-web-ui) |
 | `GET /api/r/{slug}/note/{path...}` | A rendered note as `{path, title, frontmatter, html, diagrams}`. `diagrams` lists the note's drawable flowcharts as `[{line, hash}]` — the `data-line` of the anchor before the block and a hash of its source — and is absent when there are none. With `?sizes=1` the daemon also measures them, within a 150 ms budget: each entry it reached gains the drawing's `width` and `height`, and a block the layout refuses is left out. Non-markdown paths are 404 here. See [Flowcharts](#flowcharts) |
 | `GET /api/r/{slug}/diagram/{path...}?h=&theme=` | The SVG of the flowchart whose hash is `h` in that note, drawn in the `light`, `dark` or `eink` palette, as `image/svg+xml` with `Cache-Control: no-cache` and an `ETag`. `404` when the note holds no such block (it changed), `400` for a bad `theme` or `h`, `422` with the reason when the daemon refuses to draw it. Every answer carries `Content-Security-Policy: default-src 'none'; sandbox` and `X-Content-Type-Options: nosniff`. See [Flowcharts](#flowcharts) |
