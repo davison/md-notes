@@ -22,17 +22,18 @@ thing it asks the browser for is used for.
 
 Download the zip and unzip it into a folder of its own. It has no top-level
 directory inside it, so unzipping it where you stand scatters a dozen files
-across that directory; `-d` is what keeps them together:
+across that directory; `-d` is what keeps them together. With `VERSION` set to the
+release's number, as [Installing md-notes](install.md) shows:
 
 ```
-curl -fsSLO https://github.com/davison/md-notes/releases/download/v0.1.0/mdn-extension-v0.1.0.zip
-unzip -d mdn-extension-v0.1.0 mdn-extension-v0.1.0.zip
+curl -fsSLO https://github.com/davison/md-notes/releases/download/v$VERSION/mdn-extension-v$VERSION.zip
+unzip -d mdn-extension-v$VERSION mdn-extension-v$VERSION.zip
 ```
 
 `SHA256SUMS` on the same page covers that zip, if you want to check it:
 
 ```
-curl -fsSLO https://github.com/davison/md-notes/releases/download/v0.1.0/SHA256SUMS
+curl -fsSLO https://github.com/davison/md-notes/releases/download/v$VERSION/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS
 ```
 

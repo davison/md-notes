@@ -1,10 +1,21 @@
 # Installing md-notes
 
 The daemon ships on two channels, the Arch User Repository and a `.deb`, and the
-browser extension is a zip on the same release page. The commands below name
-[v0.1.0](https://github.com/davison/md-notes/releases/tag/v0.1.0), the first
-release; [the releases page](https://github.com/davison/md-notes/releases/latest)
-has the current one.
+browser extension is a zip on the same release page. The download commands below
+use a `VERSION` variable, so they stay right from one release to the next. Set it
+to the [latest release](https://github.com/davison/md-notes/releases/latest)'s
+number, without the leading `v`, by asking GitHub for it:
+
+```
+VERSION=$(curl -fsSL https://api.github.com/repos/davison/md-notes/releases/latest \
+  | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+echo "$VERSION"
+```
+
+or by hand (`VERSION=0.1.0`) for a particular one from
+[the releases page](https://github.com/davison/md-notes/releases). These are
+bash and zsh commands; in fish, set it with `set VERSION 0.1.0` (or `set VERSION
+(…)` around the same pipeline), and the commands below then work unchanged.
 
 Whichever way you install it, the daemon needs **ripgrep** (`rg`) on `PATH` at
 runtime. It builds the navigator's tree and runs search and tags, and it is what
@@ -33,15 +44,15 @@ compiling one, and the AUR asks for the suffix when it does.
 Every release carries a `.deb` for amd64 and arm64:
 
 ```
-curl -fsSLO https://github.com/davison/md-notes/releases/download/v0.1.0/md-notes_0.1.0_amd64.deb
-sudo apt install ./md-notes_0.1.0_amd64.deb
+curl -fsSLO https://github.com/davison/md-notes/releases/download/v$VERSION/md-notes_"$VERSION"_amd64.deb
+sudo apt install ./md-notes_"$VERSION"_amd64.deb
 ```
 
 The leading `./` is what tells apt the argument is a file rather than the name of
 a package in a repository. It installs `/usr/bin/mdn`, the manual page, the unit
 as `/usr/lib/systemd/user/mdn.service` and the licence, and pulls ripgrep in. No
-apt repository is hosted, so an upgrade is those two lines again with a later
-version.
+apt repository is hosted, so an upgrade is those lines again, with `VERSION` set
+to the later release. On arm64, put `arm64` where the file name says `amd64`.
 
 ## Starting it
 
@@ -55,13 +66,13 @@ systemctl --user enable --now mdn
 
 ## The browser extension
 
-There is no store listing. Download `mdn-extension-v0.1.0.zip`, unzip it into a
+There is no store listing. Download `mdn-extension-v$VERSION.zip`, unzip it into a
 folder of its own — the zip has no top-level directory of its own, so unzipping
 it where you stand scatters a dozen files — and load that folder unpacked:
 
 ```
-curl -fsSLO https://github.com/davison/md-notes/releases/download/v0.1.0/mdn-extension-v0.1.0.zip
-unzip -d mdn-extension-v0.1.0 mdn-extension-v0.1.0.zip
+curl -fsSLO https://github.com/davison/md-notes/releases/download/v$VERSION/mdn-extension-v$VERSION.zip
+unzip -d mdn-extension-v$VERSION mdn-extension-v$VERSION.zip
 ```
 
 Then `brave://extensions` (or `chrome://extensions`), **Developer mode** on,
@@ -78,7 +89,7 @@ local files, and every permission it asks for.
 built — the two binaries and the extension zip:
 
 ```
-curl -fsSLO https://github.com/davison/md-notes/releases/download/v0.1.0/SHA256SUMS
+curl -fsSLO https://github.com/davison/md-notes/releases/download/v$VERSION/SHA256SUMS
 sha256sum --ignore-missing -c SHA256SUMS
 ```
 
@@ -89,8 +100,8 @@ prove about the commit they were built from.
 
 ## The bare binary
 
-The daemon can also be taken bare: `mdn-v0.1.0-linux-amd64` and
-`mdn-v0.1.0-linux-arm64` on the release page are the static binary, needing only
+The daemon can also be taken bare: `mdn-v$VERSION-linux-amd64` and
+`mdn-v$VERSION-linux-arm64` on the release page are the static binary, needing only
 ripgrep on `PATH` and a configuration file. Put it on your `PATH` as `mdn`; the
 unit, [contrib/mdn.service](../contrib/mdn.service), expects it at `/usr/bin/mdn`,
 and its header says how to point it elsewhere.
