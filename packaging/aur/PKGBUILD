@@ -18,8 +18,10 @@ conflicts=('md-notes')
 options=('!strip' '!debug')
 install=md-notes-bin.install
 source=("md-notes-$pkgver-LICENSE::https://raw.githubusercontent.com/davison/md-notes/v$pkgver/LICENSE"
-        "md-notes-$pkgver-mdn.service::https://raw.githubusercontent.com/davison/md-notes/v$pkgver/contrib/mdn.service")
+        "md-notes-$pkgver-mdn.service::https://raw.githubusercontent.com/davison/md-notes/v$pkgver/contrib/mdn.service"
+        "md-notes-$pkgver-mdn.1::https://raw.githubusercontent.com/davison/md-notes/v$pkgver/contrib/mdn.1")
 sha256sums=('SKIP'
+            'SKIP'
             'SKIP')
 source_x86_64=("md-notes-$pkgver-mdn::https://github.com/davison/md-notes/releases/download/v$pkgver/mdn-v$pkgver-linux-amd64")
 sha256sums_x86_64=('SKIP')
@@ -37,4 +39,10 @@ package() {
 		"$pkgdir/usr/lib/systemd/user/mdn.service"
 	install -Dm644 "$srcdir/md-notes-$pkgver-LICENSE" \
 		"$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+	# The same page the .deb and make install carry, filled in the same way.
+	install -d "$pkgdir/usr/share/man/man1"
+	sed -e "s/@VERSION@/$pkgver/g" \
+		-e "s/@DATE@/$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%d)/g" \
+		"$srcdir/md-notes-$pkgver-mdn.1" >"$pkgdir/usr/share/man/man1/mdn.1"
+	chmod 644 "$pkgdir/usr/share/man/man1/mdn.1"
 }

@@ -156,11 +156,13 @@ stage_copyright() {
 	} >"$dst"
 }
 
-# stage_manpage writes packaging/deb/mdn.1 with its placeholders filled in.
+# stage_manpage writes contrib/mdn.1 with its placeholders filled in. The page
+# is the program's, not this package's: `make install` and the AUR package
+# install the same file (davison/md-notes#168).
 stage_manpage() {
 	local version="$1" dst="$2" date
 	date="$(date -u +%Y-%m-%d ${SOURCE_DATE_EPOCH:+-d "@$SOURCE_DATE_EPOCH"})"
-	sed -e "s/@VERSION@/$version/g" -e "s/@DATE@/$date/g" "$HERE/mdn.1" >"$dst"
+	sed -e "s/@VERSION@/$version/g" -e "s/@DATE@/$date/g" "$REPO/contrib/mdn.1" >"$dst"
 	! grep -q '@[A-Z]*@' "$dst" || die "a placeholder was left unfilled in $dst"
 	gzip -9n "$dst"
 }

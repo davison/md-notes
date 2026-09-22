@@ -506,6 +506,7 @@ func fakeRepo(t *testing.T, root, unit string) string {
 		copyFile(t, filepath.Join(repoRoot, "packaging", "deb", entry.Name()), filepath.Join(deb, entry.Name()))
 	}
 	copyFile(t, filepath.Join(repoRoot, "LICENSE"), filepath.Join(root, "LICENSE"))
+	copyFile(t, filepath.Join(repoRoot, "contrib", "mdn.1"), filepath.Join(root, "contrib", "mdn.1"))
 	if err := os.WriteFile(filepath.Join(root, "contrib", "mdn.service"), []byte(unit), 0o644); err != nil {
 		t.Fatal(err)
 	}

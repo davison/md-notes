@@ -1,11 +1,21 @@
-.\" Manual page for the mdn daemon, shipped in the md-notes Debian package
-.\" (davison/md-notes#137). packaging/deb/build.sh substitutes @VERSION@ and
-.\" @DATE@ at packaging time, so the footer names the release it shipped with.
+.\" Manual page for the mdn daemon. @VERSION@ and @DATE@ are filled in by
+.\" whichever route installs it, so the footer names the version that route
+.\" shipped (davison/md-notes#168):
 .\"
-.\" It exists because Debian Policy 12.1 asks every program in /usr/bin for
-.\" one, and lintian says so; the alternative was a lintian override
-.\" justifying its absence, and for a command with four subcommands the page
-.\" is smaller than the justification.
+.\"   - `make build` writes ./mdn.1 from this file, and `make install` installs
+.\"     that at $(PREFIX)/share/man/man1/mdn.1.gz;
+.\"   - packaging/deb/build.sh stages it for the .deb, at the same path;
+.\"   - the AUR package's PKGBUILD downloads it from the release's tag and fills
+.\"     it in during package(), and makepkg compresses it to the same path.
+.\"
+.\" It lived in packaging/deb/ until then, which is how the other two routes
+.\" came to leave it out: it looked like part of the Debian packaging rather
+.\" than part of the program.
+.\"
+.\" It was first written because Debian Policy 12.1 asks every program in
+.\" /usr/bin for one, and lintian says so (davison/md-notes#137); the
+.\" alternative was a lintian override justifying its absence, and for a
+.\" command with four subcommands the page is smaller than the justification.
 .\"
 .\" Every flag and every configuration key below was read off cmd/mdn/*.go and
 .\" internal/config/config.go rather than from memory. A manual page installed

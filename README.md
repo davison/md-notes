@@ -157,7 +157,7 @@ the tag panel all run through it, which is what keeps gitignored and hidden
 files out of the tree and out of results.
 
 ```
-make build      # builds the UI and the static ./mdn binary
+make build      # builds the UI, the static ./mdn binary and its manual page
 make extension  # builds the browser extension to extension/dist and a zip
 make check      # vet, typecheck, tests, build
 make e2e        # browser checks for the UI, in headless Chromium
@@ -186,25 +186,25 @@ check`, and it runs as its own CI job. The extension's own end-to-end
 suites (`pnpm --dir extension e2e`) share the same Playwright installation
 and additionally need `make extension`.
 
-`make install` copies and nothing else: it installs the `./mdn` that
-`make build` already made, and [contrib/mdn.service](contrib/mdn.service)
-beside it, to the two paths the `.deb` uses — `/usr/bin/mdn` and
-`/usr/lib/systemd/user/mdn.service`. It never runs pnpm or go, so build as
-yourself and install as root:
+`make install` copies and nothing else: it installs the `./mdn` and `./mdn.1`
+that `make build` already made, and [contrib/mdn.service](contrib/mdn.service)
+beside them, to the three paths the `.deb` uses — `/usr/bin/mdn`,
+`/usr/share/man/man1/mdn.1.gz` and `/usr/lib/systemd/user/mdn.service`. It
+never runs pnpm or go, so build as yourself and install as root:
 
 ```
 make build
 sudo make install
 ```
 
-With either file missing it refuses in one line and copies nothing, pointing
+With any of them missing it refuses in one line and copies nothing, pointing
 at `make build`. It ends by printing the two `systemctl --user` lines for you
 to run: enabling a *user* unit is not something root can do on your behalf,
 because `systemctl --user` under `sudo` is root's own session.
 
 `make install PREFIX=$HOME/.local` installs for one user instead and needs no
 root; the unit file's header says what that route then needs.
-`make install DESTDIR=$PWD/dist/scratch` stages the same two files under
+`make install DESTDIR=$PWD/dist/scratch` stages the same three files under
 `dist/scratch/`, which is how to see exactly what an install would write
 without writing it anywhere the system reads — it says it staged, and leaves
 out the `systemctl --user` lines, because nothing has been installed to

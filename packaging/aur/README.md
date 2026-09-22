@@ -1,7 +1,8 @@
 # The AUR package
 
 `md-notes-bin` on the [Arch User Repository][aur]. It installs the `mdn`
-binary a release publishes, the systemd user unit and the licence. It depends
+binary a release publishes, its manual page, the systemd user unit and the
+licence. It depends
 on ripgrep, and suggests `xdg-utils`, which `mdn open` runs to launch a
 browser:
 
@@ -58,11 +59,16 @@ gh release download v0.1.0 --pattern SHA256SUMS
 go run ./scripts/aurgen -version v0.1.0 -sums SHA256SUMS
 ```
 
-The two binaries' checksums come from the release's own `SHA256SUMS`; the
-licence's and the unit's are hashed from this checkout, because the release
-carries bare binaries and neither of those two files. That is also why they
-are fetched from `raw.githubusercontent.com` at the tag rather than from the
-release.
+The two binaries' checksums come from the release's own `SHA256SUMS`. The
+licence, the unit and the manual page (`contrib/mdn.1`) are hashed from this
+checkout, because the release carries bare binaries and none of those three
+files, and for the same reason they are fetched from
+`raw.githubusercontent.com` at the tag rather than from the release.
+`package()` fills in the page's version from `$pkgver` and its date from
+`SOURCE_DATE_EPOCH` (davison/md-notes#168).
+
+The page moved to `contrib/` after v0.1.0, so a PKGBUILD rendered for that tag
+asks for a URL that 404s. Every later tag has the file.
 
 `pkgrel` is 1 for every release and the workflow never passes anything else: a
 new `pkgver` resets it. The case that needs it bumped is a packaging change at
@@ -91,7 +97,10 @@ It builds with `makepkg -s` as a non-root user, diffs `.SRCINFO` against what
 over both the `PKGBUILD` and the built package and fails on any `E:` line,
 installs the package, checks `mdn version` against the tag, that the installed
 unit is `contrib/mdn.service` byte for byte and that systemd reads it without
-complaint, then removes it and checks nothing survived. It
+complaint, and that `man -w mdn` finds the page with this version in its
+footer, then removes it and checks nothing survived. The archlinux image tells
+pacman not to extract manual pages, so the script lifts that one `NoExtract`
+line first. It
 refuses to run outside a container, because installing and removing packages
 on a machine somebody uses is not a test.
 

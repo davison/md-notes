@@ -8,12 +8,13 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS = -s -w -X main.version=$(VERSION)
 EXTENSION_ZIP := extension/mdn-extension.zip
 UNIT := contrib/mdn.service
+MANPAGE := contrib/mdn.1
 DIST ?= dist
 # The release runs one of the binaries it just built to check what version
 # it reports, so it builds on a host that can run one of its own targets.
 HOST_ARCH = $(shell go env GOHOSTARCH)
 
-.PHONY: all build ui ui-deps extension extension-dist extension-deps test vet check e2e vuln release install clean distclean
+.PHONY: all build man ui ui-deps extension extension-dist extension-deps test vet check e2e vuln release install clean distclean
 
 # A system-wide install is the default, so that `make install` and the .deb
 # put the binary in the same place and contrib/mdn.service points at one path
@@ -26,9 +27,20 @@ PREFIX ?= /usr
 
 all: build
 
-## build: build the UI and the static mdn binary
-build: ui
+## build: build the UI, the static mdn binary and its manual page
+build: ui man
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o mdn ./cmd/mdn
+
+## man: write ./mdn.1, contrib/mdn.1 with its version and date filled in
+# The version is VERSION without its v, as the .deb and the AUR package write
+# it. The date is SOURCE_DATE_EPOCH's when that is set, and otherwise the HEAD
+# commit's rather than today's, so building the same commit twice writes the
+# same page (davison/md-notes#168). Done here rather than in `install`, which
+# forks nothing: under sudo, git would be reading the tree as root.
+man:
+	@date=$$(date -u -d "@$${SOURCE_DATE_EPOCH:-$$(git log -1 --format=%ct 2>/dev/null || date +%s)}" +%Y-%m-%d) && \
+	sed -e 's/@VERSION@/$(patsubst v%,%,$(VERSION))/g' -e "s/@DATE@/$$date/g" $(MANPAGE) > mdn.1 && \
+	! grep -q '@[A-Z]*@' mdn.1 || { echo 'make man: a placeholder was left unfilled in mdn.1' >&2; exit 1; }
 
 ## ui-deps: install UI dependencies
 ui-deps:
@@ -132,7 +144,7 @@ release: ui extension-deps
 	go run ./scripts/relcheck -version '$(VERSION)' -binary $(DIST)/mdn-$(VERSION)-linux-$(HOST_ARCH) -manifest $(DIST)/mdn-extension-$(VERSION).zip
 	cd $(DIST) && sha256sum mdn-* > SHA256SUMS
 
-## install: copy the built ./mdn and the unit into $(DESTDIR)$(PREFIX) (default /usr)
+## install: copy the built ./mdn, its manual page and the unit into $(DESTDIR)$(PREFIX) (default /usr)
 # Installs and nothing else. It has no prerequisite — deliberately: while it
 # depended on `build`, `sudo make install` re-ran `pnpm install` and `go build`
 # as root, with root's empty caches, downloading the toolchain again and
@@ -142,10 +154,12 @@ release: ui extension-deps
 #     make build
 #     sudo make install
 #
-# It refuses, having copied nothing, when either payload is missing. The two
-# destinations are the two paths the .deb installs (packaging/deb/nfpm.yaml),
-# so the from-source route and the package agree on the unit as well as on the
-# binary, and the unit goes in byte for byte either way.
+# It refuses, having copied nothing, when any payload is missing. The three
+# destinations are paths the .deb installs (packaging/deb/nfpm.yaml), so the
+# from-source route and the package agree on the unit and the manual page as
+# well as on the binary, and the unit goes in byte for byte either way. The
+# page is the one `make build` wrote, gzipped as the .deb ships it, so
+# `man mdn` works whichever way mdn was installed (davison/md-notes#168).
 #
 # DESTDIR relocates both for a staged install, which is also how to try the
 # whole thing without root:
@@ -165,11 +179,15 @@ release: ui extension-deps
 # was installed for real earlier.
 install:
 	@test -f mdn || { echo 'make install: ./mdn is not here — run `make build` first; install does not build.' >&2; exit 1; }
+	@test -f mdn.1 || { echo 'make install: ./mdn.1 is not here — run `make build` first; install does not build.' >&2; exit 1; }
 	@test -f $(UNIT) || { echo 'make install: $(UNIT) is not here — run make install from the repository root.' >&2; exit 1; }
 	install -Dm755 mdn $(DESTDIR)$(PREFIX)/bin/mdn
 	install -Dm644 $(UNIT) $(DESTDIR)$(PREFIX)/lib/systemd/user/mdn.service
+	install -Dm644 mdn.1 $(DESTDIR)$(PREFIX)/share/man/man1/mdn.1
+	gzip -9nf $(DESTDIR)$(PREFIX)/share/man/man1/mdn.1
 	@echo
 	@echo 'Installed $(DESTDIR)$(PREFIX)/bin/mdn'
+	@echo '          $(DESTDIR)$(PREFIX)/share/man/man1/mdn.1.gz'
 	@echo '      and $(DESTDIR)$(PREFIX)/lib/systemd/user/mdn.service'
 	@echo
 ifeq ($(strip $(DESTDIR)),)
@@ -184,7 +202,7 @@ endif
 
 # What `build`, `extension` and `release` write, and nothing else. ui/dist is
 # emptied rather than removed: its .gitkeep is tracked.
-CLEAN_PATHS := mdn $(EXTENSION_ZIP) $(DIST) extension/dist
+CLEAN_PATHS := mdn mdn.1 $(EXTENSION_ZIP) $(DIST) extension/dist
 
 ## clean: remove what build, extension and release produce
 # Every path is attempted and whatever is left is named at the end, rather than
