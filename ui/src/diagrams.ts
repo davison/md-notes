@@ -16,6 +16,11 @@ import { useSettings, type Settings } from "./settings";
  * The image is never inline SVG and never markup from the note: it is an
  * element this code makes, pointing at the daemon's diagram route, so the
  * drawing cannot run, style or insert anything in the page.
+ *
+ * A wide drawing is shrunk to the reading column only so far: below a floor
+ * on its scale its labels stop being readable, so it keeps that size and
+ * scrolls sideways in a box of its own, and the page never does (#187). The
+ * image is also a button that opens the drawing at its natural size.
  */
 
 /** The palettes the daemon draws in, by the name its route takes. */
@@ -24,6 +29,40 @@ export type DiagramTheme = "light" | "dark" | "eink";
 /** The class on the image, and the one that hides the code block behind it. */
 export const DIAGRAM_CLASS = "diagram";
 export const SOURCE_HIDDEN_CLASS = "diagram-source";
+
+/** The scroll box the image stands in, and the button inside it that opens the natural-size view. */
+export const BOX_CLASS = "diagram-box";
+export const OPEN_CLASS = "diagram-open";
+
+/**
+ * The custom property that carries a drawing's natural width to the
+ * stylesheet, which shows it at no less than the floor's share of that and
+ * no more than all of it. Set through the CSSOM, which the page's content
+ * security policy does not govern, rather than as a `style` attribute.
+ */
+export const WIDTH_PROPERTY = "--diagram-width";
+
+/** The box an image of the pool stands in: the button's parent. */
+export function boxOf(img: HTMLImageElement): HTMLElement | null {
+  const box = img.parentElement?.parentElement;
+  return box?.classList.contains(BOX_CLASS) ? box : null;
+}
+
+/** Makes the box and the button once, around an image that has neither. */
+function frame(img: HTMLImageElement): HTMLElement {
+  const existing = boxOf(img);
+  if (existing) return existing;
+  const box = document.createElement("div");
+  box.className = BOX_CLASS;
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = OPEN_CLASS;
+  open.title = "Open at natural size";
+  open.setAttribute("aria-haspopup", "dialog");
+  open.append(img);
+  box.append(open);
+  return box;
+}
 
 /** What the note's JSON says about one drawable block. */
 export interface DiagramRef {
@@ -120,9 +159,10 @@ export function decorate(
     const key = `${d.hash}#${n}`;
     const anchor = anchors.get(d.line);
     const pre = anchor?.nextElementSibling;
-    // The image may already stand between them, from an earlier call over
-    // this same HTML.
-    const block = pre instanceof HTMLImageElement && pre === pool.get(key) ? pre.nextElementSibling : pre;
+    // The image's box may already stand between them, from an earlier call
+    // over this same HTML.
+    const standing = pool.get(key);
+    const block = standing && pre && pre === boxOf(standing) ? pre.nextElementSibling : pre;
     if (!anchor || !block || block.tagName !== "PRE") continue;
 
     const src = urlFor(d.hash);
@@ -142,29 +182,38 @@ export function decorate(
       pool.set(key, img);
     }
     const image = img;
+    const box = frame(image);
     image.alt = block.textContent ?? "";
     // Whatever goes wrong, the code block comes back and the image goes,
     // and this URL is not asked for again on this page; a different one —
     // an edited source, another theme — is.
     image.onerror = () => {
       pool.failed.add(image.getAttribute("src") ?? "");
-      image.remove();
+      box.remove();
       block.classList.remove(SOURCE_HIDDEN_CLASS);
       if (pool.get(key) === image) pool.delete(key);
     };
-    // Before the src, so the box is there from the first layout.
+    // Before the src, so the box is there from the first layout, at the size
+    // it will be shown at: the attributes give the aspect ratio and the
+    // property the width, and the stylesheet does the rest. An image the
+    // daemon had no time to measure learns its width when it loads.
     if (d.width && d.height) {
       image.setAttribute("width", String(d.width));
       image.setAttribute("height", String(d.height));
+      image.style.setProperty(WIDTH_PROPERTY, `${d.width}px`);
+    } else {
+      image.onload = () => {
+        if (image.naturalWidth > 0) image.style.setProperty(WIDTH_PROPERTY, `${image.naturalWidth}px`);
+      };
     }
     if (image.getAttribute("src") !== src) image.setAttribute("src", src);
-    if (anchor.nextElementSibling !== image) anchor.after(image);
+    if (anchor.nextElementSibling !== box) anchor.after(box);
     block.classList.add(SOURCE_HIDDEN_CLASS);
     placed.add(key);
   }
   for (const [key, img] of pool) {
     if (placed.has(key)) continue;
-    img.remove();
+    (boxOf(img) ?? img).remove();
     pool.delete(key);
   }
 }

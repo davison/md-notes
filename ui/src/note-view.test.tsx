@@ -352,12 +352,12 @@ describe("NoteView's diagrams", () => {
     expect(container.querySelector("pre")!.classList.contains("diagram-source")).toBe(false);
   });
 
-  it("flashes the image, not the hidden code, for a search hit on the block", async () => {
+  it("flashes the image's box, not the hidden code, for a search hit on the block", async () => {
     stubScheme(false);
     mockNote(listed);
     stubScrollIntoView(() => {});
     const { container } = render(<NoteView slug="n" path="d/x.md" line={4} />);
-    await waitFor(() => expect(container.querySelector("img.diagram.flash")).toBeTruthy());
+    await waitFor(() => expect(container.querySelector(".diagram-box.flash > .diagram-open > img.diagram")).toBeTruthy());
     expect(container.querySelector("pre")!.classList.contains("flash")).toBe(false);
   });
 });
