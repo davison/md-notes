@@ -3,8 +3,9 @@
 # Everything between them follows from the tag — the version the binaries
 # report, the version the extension manifest carries, the assets, the notes.
 # The operator's publish is what fires `release: published`, and the channels
-# (Chrome Web Store, AUR, .deb) hang off that event, each in its own file, so
-# any one of them can be re-run from the Actions page without a new tag.
+# (AUR, .deb) hang off that event, each in its own file, so either of them can
+# be re-run from the Actions page without a new tag. The extension is not a
+# channel: its zip is an asset of the release itself.
 # docs/releasing.md is the prose account of all of it.
 name: release
 

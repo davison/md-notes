@@ -1,7 +1,8 @@
 /**
  * The manifest's version is derived, so the derivation is the thing that has
  * to hold: a release tag reaches the manifest unchanged but for its `v`, and
- * everything the Web Store would reject becomes the development version.
+ * everything outside the manifest's version format becomes the development
+ * version.
  */
 import { describe, expect, it } from "vitest";
 import { DEV_VERSION, manifestVersion, withVersion } from "./version.mjs";
@@ -25,16 +26,16 @@ describe("manifestVersion", () => {
     }
   });
 
-  it("refuses what the Chrome Web Store would refuse", () => {
+  it("refuses what the manifest's version format refuses", () => {
     // Leading zeros, a fifth component, a component past 65535, and anything
-    // that is not a number: all rejected rather than passed on for the store
-    // to reject after the release has been published.
+    // that is not a number: all rejected here rather than shipped in a
+    // release's manifest for the browser to refuse.
     for (const raw of ["v0.01.0", "1.2.3.4.5", "1.65536.0", "v1.2.x", "v1..2"]) {
       expect(manifestVersion(raw)).toBe(DEV_VERSION);
     }
   });
 
-  it("keeps the four components and the bound the store allows", () => {
+  it("keeps the four components and the bound the format allows", () => {
     expect(manifestVersion("1.2.3.4")).toBe("1.2.3.4");
     expect(manifestVersion("65535.65535.65535")).toBe("65535.65535.65535");
   });

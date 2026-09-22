@@ -9,10 +9,10 @@
  * a literal there is a second source that drifts, and the one that drifts is
  * always the one nobody bumps.
  *
- * The Chrome Web Store will not take a version the way `git describe` writes
- * one: it requires one to four dot-separated integers, each 0-65535, with no
- * leading zeros and nothing else — no leading `v`, no `-3-gabc1234` commit
- * suffix, no `-dirty`. So a clean release tag is normalised (`v0.1.0` becomes
+ * A Chromium manifest's `version` cannot be written the way `git describe`
+ * writes one: the format is one to four dot-separated integers, each
+ * 0-65535, with no leading zeros and nothing else — no leading `v`, no
+ * `-3-gabc1234` commit suffix, no `-dirty`. So a clean release tag is normalised (`v0.1.0` becomes
  * `0.1.0`) and anything else is a development build, which gets DEV_VERSION:
  * numeric, loadable, and obviously not a release.
  */
