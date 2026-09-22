@@ -265,7 +265,7 @@ prints the URL instead. The daemon must already be running.
 
 A recent root is removed again from the home page — the **Remove** control
 beside it, behind a confirmation naming the folder. Nothing leaves the disk,
-and the configured notes root cannot be removed at all.
+and the configured roots cannot be removed at all.
 
 Search is a literal, case-insensitive phrase over the current root, run by
 ripgrep, so gitignored and hidden files never match. Results show the
@@ -386,7 +386,8 @@ This is where the single-user premise stretches. On loopback the people
 who can reach the daemon are the processes running as you. Under
 `tailnet_host` they are whoever your **tailnet ACL admits to this node**,
 and one of them holding the token can read and edit every root the daemon
-serves — the notes root and every folder added with `mdn open`. Keep the
+serves — the notes root, every other configured root (a second `--root`,
+or a `notes_root` list) and every folder added with `mdn open`. Keep the
 ACL as narrow as the notes deserve, and use `tailscale serve`, never
 `tailscale funnel`, which would publish to the internet at large.
 [docs/introduction.md](docs/introduction.md#reaching-the-daemon-over-the-tailnet)
