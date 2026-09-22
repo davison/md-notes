@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -13,7 +14,7 @@ func TestLoadMissingFileIsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg != (Config{}) {
+	if !reflect.DeepEqual(cfg, Config{}) {
 		t.Fatalf("cfg = %+v, want zero", cfg)
 	}
 }
@@ -25,7 +26,7 @@ func TestLoadParsesYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.NotesRoot != "/tmp/notes" || cfg.Port != 9000 {
+	if cfg.NotesRoot() != "/tmp/notes" || cfg.Port != 9000 {
 		t.Fatalf("cfg = %+v", cfg)
 	}
 }
@@ -41,17 +42,17 @@ func TestLoadBadYAMLNamesFile(t *testing.T) {
 
 func TestResolveDefaultsAndOverrides(t *testing.T) {
 	dir := t.TempDir()
-	cfg, err := Config{NotesRoot: "/elsewhere", Port: 1}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
+	cfg, err := Config{Roots: Roots{"/elsewhere"}, Port: 1}.Resolve("cfg.yml", Overrides{Roots: []string{dir}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.NotesRoot != dir {
-		t.Fatalf("root = %q, want flag override %q", cfg.NotesRoot, dir)
+	if cfg.NotesRoot() != dir {
+		t.Fatalf("root = %q, want flag override %q", cfg.NotesRoot(), dir)
 	}
 	if cfg.Port != 1 {
 		t.Fatalf("port = %d, want file value kept", cfg.Port)
 	}
-	cfg, err = Config{}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
+	cfg, err = Config{}.Resolve("cfg.yml", Overrides{Roots: []string{dir}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,18 +69,18 @@ func TestResolveRequiresRoot(t *testing.T) {
 }
 
 func TestResolveRejectsMissingOrFileRoot(t *testing.T) {
-	if _, err := (Config{}).Resolve("c", Overrides{NotesRoot: filepath.Join(t.TempDir(), "missing")}); err == nil {
+	if _, err := (Config{}).Resolve("c", Overrides{Roots: []string{filepath.Join(t.TempDir(), "missing")}}); err == nil {
 		t.Fatal("want error for missing root")
 	}
 	f := filepath.Join(t.TempDir(), "file")
 	os.WriteFile(f, nil, 0o644)
-	if _, err := (Config{}).Resolve("c", Overrides{NotesRoot: f}); err == nil {
+	if _, err := (Config{}).Resolve("c", Overrides{Roots: []string{f}}); err == nil {
 		t.Fatal("want error for non-directory root")
 	}
 }
 
 func TestResolveRejectsBadPort(t *testing.T) {
-	if _, err := (Config{}).Resolve("c", Overrides{NotesRoot: t.TempDir(), Port: 70000}); err == nil {
+	if _, err := (Config{}).Resolve("c", Overrides{Roots: []string{t.TempDir()}, Port: 70000}); err == nil {
 		t.Fatal("want error for port out of range")
 	}
 }
@@ -114,7 +115,7 @@ func TestResolveMaxWatches(t *testing.T) {
 		{"zero on the flag is no budget", n(100), n(0), 0},
 	}
 	for _, c := range cases {
-		cfg, err := Config{MaxWatches: c.file}.Resolve("cfg.yml", Overrides{NotesRoot: dir, MaxWatches: c.flag})
+		cfg, err := Config{MaxWatches: c.file}.Resolve("cfg.yml", Overrides{Roots: []string{dir}, MaxWatches: c.flag})
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
@@ -122,7 +123,7 @@ func TestResolveMaxWatches(t *testing.T) {
 			t.Fatalf("%s: max_watches = %v, want %d", c.name, cfg.MaxWatches, c.want)
 		}
 	}
-	if _, err := (Config{MaxWatches: n(-1)}).Resolve("cfg.yml", Overrides{NotesRoot: dir}); err == nil {
+	if _, err := (Config{MaxWatches: n(-1)}).Resolve("cfg.yml", Overrides{Roots: []string{dir}}); err == nil {
 		t.Fatal("a negative max_watches should be refused, not read as no limit")
 	}
 }
@@ -158,7 +159,7 @@ func TestResolveClipsDir(t *testing.T) {
 		".":          ".",
 		"a/../clips": "clips",
 	} {
-		cfg, err := Config{ClipsDir: given}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
+		cfg, err := Config{ClipsDir: given}.Resolve("cfg.yml", Overrides{Roots: []string{dir}})
 		if err != nil {
 			t.Fatalf("clips_dir %q: %v", given, err)
 		}
@@ -167,7 +168,7 @@ func TestResolveClipsDir(t *testing.T) {
 		}
 	}
 	for _, given := range []string{"/etc", "../outside", "..", "clips/../..", "/"} {
-		cfg, err := (Config{ClipsDir: given}).Resolve("cfg.yml", Overrides{NotesRoot: dir})
+		cfg, err := (Config{ClipsDir: given}).Resolve("cfg.yml", Overrides{Roots: []string{dir}})
 		if err == nil {
 			t.Errorf("clips_dir %q resolved to %q, want a refusal", given, cfg.ClipsDir)
 		}
@@ -206,7 +207,7 @@ func TestResolveTailnetHost(t *testing.T) {
 		"laptop":                      "laptop",
 		"100.101.102.103":             "100.101.102.103",
 	} {
-		cfg, err := Config{TailnetHost: given}.Resolve("cfg.yml", Overrides{NotesRoot: dir})
+		cfg, err := Config{TailnetHost: given}.Resolve("cfg.yml", Overrides{Roots: []string{dir}})
 		if err != nil {
 			t.Fatalf("tailnet_host %q: %v", given, err)
 		}
@@ -233,7 +234,7 @@ func TestResolveTailnetHost(t *testing.T) {
 		"[::1]":                 ErrLoopbackTailnetHost,
 		"[::1]:7337":            ErrLoopbackTailnetHost,
 	} {
-		if _, err := (Config{TailnetHost: given}).Resolve("cfg.yml", Overrides{NotesRoot: dir}); !errors.Is(err, want) {
+		if _, err := (Config{TailnetHost: given}).Resolve("cfg.yml", Overrides{Roots: []string{dir}}); !errors.Is(err, want) {
 			t.Errorf("tailnet_host %q: error %v, want %v", given, err, want)
 		}
 	}
@@ -243,7 +244,7 @@ func TestResolveTailnetHost(t *testing.T) {
 func TestTailnetHostOverride(t *testing.T) {
 	dir := t.TempDir()
 	cfg, err := Config{TailnetHost: "old.ts.net"}.Resolve("cfg.yml",
-		Overrides{NotesRoot: dir, TailnetHost: "NEW.ts.net"})
+		Overrides{Roots: []string{dir}, TailnetHost: "NEW.ts.net"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,5 +264,116 @@ func TestLoadParsesTailnetHost(t *testing.T) {
 	}
 	if cfg.TailnetHost != "laptop.ts.net" {
 		t.Fatalf("tailnet_host = %q", cfg.TailnetHost)
+	}
+}
+
+// notes_root takes one path or a list of them (M10-R5, #162), and the list
+// keeps its order: the first entry is the notes root.
+func TestLoadNotesRootStringOrList(t *testing.T) {
+	for _, c := range []struct {
+		name, yaml string
+		want       Roots
+	}{
+		{"a string", "notes_root: /n\n", Roots{"/n"}},
+		{"a flow list", "notes_root: [/n, /p]\n", Roots{"/n", "/p"}},
+		{"a block list", "notes_root:\n  - /n\n  - /p\n  - /w\n", Roots{"/n", "/p", "/w"}},
+		{"absent", "port: 1\n", nil},
+		{"empty", "notes_root:\n", nil},
+	} {
+		p := filepath.Join(t.TempDir(), "config.yml")
+		os.WriteFile(p, []byte(c.yaml), 0o644)
+		cfg, err := Load(p)
+		if err != nil {
+			t.Errorf("%s: %v", c.name, err)
+			continue
+		}
+		if !reflect.DeepEqual(cfg.Roots, c.want) {
+			t.Errorf("%s: roots = %q, want %q", c.name, cfg.Roots, c.want)
+		}
+	}
+	for _, bad := range []string{"notes_root: {a: b}\n", "notes_root: [[/n]]\n"} {
+		p := filepath.Join(t.TempDir(), "config.yml")
+		os.WriteFile(p, []byte(bad), 0o644)
+		if _, err := Load(p); err == nil {
+			t.Errorf("%q: want an error, not an empty root list", bad)
+		}
+	}
+}
+
+// Every configured root is checked and made absolute, in order, and the
+// --root flags replace the file's list whole rather than adding to it —
+// the operator's own invocation, --root notes --root projects, with a
+// config naming only notes, serves exactly those two.
+func TestResolveSeveralRoots(t *testing.T) {
+	base := t.TempDir()
+	notes, projects, other := filepath.Join(base, "notes"), filepath.Join(base, "projects"), filepath.Join(base, "other")
+	for _, d := range []string{notes, projects, other} {
+		os.Mkdir(d, 0o755)
+	}
+	cfg, err := Config{Roots: Roots{notes, other}}.Resolve("c", Overrides{})
+	if err != nil || !reflect.DeepEqual(cfg.Roots, Roots{notes, other}) {
+		t.Fatalf("file list: %q, %v", cfg.Roots, err)
+	}
+	cfg, err = Config{Roots: Roots{notes}}.Resolve("c", Overrides{Roots: []string{notes, projects}})
+	if err != nil || !reflect.DeepEqual(cfg.Roots, Roots{notes, projects}) {
+		t.Fatalf("flags over a file naming the first: %q, %v", cfg.Roots, err)
+	}
+	cfg, err = Config{Roots: Roots{other, notes}}.Resolve("c", Overrides{Roots: []string{projects}})
+	if err != nil || !reflect.DeepEqual(cfg.Roots, Roots{projects}) {
+		t.Fatalf("flags replace the file's list: %q, %v", cfg.Roots, err)
+	}
+
+	// A relative root is made absolute.
+	t.Chdir(base)
+	cfg, err = Config{}.Resolve("c", Overrides{Roots: []string{"notes", "projects"}})
+	if err != nil || !reflect.DeepEqual(cfg.Roots, Roots{notes, projects}) {
+		t.Fatalf("relative roots: %q, %v", cfg.Roots, err)
+	}
+}
+
+// A root after the first that is missing or a file is named in the
+// refusal; so is a duplicate, symlink aliases included; and an empty
+// entry is refused rather than served as the working directory.
+func TestResolveRefusesABadRootList(t *testing.T) {
+	base := t.TempDir()
+	notes := filepath.Join(base, "notes")
+	os.Mkdir(notes, 0o755)
+	alias := filepath.Join(base, "alias")
+	os.Symlink(notes, alias)
+	file := filepath.Join(base, "file")
+	os.WriteFile(file, nil, 0o644)
+	missing := filepath.Join(base, "missing")
+
+	for _, c := range []struct {
+		name     string
+		file     Roots
+		flags    []string
+		mentions []string
+	}{
+		{"a missing second root", nil, []string{notes, missing}, []string{missing}},
+		{"a file as a second root", Roots{notes, file}, nil, []string{file, "not a directory"}},
+		{"a repeated --root", nil, []string{notes, notes}, []string{"--root", notes, "same folder"}},
+		{"a repeated list entry", Roots{notes, notes + "/"}, nil, []string{"notes_root", "same folder"}},
+		{"a symlink alias", nil, []string{notes, alias}, []string{alias, "same folder"}},
+		{"an empty --root", nil, []string{notes, ""}, []string{"--root", "empty"}},
+		{"an empty list entry", Roots{notes, " "}, nil, []string{"notes_root", "empty"}},
+	} {
+		_, err := Config{Roots: c.file}.Resolve("c", Overrides{Roots: c.flags})
+		if err == nil {
+			t.Errorf("%s: no error", c.name)
+			continue
+		}
+		for _, m := range c.mentions {
+			if !strings.Contains(err.Error(), m) {
+				t.Errorf("%s: %q does not mention %q", c.name, err, m)
+			}
+		}
+	}
+
+	// One root inside another is not a duplicate.
+	inner := filepath.Join(notes, "inner")
+	os.Mkdir(inner, 0o755)
+	if _, err := (Config{}).Resolve("c", Overrides{Roots: []string{notes, inner}}); err != nil {
+		t.Errorf("a nested root: %v", err)
 	}
 }
