@@ -72,8 +72,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 // the binary prints, and the version the manifest carries are the same version.
 //
 // The binary carries VERSION verbatim, so it must match exactly. The manifest
-// cannot: the Chrome Web Store takes only dotted integers, so it carries the
-// normalised form, and it is compared against the normalised version.
+// cannot: a Chromium manifest's version is dotted integers and nothing else,
+// so it carries the normalised form, and it is compared against the normalised
+// version.
 func check(version, reported, stamped string) error {
 	if reported != version {
 		return fmt.Errorf("the binary reports %q, but the release is being built as %q — check the -X main.version ldflag", reported, version)
