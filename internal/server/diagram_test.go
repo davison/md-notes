@@ -851,7 +851,10 @@ func TestNoteWithoutSizesDrawsNothing(t *testing.T) {
 // slowThenFast is a draw that the render deadline refuses until fast is
 // set, and a clock the test moves by hand (davison/md-notes#182).
 type slowThenFast struct {
-	fast  atomic.Bool
+	fast atomic.Bool
+	// hang makes a draw run until its context ends, as a slow layout
+	// under the note endpoint's budget does.
+	hang  atomic.Bool
 	draws atomic.Int32
 	now   time.Time
 	mu    sync.Mutex
@@ -861,6 +864,10 @@ func (f *slowThenFast) install(s *Server) {
 	inner := s.draw
 	s.draw = func(ctx context.Context, src []byte, theme diagram.Theme) ([]byte, error) {
 		f.draws.Add(1)
+		if f.hang.Load() {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
 		if !f.fast.Load() {
 			return nil, &diagram.Refusal{Kind: diagram.Limit, Reason: "the layout took longer than 2s", Deadline: true}
 		}
@@ -943,8 +950,25 @@ func TestNoteListsADeadlineRefusalAgainAfterItExpires(t *testing.T) {
 		t.Fatalf("listed within the expiry (%d)", n)
 	}
 	f.advance(time.Minute)
-	if n := listed(); n != 1 {
-		t.Fatalf("not listed after the expiry (%d)", n)
+	// Still slow: the budget would cut every measure off.
+	f.hang.Store(true)
+	before := f.draws.Load()
+	for range 5 {
+		if n := listed(); n != 1 {
+			t.Fatalf("not listed after the expiry (%d)", n)
+		}
+	}
+	// Listed unmeasured, and not measured again on every open: the image
+	// route is what retries it, once per expiry (review of PR #204, nit 2).
+	if n := f.draws.Load(); n != before {
+		t.Errorf("five opens after the expiry drew %d times, want 0", n-before)
+	}
+	// The image route draws it in full.
+	f.hang.Store(false)
+	resp := do(t, ts, "GET", diagramURL("d.md", testFlow, "light"), "", nil)
+	readAll(t, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("image after the expiry: status %d, want 200", resp.StatusCode)
 	}
 }
 

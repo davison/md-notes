@@ -275,7 +275,12 @@ func (s *Server) measureDiagrams(ctx context.Context, list []render.Diagram) []r
 	refused := make([]bool, len(list))
 	var todo []int
 	for i := range list {
-		switch sz, ok := s.knownSize(list[i].Hash); {
+		switch sz, ok := s.sizes.get(list[i].Hash); {
+		case ok && sz.deadline != nil && !s.now().Before(sz.retryAt):
+			// A deadline refusal that has expired is not measured here:
+			// the budget would cut it off on every open without learning
+			// anything (review of PR #204, nit 2). It goes out unmeasured,
+			// and the image route draws it in full, once per expiry.
 		case !ok:
 			todo = append(todo, i)
 		case sz.refused:
