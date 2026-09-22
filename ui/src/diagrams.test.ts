@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULTS } from "./settings";
-import { DIAGRAM_CLASS, DiagramPool, SOURCE_HIDDEN_CLASS, decorate, diagramTheme, holdInView } from "./diagrams";
+import {
+  BOX_CLASS,
+  DIAGRAM_CLASS,
+  DiagramPool,
+  OPEN_CLASS,
+  SOURCE_HIDDEN_CLASS,
+  WIDTH_PROPERTY,
+  decorate,
+  diagramTheme,
+  holdInView,
+} from "./diagrams";
 
 /** The markup the daemon renders for a fenced mermaid block, anchor first. */
 function block(line: number, source: string): string {
@@ -39,9 +49,17 @@ describe("decorate", () => {
     const img = scope.querySelector("img")!;
     expect(img.className).toBe(DIAGRAM_CLASS);
     expect(img.getAttribute("src")).toBe("/api/r/n/diagram/x.md?h=h7&theme=light");
-    expect(img.previousElementSibling!.getAttribute("data-line")).toBe("7");
-    expect(img.nextElementSibling!.tagName).toBe("PRE");
-    expect(img.nextElementSibling!.classList.contains(SOURCE_HIDDEN_CLASS)).toBe(true);
+    // The image is the button in a scroll box of its own, and the box stands
+    // between the anchor and the code block (#187).
+    const button = img.parentElement!;
+    const box = button.parentElement!;
+    expect(button.tagName).toBe("BUTTON");
+    expect(button.className).toBe(OPEN_CLASS);
+    expect(button.getAttribute("type")).toBe("button");
+    expect(box.className).toBe(BOX_CLASS);
+    expect(box.previousElementSibling!.getAttribute("data-line")).toBe("7");
+    expect(box.nextElementSibling!.tagName).toBe("PRE");
+    expect(box.nextElementSibling!.classList.contains(SOURCE_HIDDEN_CLASS)).toBe(true);
     // The source is the image's text alternative, as the author wrote it.
     expect(img.alt).toBe("graph LR; C-->D\n");
     // The block not listed is left exactly as it was.
@@ -63,7 +81,21 @@ describe("decorate", () => {
     );
     const [sized, unsized] = [...scope.querySelectorAll("img")];
     expect([sized.getAttribute("width"), sized.getAttribute("height")]).toEqual(["185", "94.6"]);
+    // The natural width goes to the stylesheet through the CSSOM, which
+    // sizes the image against the floor (#187); no style attribute is
+    // written, which the page's policy would refuse.
+    expect(sized.style.getPropertyValue(WIDTH_PROPERTY)).toBe("185px");
     expect(unsized.hasAttribute("width") || unsized.hasAttribute("height")).toBe(false);
+    expect(unsized.style.getPropertyValue(WIDTH_PROPERTY)).toBe("");
+  });
+
+  it("gives an unmeasured image its natural width once it loads", () => {
+    const scope = note(block(3, "s"));
+    decorate(scope, [{ line: 3, hash: "b" }], url("light"), new DiagramPool());
+    const img = scope.querySelector("img")!;
+    Object.defineProperty(img, "naturalWidth", { value: 1234 });
+    img.dispatchEvent(new Event("load"));
+    expect(img.style.getPropertyValue(WIDTH_PROPERTY)).toBe("1234px");
   });
 
   it("brings the code block back and drops the image when it cannot load", () => {
@@ -197,7 +229,7 @@ describe("decorate", () => {
     const now = [...scope.querySelectorAll("img")];
     expect(now.length).toBe(2);
     expect(now[0]).toBe(one);
-    expect(now[0].previousElementSibling!.getAttribute("data-line")).toBe("5");
+    expect(now[0].parentElement!.parentElement!.previousElementSibling!.getAttribute("data-line")).toBe("5");
     expect(now[1]).not.toBe(two);
     expect(now[1].getAttribute("src")).toContain("h=two-edited");
     expect(pool.size).toBe(2);

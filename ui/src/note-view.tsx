@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { diagramURL, fetchNote, type Note } from "./api";
-import { DiagramPool, decorate, holdInView, useDiagramTheme } from "./diagrams";
+import { DiagramViewer } from "./diagram-viewer";
+import { DiagramPool, OPEN_CLASS, decorate, holdInView, useDiagramTheme } from "./diagrams";
 import { animationsOff } from "./settings";
 
 /**
@@ -28,6 +29,8 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
   const body = useRef<HTMLDivElement>(null);
   const theme = useDiagramTheme();
   const pool = useRef(new DiagramPool());
+  // The diagram whose natural-size view is open: the button it stands in.
+  const [viewing, setViewing] = useState<HTMLElement | null>(null);
 
   // Opening a different note clears the pane; a version bump for the same
   // note refetches in place so a live update does not flash.
@@ -42,6 +45,7 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
       shown.current = key;
       setNote(null);
       setError(null);
+      setViewing(null);
     }
     fetchNote(slug, path, { sizes: true, signal: abort.signal }).then(
       (n) => {
@@ -128,6 +132,13 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
   }, [note, slug, path, line]);
 
   const onClick = (e: MouseEvent) => {
+    // A diagram opens at its natural size: a click, a tap, or Enter or
+    // Space on its button, which the browser turns into a click.
+    const open = (e.target as HTMLElement | null)?.closest<HTMLElement>(`button.${OPEN_CLASS}`);
+    if (open && body.current?.contains(open)) {
+      setViewing(open);
+      return;
+    }
     const a = (e.target as HTMLElement | null)?.closest("a");
     if (!a) return;
     const href = a.getAttribute("href") ?? "";
@@ -154,7 +165,28 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
       <h1 class="note-title">{note.title}</h1>
       {note.frontmatter && Object.keys(note.frontmatter).length > 0 && <Metadata data={note.frontmatter} />}
       <div ref={body} class="markdown" dangerouslySetInnerHTML={{ __html: note.html }} />
+      {viewing && <Viewer opener={viewing} onClose={() => setViewing(null)} />}
     </article>
+  );
+}
+
+/**
+ * The natural-size view of the diagram in `opener`, read at render time so
+ * a change of palette while it is open is followed, as the note's own image
+ * follows it.
+ */
+function Viewer({ opener, onClose }: { opener: HTMLElement; onClose: () => void }) {
+  const img = opener.querySelector("img");
+  if (!img) return null;
+  return (
+    <DiagramViewer
+      src={img.getAttribute("src") ?? ""}
+      alt={img.alt}
+      width={img.getAttribute("width") ?? undefined}
+      height={img.getAttribute("height") ?? undefined}
+      opener={opener}
+      onClose={onClose}
+    />
   );
 }
 

@@ -1281,18 +1281,110 @@ code {
 
 /*
  * A flowchart the daemon drew (davison/md-notes#171), standing in front of
- * the code block it was drawn from. Its own size is its natural size, so a
- * small diagram is never scaled up, and a wide one shrinks to the column.
- * The code block behind it is hidden only while the image stands; the
- * script takes the class off again if the image fails.
+ * the code block it was drawn from. The code block behind it is hidden only
+ * while the image stands; the script takes the class off again if the image
+ * fails.
+ *
+ * The image is shown at its natural width, carried by --diagram-width, so a
+ * small diagram is never scaled up; a wider one shrinks to the column, but
+ * not below --diagram-min-scale of its natural width (davison/md-notes#187).
+ * The labels are 14 px at natural size, and the floor keeps them at 12 px or
+ * more, which the decision on #187 measured against the smallest text the
+ * app itself sets. Below the floor the diagram keeps that size, and the box
+ * scrolls sideways; the page does not. The box is a size container so the
+ * image can be sized against the column (100cqi) from inside the button,
+ * whose own width is the image's. The width and height attributes give the
+ * aspect ratio, so the box has its displayed height before the image loads
+ * and a scroll to a line below it lands (#177). An image the daemon did not
+ * measure has no --diagram-width until it loads, and is its natural size in
+ * the box for that frame.
+ *
+ * The button opens the drawing at its natural size (diagram-viewer.tsx).
+ * Its focus ring is drawn inside it, where the box does not clip it.
  */
+.markdown .diagram-box {
+  --diagram-min-scale: calc(12 / 14);
+  container-type: inline-size;
+  overflow-x: auto;
+  margin: 0 0 1em;
+}
+
+.markdown .diagram-open {
+  display: block;
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.markdown .diagram-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .markdown img.diagram {
   display: block;
-  margin: 0 0 1em;
+  max-width: none;
+  width: clamp(calc(var(--diagram-width) * var(--diagram-min-scale)), 100cqi, var(--diagram-width));
+  height: auto;
 }
 
 .markdown pre.diagram-source {
   display: none;
+}
+
+/*
+ * A diagram at its natural size (davison/md-notes#187), over the whole
+ * window, scrolling both ways when it is larger than the window. It is solid
+ * and flat, in the palette's own colours, with no transition, so the e-ink
+ * palette and the no-animation setting need nothing of their own. The image
+ * is centred with auto margins rather than by the flex container, which
+ * would put an image wider than the window partly out of reach on the left.
+ */
+.diagram-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--pane);
+  color: var(--fg);
+}
+
+.diagram-viewer-bar {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.diagram-viewer-close {
+  min-width: 40px;
+  min-height: 40px;
+  font: inherit;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.diagram-viewer-scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 1rem;
+}
+
+.diagram-viewer-scroll img {
+  flex: none;
+  margin: auto;
+  max-width: none;
 }
 
 .markdown hr {
