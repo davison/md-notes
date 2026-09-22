@@ -15,7 +15,10 @@ export function Home() {
     listRoots().then(setRoots, (e: Error) => setError(e.message));
   }, []);
 
-  const notes = roots?.filter((r) => r.kind === "notes") ?? [];
+  // The notes root and the permanent roots are both the daemon's
+  // configuration, listed together in the order configured, and neither
+  // is offered a Remove control (M10-R5).
+  const notes = roots?.filter((r) => r.kind === "notes" || r.kind === "permanent") ?? [];
   const recent = roots?.filter((r) => r.kind === "recent") ?? [];
 
   return (
@@ -59,8 +62,8 @@ function RootList({
   empty?: string;
   /**
    * Given for the recent roots, which can be unregistered, and not for the
-   * notes root, which is the daemon's configuration and would only come
-   * back at the next start.
+   * notes root or a permanent root, which are the daemon's configuration
+   * and would only come back at the next start.
    */
   onRemove?: (root: Root) => void;
 }) {
@@ -103,8 +106,8 @@ function RootList({
  * disk, and `mdn open` puts the folder back.
  *
  * A refusal is shown here rather than thrown away with the prompt: the
- * daemon has three of them (the notes root, an unknown slug, and the
- * tailnet allow-list), and each is worth reading where it was asked for.
+ * daemon has four of them (the notes root, a permanent root, an unknown
+ * slug, and the tailnet allow-list), and each is worth reading where it was asked for.
  */
 function RemoveRootDialog({
   root,

@@ -11,6 +11,9 @@ import { Home } from "./home";
 
 const roots = [
   { slug: "notes", path: "/home/you/notes", kind: "notes" },
+  // A second configured root (M10-R5): `--root` given twice, or a list in
+  // notes_root. Configuration, like the notes root, so never removable.
+  { slug: "projects", path: "/home/you/projects", kind: "permanent" },
   { slug: "scratch", path: "/tmp/scratch", kind: "recent" },
   { slug: "proj", path: "/home/you/proj", kind: "recent" },
 ];
@@ -57,7 +60,7 @@ afterEach(() => {
 });
 
 describe("the home page's remove control", () => {
-  it("offers one on every recent root and none on the notes root", async () => {
+  it("offers one on every recent root and none on the notes or a permanent root", async () => {
     render(<Home />);
     await screen.findByText("scratch");
     const controls = screen.getAllByRole("button", { name: /^Remove / });
@@ -66,6 +69,19 @@ describe("the home page's remove control", () => {
       "Remove proj",
     ]);
     expect(screen.queryByLabelText("Remove notes")).toBeNull();
+    expect(screen.queryByLabelText("Remove projects")).toBeNull();
+  });
+
+  it("lists a permanent root with the notes root, not under Recent", async () => {
+    render(<Home />);
+    await screen.findByText("projects");
+    const section = (title: string) =>
+      Array.from(screen.getByRole("heading", { name: title }).parentElement!.querySelectorAll("li a")).map(
+        (a) => a.textContent,
+      );
+    expect(section("Notes")).toEqual(["notes", "projects"]);
+    expect(section("Recent")).toEqual(["scratch", "proj"]);
+    expect(screen.getByText("projects").getAttribute("href")).toBe("/r/projects/");
   });
 
   it("asks first, naming the path, and removes nothing when the answer is no", async () => {

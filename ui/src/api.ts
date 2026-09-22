@@ -1,4 +1,9 @@
-export type RootKind = "notes" | "recent";
+/**
+ * `notes` is the first configured root, `permanent` any configured root
+ * after it, and `recent` a folder added with `mdn open`. Only a recent root
+ * can be removed.
+ */
+export type RootKind = "notes" | "permanent" | "recent";
 
 export interface Root {
   slug: string;
@@ -53,6 +58,7 @@ export async function listRoots(): Promise<Root[]> {
  * Unregisters a recent root. The folder and its notes stay on disk; what
  * goes is the daemon's serving of them (M7-R2). Rejects with a SourceError
  * carrying the daemon's code — `notes_root` for the configured notes root,
+ * `permanent_root` for another configured root,
  * `not_found` for a slug the daemon does not have.
  */
 export async function removeRoot(slug: string): Promise<void> {
