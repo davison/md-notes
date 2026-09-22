@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
 )
 
 // fences writes n one-line fenced blocks, each tagged with tag(i).
@@ -151,6 +154,33 @@ func TestQuickLexerAgreesWithChroma(t *testing.T) {
 	}
 }
 
+// The quick name goes to the highlighter as a fence's tag, which goldmark
+// cuts at the first space, so it must come back out of a parsed fence
+// whole and find the lexer again (davison/md-notes#199: `Base Makefile`
+// came back as `Base`, and `mk` lost its highlighting).
+func TestQuickNamesSurviveAFence(t *testing.T) {
+	p := parser.NewParser(parser.WithBlockParsers(parser.DefaultBlockParsers()...))
+	for _, l := range lexers.GlobalLexerRegistry.Lexers {
+		name := quickNameFor(l)
+		if name == "" {
+			continue
+		}
+		src := []byte("```" + name + " {nohl}\nx\n```\n")
+		f, ok := p.Parse(text.NewReader(src)).FirstChild().(*ast.FencedCodeBlock)
+		if !ok {
+			t.Errorf("%s: quick name %q does not open a fence", l.Config().Name, name)
+			continue
+		}
+		if got := string(f.Language(src)); got != name {
+			t.Errorf("%s: quick name %q comes out of a fence as %q", l.Config().Name, name, got)
+			continue
+		}
+		if q := lexers.Get(name); q == nil || q.Config().Name != l.Config().Name {
+			t.Errorf("%s: quick name %q finds another lexer", l.Config().Name, name)
+		}
+	}
+}
+
 // Settling the lexers first changes how long a note takes, not what it
 // renders as: every note under the limit renders byte for byte as
 // goldmark-highlighting renders it alone, attributes in the info string
@@ -161,9 +191,9 @@ func TestCodeRendersAsTheHighlighterAloneRendersIt(t *testing.T) {
 
 	var tags []string
 	for _, name := range lexers.Names(true) {
-		if strings.EqualFold(name, "jungle") {
-			// chroma v2.2.0's Jungle lexer never finishes on the sample
-			// below, with or without this package's change.
+		if quickLexer(name).Config().Name == "Jungle" {
+			// Plain code now, where the highlighter alone never finishes:
+			// see TestJungleRendersPlainAndPromptly.
 			continue
 		}
 		tags = append(tags, name, strings.ToUpper(name))
@@ -171,7 +201,12 @@ func TestCodeRendersAsTheHighlighterAloneRendersIt(t *testing.T) {
 	// Found only by searching, among them all the slow ones measured on
 	// davison/md-notes#190 that chroma has a lexer for, bar `el`: see
 	// TestElHighlightsAsElisp.
-	searched := []string{"yml", "h", "hpp", "cs", "patch", "txt", "kt", "env", "ml", "erl", "fs", "gradle", "YML", "Dockerfile", "go.mod", "cl", "lisp"}
+	searched := []string{"yml", "h", "hpp", "cs", "patch", "txt", "kt", "env", "ml", "erl", "fs", "gradle", "YML", "Dockerfile", "go.mod", "cl", "lisp",
+		// Found by searching, for a lexer whose name has a space in it
+		// (davison/md-notes#199), and filename-style tags.
+		"mk", "mak", "GNUmakefile", "sig", "fun", "MK", "foo.go", "foo.proto", "foo.capnp", "foo.plc", "foo.sml", "foo.yml", "Foo.PY",
+		// Attributes inside the tag, which chroma still finds by a glob.
+		"Caddyfile{linenos=true}", "Caddyfile-d{hl_lines=[1]}", "mk{linenos=table}", "{nohl}", "{x}{linenos=true}"}
 	unknown := []string{"mermaid", "math", "csv", "log", "none", "json5", "graphviz", "a<b>&\"c"}
 
 	notes := map[string]string{}
@@ -217,4 +252,60 @@ func TestElHighlightsAsElisp(t *testing.T) {
 		t.Errorf("`el` renders differently from `elisp`\n got: %s\nwant: %s", got, want)
 	}
 	wantContains(t, block("el"), ClassPrefix+"chroma")
+}
+
+// Past maxTagLen bytes a tag is not looked up: chroma's search costs about
+// 0.27 ms for each byte of the tag, so one 16 KB tag took 4 s and a note
+// of 16 of them over a minute (davison/md-notes#199).
+func TestLongTagsAreNotSearchedFor(t *testing.T) {
+	long := func(i int) string { return fmt.Sprintf("%d%s", i, strings.Repeat("x", 16<<10)) }
+	src := fences(maxSlowTags, long)
+	fresh := New()
+	done := make(chan Note, 1)
+	go func() {
+		n, _ := fresh.Render("notes", "n.md", src)
+		done <- n
+	}()
+	select {
+	case n := <-done:
+		wantContains(t, n.HTML, `<pre><code class="language-0xxx`)
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%d blocks with 16 KB tags still rendering after 2 s", maxSlowTags)
+	}
+	if got := fresh.code.lookups.Load(); got != 0 {
+		t.Errorf("%d slow lookups for tags over %d bytes, want 0", got, maxTagLen)
+	}
+	// The limit itself is still looked up.
+	for _, c := range []struct {
+		n    int
+		want int64
+	}{{maxTagLen, 1}, {maxTagLen + 1, 0}} {
+		fresh := New()
+		if _, err := fresh.Render("notes", "n.md", fences(1, sameTag(strings.Repeat("y", c.n)))); err != nil {
+			t.Fatal(err)
+		}
+		if got := fresh.code.lookups.Load(); got != c.want {
+			t.Errorf("a %d-byte tag: %d slow lookups, want %d", c.n, got, c.want)
+		}
+	}
+}
+
+// chroma v2.2.0's Jungle lexer never finishes on most input, one `{` among
+// it, so a block that reaches it renders as plain code, whatever tag found
+// it (davison/md-notes#190, the operator's gate resolution).
+func TestJungleRendersPlainAndPromptly(t *testing.T) {
+	for _, tag := range []string{"jungle", "Jungle", "JUNGLE", "foo.jungle", "x.JUNGLE"} {
+		src := []byte("```" + tag + "\n{\n```\n")
+		done := make(chan Note, 1)
+		go func() {
+			n, _ := New().Render("notes", "n.md", src)
+			done <- n
+		}()
+		select {
+		case n := <-done:
+			wantContains(t, n.HTML, `<pre><code class="language-`+tag+`">{`)
+		case <-time.After(3 * time.Second):
+			t.Errorf("a %q block holding `{` is still rendering after 3 s", tag)
+		}
+	}
 }

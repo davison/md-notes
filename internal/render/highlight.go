@@ -1,6 +1,7 @@
 package render
 
 import (
+	"bytes"
 	"slices"
 	"strings"
 	"sync"
@@ -40,14 +41,24 @@ import (
 //     tags whether or not they are remembered, so what a note renders as
 //     does not depend on what other notes have been read. It is what bounds
 //     a note whose every block has a different tag, which no cache helps.
+//     A tag longer than maxTagLen is not looked up at all, since the search
+//     takes time in proportion to the tag's length;
+//   - a block whose lexer is chroma's Jungle, however it was found, renders
+//     as plain code: see highlightable.
 
 const (
 	// maxSlowTags is how many distinct tags outside chroma's names and
-	// aliases one note may have looked up: about 3 ms each, the first time.
+	// aliases one note may have looked up. Each costs 3 ms for a short tag
+	// and about 11 ms for one of maxTagLen bytes, the first time, so a note
+	// spends at most about 180 ms on them.
 	maxSlowTags = 16
 	// maxCachedTags bounds the lookups a Renderer remembers. Past it, a new
 	// tag is still looked up but not kept.
 	maxCachedTags = 1024
+	// maxTagLen is the longest tag outside chroma's names and aliases that
+	// is looked up. A longer one renders as plain code. The longest such
+	// tag a note is likely to carry is a file name, `CMakeLists.txt`.
+	maxTagLen = 32
 )
 
 // quickLexers is chroma's name and alias tables as its registry builds them
@@ -84,15 +95,23 @@ func quickLexer(name string) chroma.Lexer {
 }
 
 // quickNameFor is a name quickLexer resolves to l, or "" if it has none.
+// It is handed to the highlighter as a fence's tag, which goldmark cuts at
+// the first space, so a name with a space in it is never chosen: `Base
+// Makefile` would reach the highlighter as `Base` (davison/md-notes#199).
 //
 // chroma registers Common Lisp, EmacsLisp and Go HTML Template twice, the
 // plain lexer and then a wrapper of it, and the wrapper takes the names.
-// Searching for `el` still finds the plain EmacsLisp, which no name
-// reaches, so that one is given the name of the lexer registered under its
-// name: `el` highlights as `elisp` does.
+// Searching for `el`, `foo.el`, `foo.cl` or `foo.lisp` still finds the
+// plain lexer, which no name reaches, so that one is given a name of the
+// lexer registered under its name: `el` highlights as `elisp` does.
 func quickNameFor(l chroma.Lexer) string {
 	c := l.Config()
-	names := append([]string{c.Name}, c.Aliases...)
+	var names []string
+	for _, n := range append([]string{c.Name}, c.Aliases...) {
+		if !strings.ContainsAny(n, " \t") {
+			names = append(names, n)
+		}
+	}
 	for _, n := range names {
 		if quickLexer(n) == l {
 			return n
@@ -104,6 +123,14 @@ func quickNameFor(l chroma.Lexer) string {
 		}
 	}
 	return ""
+}
+
+// highlightable reports whether l can be trusted with a note's code.
+// chroma v2.2.0's Jungle lexer never finishes on most input, a lone `{`
+// among it, so a block that reaches it is shown as plain code
+// (davison/md-notes#190).
+func highlightable(l chroma.Lexer) bool {
+	return l.Config().Name != "Jungle"
 }
 
 // lexerCache remembers, for tags outside chroma's name and alias tables,
@@ -123,7 +150,7 @@ func (c *lexerCache) quickName(tag string) string {
 		return name
 	}
 	c.lookups.Add(1)
-	if l := lexers.Get(tag); l != nil {
+	if l := lexers.Get(tag); l != nil && highlightable(l) {
 		name = quickNameFor(l)
 	}
 	c.mu.Lock()
@@ -151,18 +178,31 @@ func (c *lexerCache) resolveCode(doc ast.Node, src []byte) []byte {
 		b := &codeBlock{fence: f}
 		if lang := f.Language(src); lang != nil {
 			tag := string(lang)
+			quick := quickLexer(tag)
 			switch {
-			case quickLexer(tag) != nil:
-				b.highlight = f
+			case quick != nil:
+				if highlightable(quick) {
+					b.highlight = f
+				}
+			case len(tag) > maxTagLen:
+				// chroma's search costs about 0.27 ms for each byte of
+				// the tag, and no language's tag comes near this.
 			case slow[tag] || len(slow) < maxSlowTags:
 				slow[tag] = true
 				if name := c.quickName(tag); name != "" {
-					// The same info string with the tag swapped for the
-					// quick name, so any attributes after it still apply.
+					// The quick name, then the attributes the highlighter
+					// would have read off the block's own info string: from
+					// its first `{` on, unless that opens it. The `{` may be
+					// inside the tag, as in `Caddyfile{linenos=true}`,
+					// which chroma finds by the glob `Caddyfile*`.
 					// Appending copies src the first time.
 					start := len(out)
 					out = append(out, name...)
-					out = append(out, f.Info.Segment.Value(src)[len(lang):]...)
+					info := f.Info.Segment.Value(src)
+					if i := bytes.IndexByte(info, '{'); i > 0 {
+						out = append(out, ' ')
+						out = append(out, info[i:]...)
+					}
 					stand := ast.NewFencedCodeBlock(ast.NewTextSegment(text.NewSegment(start, len(out))))
 					stand.SetLines(f.Lines())
 					b.highlight = stand
