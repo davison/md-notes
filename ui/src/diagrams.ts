@@ -291,16 +291,25 @@ const TAKEOVER = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
 
 /**
  * Keeps a scroll target in place while the diagram images above it settle
- * (#177). An image the daemon did not measure has no box until it loads,
- * and any image that fails — measured or not — gives its place back to its
- * code block, which is another height (review of PR #202, nit 2, taken by
- * #189). Each settles by loading or failing, and moves everything below it
- * when it does; the target is scrolled to again each time. A measured image
- * that loads moves nothing, and scrolling to the target again then changes
- * nothing either.
+ * (#177). Two kinds of settling move what is below an image:
+ *
+ *  - an image the daemon did not measure has no box until it loads, so its
+ *    load moves the target, and so does its failure;
+ *  - any image that fails, measured or not, gives its place back to its
+ *    code block, which is another height (review of PR #202, nit 2, taken
+ *    by #189).
+ *
+ * The target is scrolled to again after each of those. A measured image
+ * that loads moves nothing, so it is only counted as settled: scrolling
+ * for it would pull back a reader who had moved on by a scroll with no
+ * input event — a script, assistive technology, autoscroll — as images far
+ * above, which load lazily, arrived (review of PR #204, nit 1).
+ *
+ * An unmeasured image far above that loads late can still pull such a
+ * reader back, as it could before; its load does move the target.
  *
  * The page lets go as soon as the reader scrolls, clicks or types, when
- * every such image has settled, or when the returned function is called.
+ * every image above has settled, or when the returned function is called.
  */
 export function holdInView(target: Element): () => void {
   const scope = target.closest(".markdown") ?? target.ownerDocument;
@@ -308,22 +317,25 @@ export function holdInView(target: Element): () => void {
     (img) => !img.complete && img.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING,
   );
   if (pending.length === 0) return () => {};
+  const put = () => target.scrollIntoView({ block: "center" });
   let left = pending.length;
-  const settle = () => {
-    target.scrollIntoView({ block: "center" });
-    if (--left === 0) release();
-  };
+  const handlers = pending.map((img) => {
+    const measured = img.hasAttribute("height");
+    const settle = (e: Event) => {
+      if (e.type === "error" || !measured) put();
+      if (--left === 0) release();
+    };
+    img.addEventListener("load", settle, { once: true });
+    img.addEventListener("error", settle, { once: true });
+    return [img, settle] as const;
+  });
   const release = () => {
-    for (const img of pending) {
+    for (const [img, settle] of handlers) {
       img.removeEventListener("load", settle);
       img.removeEventListener("error", settle);
     }
     for (const type of TAKEOVER) window.removeEventListener(type, release, true);
   };
-  for (const img of pending) {
-    img.addEventListener("load", settle, { once: true });
-    img.addEventListener("error", settle, { once: true });
-  }
   for (const type of TAKEOVER) window.addEventListener(type, release, { capture: true, passive: true });
   return release;
 }

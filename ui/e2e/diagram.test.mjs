@@ -63,6 +63,23 @@ const WIDE_NOTE = (() => {
   return { text: lines.join("\n"), paragraph };
 })();
 
+/**
+ * Thirty measured diagrams and a paragraph below them: opened at that line,
+ * most of the diagrams are far above the screen and, being lazy, unloaded.
+ */
+const MANY_MEASURED = (() => {
+  const lines = ["# Many measured", ""];
+  for (let d = 1; d <= 30; d++) {
+    lines.push("```mermaid", "flowchart TD");
+    for (let n = 0; n < 4; n++) lines.push(`  M${d}N${n}[Measured ${d} step ${n}] --> M${d}N${n + 1}[Measured ${d} step ${n + 1}]`);
+    lines.push("```", "");
+  }
+  lines.push("The needle-word paragraph.", "");
+  const paragraph = lines.length - 1;
+  for (let i = 0; i < 40; i++) lines.push(`Trailing paragraph ${i}.`, "");
+  return { text: lines.join("\n"), paragraph };
+})();
+
 /** The widths M10-R1 names: wide, middle and three phones. */
 const WIDTHS = [
   DESKTOP,
@@ -197,6 +214,8 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
     write("live.md", "# Live\n\n" + fence("graph TD; P-->Q\n") + "\n" + fence("graph TD; X-->Y\n"));
     write("flows.md", FLOWS.text);
     write("tall-source.md", TALL_SOURCE.text);
+    write("many-measured.md", MANY_MEASURED.text);
+    write("view-far.md", "# Far\n\n" + Array.from({ length: 60 }, (_, i) => `Paragraph ${i}.\n`).join("\n") + "\n" + fence(LONG_LR) + "\nBelow.\n");
     MANY.forEach((m, i) => write(`many-${i}.md`, m.text));
     write("unreachable.md", "# Unreachable\n\n" + fence(FLOW));
     browser = await playwright.chromium.launch({ headless: true });
@@ -654,6 +673,33 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
       }
     });
 
+    it("keeps the note where it was when the view closes because the diagram's drawing failed", async () => {
+      // Found by the review of PR #204, on df276bd: focus handed to the
+      // title scrolled the note to the top.
+      const { name, ...options } = DESKTOP;
+      const ctx = await browser.newContext({ ...options, colorScheme: "light", serviceWorkers: "block" });
+      try {
+        const page = await ctx.newPage();
+        await openNote(page, fixture.url("view-far.md"));
+        const img = page.locator(".markdown img.diagram");
+        await img.scrollIntoViewIfNeeded();
+        await loaded(page, 1);
+        await img.click();
+        await opened(page);
+        const before = await page.evaluate(() => document.querySelector("main.note-body").scrollTop);
+        assert.ok(before > 500, `the diagram is far down the note (${before})`);
+        await page.route("**/api/r/*/diagram/**", (route) => route.abort("internetdisconnected"));
+        await page.emulateMedia({ colorScheme: "dark" });
+        await page.waitForFunction(() => !document.querySelector(".diagram-viewer"));
+        await page.waitForTimeout(300);
+        const after = await page.evaluate(() => document.querySelector("main.note-body").scrollTop);
+        assert.ok(Math.abs(after - before) < 400, `the note moved from ${before} to ${after}`);
+        assert.equal(await page.evaluate(() => document.activeElement?.matches(".note-title") ?? false), true, "focus is on the title");
+      } finally {
+        await ctx.close();
+      }
+    });
+
     it("closes when the diagram's drawing fails while open", async () => {
       const { page, close } = await viewing("view-fail.md", "# F\n\n" + fence(LONG_LR) + "\nBelow.\n");
       try {
@@ -881,6 +927,33 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
       );
     });
   }
+
+  it("does not pull back a scroll made without an input event as diagrams far above load", async () => {
+    // Review of PR #204, nit 1: a script, assistive technology or autoscroll
+    // moves the note with no wheel, touch, key or pointer event; the
+    // measured images it brings on screen then load, and nothing they do
+    // moves the hit, so nothing may scroll back to it.
+    const { name, ...options } = DESKTOP;
+    const ctx = await browser.newContext({ ...options, colorScheme: "light", serviceWorkers: "block" });
+    try {
+      const page = await ctx.newPage();
+      await openNote(page, fixture.url("many-measured.md", `?l=${MANY_MEASURED.paragraph}`));
+      await page.locator(".markdown p", { hasText: "The needle-word paragraph." }).waitFor();
+      await page.waitForTimeout(500);
+      const pending = await page.evaluate(
+        () => [...document.querySelectorAll(".markdown img.diagram")].filter((i) => !i.complete).length,
+      );
+      assert.ok(pending >= 5, `only ${pending} images far above were still unloaded`);
+      await page.evaluate(() => {
+        document.querySelector("main.note-body").scrollTop = 0;
+      });
+      await page.waitForTimeout(2500);
+      const top = await page.evaluate(() => document.querySelector("main.note-body").scrollTop);
+      assert.ok(top < 50, `the note was pulled back to ${top} px`);
+    } finally {
+      await ctx.close();
+    }
+  });
 
   describe("the drawing opened as a document", () => {
     /** The URL the reading view uses for flow.md's diagram, taken from the page. */
