@@ -39,6 +39,14 @@
 // and any text that does not parse — is refused with a *Refusal, and the
 // caller shows the block as code. Nothing is ever half-drawn.
 //
+// # Drawing
+//
+// The layout is layered, as mermaid's is. A link back against the flow
+// runs in its own lane outside the nodes, leaving and entering them by the
+// side that faces it; the longest chain of links is drawn straight; and a
+// subgraph's title is placed where no link crosses it, the subgraph
+// widening to make room if there is none (davison/md-notes#188).
+//
 // # Bounds
 //
 // DefaultLimits bound the input's size, its node, edge and subgraph
