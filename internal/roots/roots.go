@@ -231,9 +231,17 @@ func (r *Registry) withSlug(root Root) Root {
 	return root
 }
 
+// hasSlug reports whether slug is taken: by a root served now, or by a
+// shadowed state-file entry, whose slug stays reserved for the start that
+// serves it as a recent root again.
 func (r *Registry) hasSlug(slug string) bool {
 	for _, x := range r.roots {
 		if x.Slug == slug {
+			return true
+		}
+	}
+	for _, p := range r.shadowed {
+		if p.Slug == slug {
 			return true
 		}
 	}
