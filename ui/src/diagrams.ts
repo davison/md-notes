@@ -151,25 +151,30 @@ export function diagramKeys(diagrams: readonly DiagramRef[]): string[] {
 }
 
 /**
- * Which diagram a natural-size view is showing: the pool key it was opened
- * on, where that diagram stood in the note's list, and how long the list was.
+ * Which diagram a natural-size view is showing: its pool key, where it
+ * stood in the note's list, and the whole list as it was then.
  */
 export interface ViewedDiagram {
   key: string;
   index: number;
-  count: number;
+  keys: readonly string[];
 }
 
 /**
  * The image a natural-size view should show now, after whatever has changed
- * since it opened, or null when the diagram it was showing is gone.
+ * since it was last checked, or null when the diagram it was showing is gone.
  *
  * The same diagram, unchanged, is the same key, and its image may have a
- * new `src` for a new palette. A diagram edited in place has a new key.
- * When the note still lists the same number of diagrams, the one at the same
- * position is taken to be the edited one, and the view follows it. Otherwise,
- * or when that image is not standing (removed, refused, failed to load), the
- * diagram is gone.
+ * new `src` for a new palette. A diagram edited in place has a new key. The
+ * view follows it there only when the note lists as many diagrams as before
+ * and the one now at the same position is new — its key was not in the list
+ * before. An edit always makes a new key and an untouched neighbour never
+ * does, so a diagram deleted while another is added elsewhere, or a
+ * reordering, closes the view rather than moving it to a diagram the reader
+ * did not open (review of PR #202, round two). The one case still followed
+ * wrongly is a diagram deleted while another new one lands at its place,
+ * which is indistinguishable from an edit. Anything else — removed, refused,
+ * failed to load — is gone.
  */
 export function followViewed(
   pool: DiagramPool,
@@ -182,10 +187,12 @@ export function followViewed(
   };
   const keys = diagramKeys(diagrams);
   const same = standing(viewed.key);
-  if (same) return { image: same, viewed: { key: viewed.key, index: keys.indexOf(viewed.key), count: keys.length } };
-  if (keys.length !== viewed.count) return null;
-  const moved = standing(keys[viewed.index]);
-  return moved ? { image: moved, viewed: { ...viewed, key: keys[viewed.index] } } : null;
+  if (same) return { image: same, viewed: { key: viewed.key, index: keys.indexOf(viewed.key), keys } };
+  if (keys.length !== viewed.keys.length) return null;
+  const candidate = keys[viewed.index];
+  if (candidate === undefined || viewed.keys.includes(candidate)) return null;
+  const moved = standing(candidate);
+  return moved ? { image: moved, viewed: { key: candidate, index: viewed.index, keys } } : null;
 }
 
 /**

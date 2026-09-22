@@ -34,6 +34,8 @@ interface NoteProps {
 
 export function NoteView({ slug, path, version = 0, line = null, onTitle }: NoteProps) {
   const [note, setNote] = useState<Note | null>(null);
+  const noteRef = useRef(note);
+  noteRef.current = note;
   const [error, setError] = useState<string | null>(null);
   const body = useRef<HTMLDivElement>(null);
   const theme = useDiagramTheme();
@@ -150,25 +152,48 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
   // below, so the view is checked against the pool on every one of them. A
   // diagram edited in place is followed to its new drawing; one that is gone
   // closes the view, and focus goes to the note's title.
+  //
+  // One observer for as long as the view is open, reading the note and the
+  // view through refs, which are current by the time any mutation is
+  // delivered: the list it checks against is always the one the pool was
+  // just decorated from. An observer tied to each version of the note would
+  // still be connected when the next version is decorated, since an effect's
+  // cleanup runs after the commit, and would judge the new images against
+  // the old list — which is how the view once lost focus to the title on an
+  // edit it then went on to follow (review of PR #202, round two).
+  const viewOpen = view !== null;
   useEffect(() => {
     const scope = body.current;
-    if (!view || !scope || !note) return;
+    if (!viewOpen || !scope) return;
     const check = () => {
       const current = viewRef.current;
-      if (!current) return;
-      const now = followViewed(pool.current, note.diagrams ?? [], current.viewed);
+      const shown = noteRef.current;
+      if (!current || !shown) return;
+      const now = followViewed(pool.current, shown.diagrams ?? [], current.viewed);
       if (!now) {
         closeView();
         return;
       }
       const next = snapshot(now.image, now.viewed);
-      if (!sameView(current, next)) setView(next);
+      if (sameView(current, next)) return;
+      viewRef.current = next;
+      setView(next);
     };
     check();
     const observer = new MutationObserver(check);
     observer.observe(scope, { subtree: true, childList: true, attributes: true, attributeFilter: ["src"] });
     return () => observer.disconnect();
-  }, [view !== null, note]);
+  }, [viewOpen]);
+
+  // A note that stops rendering — deleted, say — takes the view and the
+  // title it would hand focus to with it; focus goes to the error's title.
+  const article = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (!error || !viewRef.current) return;
+    viewRef.current = null;
+    setView(null);
+    article.current?.querySelector<HTMLElement>(".note-title")?.focus();
+  }, [error]);
 
   /**
    * Closes the view and puts focus back on the diagram it showed, or on the
@@ -177,9 +202,11 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
    */
   const closeView = () => {
     const current = viewRef.current;
-    const now = current && note ? followViewed(pool.current, note.diagrams ?? [], current.viewed) : null;
-    const target = now?.image.parentElement ?? body.current?.closest("article")?.querySelector<HTMLElement>(".note-title");
+    const shown = noteRef.current;
+    const now = current && shown ? followViewed(pool.current, shown.diagrams ?? [], current.viewed) : null;
+    const target = now?.image.parentElement ?? article.current?.querySelector<HTMLElement>(".note-title");
     target?.focus();
+    viewRef.current = null;
     setView(null);
   };
 
@@ -191,7 +218,7 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
       const keys = diagramKeys(note.diagrams ?? []);
       for (const [key, img] of pool.current) {
         if (img.parentElement !== open) continue;
-        setView(snapshot(img, { key, index: keys.indexOf(key), count: keys.length }));
+        setView(snapshot(img, { key, index: keys.indexOf(key), keys }));
         break;
       }
       return;
@@ -209,8 +236,10 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
 
   if (error) {
     return (
-      <article>
-        <h1 class="note-title">{path.split("/").pop()}</h1>
+      <article ref={article}>
+        <h1 class="note-title" tabIndex={-1}>
+          {path.split("/").pop()}
+        </h1>
         <p class="error">{error}</p>
       </article>
     );
@@ -218,7 +247,7 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
   if (!note) return <p class="muted">Loading…</p>;
 
   return (
-    <article class="note-article" onClick={onClick}>
+    <article ref={article} class="note-article" onClick={onClick}>
       <h1 class="note-title" tabIndex={-1}>
         {note.title}
       </h1>
@@ -254,7 +283,7 @@ function sameView(a: View, b: View): boolean {
   return (
     a.viewed.key === b.viewed.key &&
     a.viewed.index === b.viewed.index &&
-    a.viewed.count === b.viewed.count &&
+    a.viewed.keys.join("\n") === b.viewed.keys.join("\n") &&
     a.src === b.src &&
     a.alt === b.alt &&
     a.width === b.width &&
