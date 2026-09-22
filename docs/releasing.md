@@ -171,18 +171,39 @@ It holds on one condition, which is **the toolchain**. The tag names it:
 pnpm's version doesn't matter: the lockfiles pin everything it installs, and
 10.33 and 10.34 measured the same.
 
-To check a release:
+To check a release, clone it, check out its tag, and run the check below from
+the checkout. It stops, naming what is missing, rather than building with
+whatever Go and Node happen to be installed, because a build with the wrong
+toolchain differs and would look like a release that doesn't reproduce.
 
 ```
 git clone https://github.com/davison/md-notes && cd md-notes
 git checkout v0.2.0                        # the tag you are checking
-export GOTOOLCHAIN=$(sed -n 's/^toolchain //p' go.mod)
-# from https://nodejs.org/dist/v<version>/, unpacked anywhere:
-export PATH=/path/to/node-v$(cat .node-version)-linux-x64/bin:$PATH
-make release VERSION=v0.2.0
-gh release download v0.2.0 --pattern SHA256SUMS --output published.sha256
-diff dist/SHA256SUMS published.sha256 && echo reproduced
+
+TAG=v0.2.0 NODE_DIR=$HOME/node bash -eu <<'CHECK'
+go=${GO:-$(sed -n 's/^toolchain //p' go.mod)}
+: "${go:?go.mod names no toolchain line: set GO (see below for v0.1.0)}"
+node=${NODE_VERSION:-$(cat .node-version 2>/dev/null || true)}
+: "${node:?there is no .node-version: set NODE_VERSION (see below for v0.1.0)}"
+bin=$NODE_DIR/node-v$node-linux-x64/bin
+if [ ! -x "$bin/node" ]; then
+  echo "no Node $node in $bin: unpack https://nodejs.org/dist/v$node/ there" >&2
+  exit 1
+fi
+export GOTOOLCHAIN=$go PATH=$bin:$PATH
+make release VERSION="$TAG"
+gh release download "$TAG" --pattern SHA256SUMS --output dist/published.sha256
+diff dist/SHA256SUMS dist/published.sha256 && echo "$TAG reproduced"
+CHECK
 ```
+
+`NODE_DIR` is wherever you unpacked the nodejs.org tarball
+(`node-v<version>-linux-x64`, or `-arm64`, adjusting `bin`).
+
+**v0.1.0 predates both pins.** It was built with go1.27.1 and Node 24.20.0, so
+check it with `TAG=v0.1.0 GO=go1.27.1 NODE_VERSION=24.20.0 NODE_DIR=… bash
+-eu <<'CHECK'` and the same script. Node 24.21.0 reproduces it too. Without
+`GO` and `NODE_VERSION`, the script stops at the first of the two lookups.
 
 Rebuild in a clean checkout, and keep the output in `dist/`, which is
 gitignored. The binaries carry a `vcs.modified` flag, so any untracked file
@@ -191,8 +212,9 @@ binaries. They also carry a module version that Go derives from the tags it can
 see. At a tag, that is the tag itself. At an untagged commit it is a
 pseudo-version, which comes out differently in a full clone and in a shallow
 one. So compare a dry run's artifact against a clone made the way CI makes
-one: `git clone --depth 1 --branch <branch>`. `make release` wants an `amd64` or `arm64` Linux host because it runs
-one of the binaries it builds; the runner image makes no difference.
+one: `git clone --depth 1 --branch <branch>`. `make release` wants an `amd64`
+or `arm64` Linux host because it runs one of the binaries it builds; the runner
+image makes no difference.
 
 **If you can't rebuild**, check the assets against `SHA256SUMS` instead, which
 is what every channel does. The packages carry the release's binaries
