@@ -118,8 +118,9 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
       if (target) {
         target.scrollIntoView({ block: "center" });
         // A diagram above the target that the daemon did not measure has no
-        // box until it loads; keep the target where it was put as each one
-        // arrives (#177).
+        // box until it loads, and any diagram that fails gives its place to
+        // a code block of another height; keep the target where it was put
+        // as each of those settles (#177, #189).
         const release = holdInView(target);
         // No flash when animations are off: the class is not added at all,
         // rather than added and left to a stylesheet that has cancelled the
@@ -198,14 +199,16 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
   /**
    * Closes the view and puts focus back on the diagram it showed, or on the
    * note's title when that diagram is no longer in the note. Focus moves
-   * before the view goes, so it never falls to the document's body.
+   * before the view goes, so it never falls to the document's body, and
+   * without scrolling: the note stays where the reader left it, rather than
+   * jumping to a title far above (review of PR #204).
    */
   const closeView = () => {
     const current = viewRef.current;
     const shown = noteRef.current;
     const now = current && shown ? followViewed(pool.current, shown.diagrams ?? [], current.viewed) : null;
     const target = now?.image.parentElement ?? article.current?.querySelector<HTMLElement>(".note-title");
-    target?.focus();
+    target?.focus({ preventScroll: true });
     viewRef.current = null;
     setView(null);
   };

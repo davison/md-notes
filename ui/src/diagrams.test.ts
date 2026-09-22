@@ -350,9 +350,12 @@ describe("holdInView", () => {
   }
 
   it("scrolls to the target again when an unmeasured image above it loads or fails", () => {
-    const { target, scrolls, unmeasured, below } = setup();
+    const { target, scrolls, unmeasured, measured, below } = setup();
     const stop = holdInView(target);
     below.dispatchEvent(new Event("load"));
+    // A measured image's load moves nothing, so it scrolls nothing: a reader
+    // who has moved on is not pulled back (review of PR #204, nit 1).
+    measured.dispatchEvent(new Event("load"));
     expect(scrolls).not.toHaveBeenCalled();
     unmeasured.dispatchEvent(new Event("load"));
     expect(scrolls).toHaveBeenCalledTimes(1);
