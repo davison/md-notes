@@ -356,8 +356,88 @@ describe("creating and deleting a note in the browser", { skip: blocker ?? false
       assert.match(await other.locator(".cm-content").textContent(), /Draft that outlived the file/);
       assert.equal(await other.locator(".save-status").textContent(), "Saved");
       assert.equal(other.url(), `${origin}/r/notes/Vanishing.md`, "and the tab is still on the note");
+
+      // The reader was typing when the note vanished, and is typing again
+      // now it is back (#112): still in insert mode, focus in the editor,
+      // and the next key a character at the caret rather than a command.
+      assert.equal(
+        await other.evaluate(() => document.querySelector(".cm-scroller").classList.contains("cm-vimMode")),
+        false,
+        "the recreated note's editor is in insert mode",
+      );
+      await waitFor(
+        () => other.evaluate(() => !!document.activeElement?.closest(".cm-content")),
+        "focus to be back in the editor",
+      );
+      await other.keyboard.type("!");
+      assert.match(await other.locator(".cm-content").textContent(), /Draft that outlived the file!/);
     } finally {
       await phone.close();
+    }
+  });
+
+  it("tells a clean editor its note is gone, without a conflict, and carries on when it comes back", async () => {
+    // #30: nothing typed, the file deleted on disk. Measured against a real
+    // daemon and its change stream, because the unit suite's jsdom has been
+    // blind to real-browser timing before.
+    const rel = "Ghost.md";
+    fs.writeFileSync(notePath(rel), "# Ghost\n\nFirst text.\n");
+    const writes = [];
+    const onRequest = (r) => {
+      if (r.url().includes("/api/r/notes/source/") && r.method() !== "GET") writes.push(`${r.method()} ${r.url()}`);
+    };
+    page.on("request", onRequest);
+    try {
+      await page.goto(`${origin}/r/notes/${rel}`);
+      await page.locator(".note-bar").waitFor();
+      await page.getByRole("button", { name: "Edit" }).click();
+      await page.locator(".cm-editor").waitFor();
+      await waitFor(() => page.locator(".save-status").textContent().then((t) => t === "Saved"), "the editor to be clean");
+
+      fs.rmSync(notePath(rel));
+      await waitFor(
+        () => page.locator(".save-status").textContent().then((t) => t === "Deleted on disk"),
+        "the bar to say the note is gone",
+      );
+      assert.equal(await page.locator('.conflict[role="alert"]').count(), 0, "no conflict banner");
+      assert.match(await page.locator(".gone-notice").textContent(), /no longer exists on disk/);
+      assert.match(await page.locator(".cm-content").textContent(), /First text\./, "the text is still on screen");
+      assert.doesNotMatch(await page.title(), /^[⚠•]/, "and the tab carries no unsaved marker");
+
+      // View mode: the file as it is on disk, under the same bar.
+      await page.getByRole("button", { name: "View" }).click();
+      await page.locator(".note-body").waitFor();
+      assert.equal(await page.locator(".save-status").textContent(), "Deleted on disk");
+      assert.equal(await page.getByText("Conflict: draft kept").count(), 0);
+      assert.equal(await page.locator(".gone-notice").count(), 1);
+      await page.getByRole("button", { name: "Edit" }).click();
+      await page.locator(".cm-editor").waitFor();
+
+      // Back with other text: taken, with nothing to dismiss.
+      fs.writeFileSync(notePath(rel), "# Ghost\n\nSecond text.\n");
+      await waitFor(
+        () => page.locator(".cm-content").textContent().then((t) => t.includes("Second text.")),
+        "the editor to take the returning file",
+      );
+      await waitFor(() => page.locator(".save-status").textContent().then((t) => t === "Saved"), "the bar to say Saved");
+      assert.equal(await page.locator(".gone-notice").count(), 0, "the notice has gone by itself");
+      assert.equal(await page.locator(".conflict").count(), 0);
+
+      // Gone again, and back with the very same bytes: still just the file.
+      fs.rmSync(notePath(rel));
+      await waitFor(
+        () => page.locator(".save-status").textContent().then((t) => t === "Deleted on disk"),
+        "the bar to say the note is gone again",
+      );
+      fs.writeFileSync(notePath(rel), "# Ghost\n\nSecond text.\n");
+      await waitFor(() => page.locator(".save-status").textContent().then((t) => t === "Saved"), "the bar to say Saved again");
+      assert.equal(await page.locator(".gone-notice").count(), 0);
+
+      assert.deepEqual(writes, [], "the tab wrote nothing to the note at any point");
+      assert.equal(fs.readFileSync(notePath(rel), "utf8"), "# Ghost\n\nSecond text.\n");
+    } finally {
+      page.off("request", onRequest);
+      fs.rmSync(notePath(rel), { force: true });
     }
   });
 
