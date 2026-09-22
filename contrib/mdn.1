@@ -59,14 +59,17 @@ and synced by anything that syncs files.
 .SH COMMANDS
 .TP
 .B serve
-Run the daemon against the configured notes root.
+Run the daemon against the configured roots: the notes root, where clips land,
+and any permanent roots after it.
 This is what the systemd user unit starts.
+Every start logs each root it serves with its slug, kind and path.
 .TP
 .BI "open " DIR
 Register
 .I DIR
-with the running daemon as an additional root and open it in the browser.
-Roots added this way are remembered in the state file.
+with the running daemon as a recent root and open it in the browser.
+Roots added this way are remembered in the state file; there is no verb that
+removes one, and the home page is where that is done.
 .TP
 .B token
 Print the daemon's bearer token, which the browser extension needs.
@@ -83,9 +86,17 @@ Default
 .IR ~/.config/mdn/config.yml .
 .TP
 .BI \-root " DIR"
-Notes root, overriding
+A folder to serve.
+Repeat it for several: the first is the notes root and the rest are permanent
+roots, in the order given.
+Any
+.B \-root
+replaces
 .B notes_root
-in the configuration file.
+from the configuration file completely rather than adding to it, and the start
+logs the roots it set aside.
+Two roots naming the same folder, including through a symlink, stop the daemon
+at startup.
 .TP
 .BI \-port " N"
 Loopback port, overriding
@@ -145,17 +156,38 @@ The daemon's configuration:
 .B clips_dir
 and
 .BR tailnet_host .
+.B notes_root
+takes one path or a list of them.
+The first entry is the notes root and the rest are permanent roots, in the
+order given; each must be an existing directory.
+.RS
+.PP
+.nf
+notes_root:
+  \- /home/you/notes
+  \- /home/you/projects
+.fi
+.RE
 .TP
 .I ~/.local/state/mdn/roots.json
-The roots added with
-.BR "mdn open" ,
-so they survive a restart.
+The recent roots, added with
+.B mdn open
+or by the browser extension, with their slugs, so they survive a restart.
+Permanent roots are configuration and are never written here.
 .TP
 .I ~/.local/state/mdn/token
 The bearer token clients present, created on first start.
 .TP
 .I /usr/lib/systemd/user/mdn.service
-The systemd user unit this package installs.
+The systemd user unit, where the packages and a default
+.B make install
+put it.
+Under another
+.BR PREFIX ,
+.B make install
+puts it under that prefix instead, and it then needs a drop\-in pointing
+.B ExecStart
+at the binary, as the unit's header describes.
 Start it with
 .RS
 .PP
@@ -164,7 +196,7 @@ systemctl \-\-user enable \-\-now mdn
 .fi
 .RE
 .PP
-The three paths above follow
+The first three paths above follow
 .BR XDG_CONFIG_HOME " and " XDG_STATE_HOME
 where those are set; the defaults are shown.
 .SH DEPENDENCIES
@@ -172,7 +204,8 @@ The daemon shells out to
 .BR rg (1)
 to list and to search a root.
 Without ripgrep the navigator is empty and search returns nothing, which is why
-this package depends on it.
+the packages depend on it and a source install needs it on
+.BR PATH .
 .SH SEE ALSO
 .BR rg (1),
 .BR systemctl (1)
