@@ -752,7 +752,7 @@ what is on screen; [The browser tab](#the-browser-tab) below says how. The panes
   on the app's origin, nor dress itself in the application's own CSS. The classes a
   note may carry are a whitelist: any name in the reserved `mdn-` namespace, which
   only the syntax highlighter emits and no application stylesheet uses; the
-  `language-` class goldmark gives a fence it could not tokenise; and by exact name
+  `language-` class goldmark gives a fence it does not highlight; and by exact name
   the few structural classes a note's own footnotes and links carry. Every other
   class is stripped, so what a note can style does not depend on what the
   application calls its own classes. HTML a note writes itself is held to less than that:
@@ -762,10 +762,15 @@ what is on screen; [The browser tab](#the-browser-tab) below says how. The panes
   ([#31](https://github.com/davison/md-notes/issues/31)). Relative links to markdown
   become in-app navigation; relative images and other assets are served from the raw
   endpoint; a link whose target escapes the root keeps its text but loses its destination
-  and says why. A mermaid flowchart is drawn by the daemon and shown as an image in front
-  of its code block — see [Flowcharts](#flowcharts). A bar above the note carries the
-  mode, the save state, `Ctrl+E`, which flips the pane to the editor and back, and
-  **Delete** at its right-hand end — see [Editing](#editing). The delete button's place
+  and says why. A fence whose tag chroma has no lexer for is shown as plain code. So is
+  a fence whose tag chroma finds only by searching its lexers' file patterns (`yml`,
+  `h`, `patch`), once 16 different tags like that have come before it in the note.
+  Each such tag is searched for once, not once per block; the per-block search is
+  what made a note of 20,000 `mermaid` blocks take over a minute to render
+  ([#190](https://github.com/davison/md-notes/issues/190)). A mermaid flowchart is
+  drawn by the daemon and shown as an image in front of its code block — see
+  [Flowcharts](#flowcharts). A bar above the note carries the mode, the save state,
+  `Ctrl+E`, which flips the pane to the editor and back, and **Delete** at its right-hand end — see [Editing](#editing). The delete button's place
   is fixed: it is the far end of the bar from the mode toggle, in the rendered view and
   in the editor alike, and the `margin-left: auto` that puts it there is a property of
   the button rather than of the save status beside it, which is absent on a note that
