@@ -31,11 +31,10 @@
 
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { DESKTOP, loadPlaywright, missingPrerequisite, openNote, startFixture } from "./harness.mjs";
+import { DESKTOP, gate, loadPlaywright, missingPrerequisite, openNote, startFixture } from "./harness.mjs";
 
 const playwright = loadPlaywright();
-const blocker = missingPrerequisite(playwright);
-if (blocker) console.log(`# skipped: ${blocker}`);
+const blocker = gate(missingPrerequisite(playwright));
 
 /** Vite's hashed output directory, which is the one served immutable. */
 const ASSETS = "/assets/";

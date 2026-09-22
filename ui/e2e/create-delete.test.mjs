@@ -19,11 +19,10 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { TAP_TARGET, dialogReady, loadPlaywright, missingPrerequisite, startFixture, waitFor } from "./harness.mjs";
+import { TAP_TARGET, dialogReady, gate, loadPlaywright, missingPrerequisite, startFixture, waitFor } from "./harness.mjs";
 
 const playwright = loadPlaywright();
-const blocker = missingPrerequisite(playwright);
-if (blocker) console.log(`# skipped: ${blocker}`);
+const blocker = gate(missingPrerequisite(playwright));
 
 describe("creating and deleting a note in the browser", { skip: blocker ?? false }, () => {
   let fixture, origin, browser, context, page;

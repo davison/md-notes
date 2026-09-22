@@ -17,6 +17,7 @@ import {
   TAP_TARGET,
   dialogReady,
   drawerReady,
+  gate,
   loadPlaywright,
   missingPrerequisite,
   openNote,
@@ -24,8 +25,7 @@ import {
 } from "./harness.mjs";
 
 const playwright = loadPlaywright();
-const blocker = missingPrerequisite(playwright);
-if (blocker) console.log(`# skipped: ${blocker}`);
+const blocker = gate(missingPrerequisite(playwright));
 
 /** The two palettes, as ui/src/style.css declares them. */
 const LIGHT_BG = "rgb(251, 251, 250)";
