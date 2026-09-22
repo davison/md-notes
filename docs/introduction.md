@@ -128,7 +128,15 @@ root and `~/projects` as a [permanent root](#roots). Any `--root` replaces
 `notes_root` from the file completely rather than adding to it, just as `--port`
 replaces `port`, so the command line alone says what is served and which folder is
 first. The daemon refuses to start if two roots name the same folder, including
-through a symlink.
+through a symlink. Every start logs each root it serves with its slug, kind and
+path, and when `--root` has set aside roots the file names, it logs that too, naming
+them:
+
+```
+--root replaced notes_root from /home/you/.config/mdn/config.yml (/home/you/notes)
+serving notes (notes): /home/you/notes
+serving projects (permanent): /home/you/projects
+```
 
 `mdn open DIR` takes `--config FILE`, `--port N`, and `--no-browser` to print the URL
 instead of launching one. It resolves `DIR` against your working directory, POSTs it
@@ -199,15 +207,18 @@ is the `kind` field of each root in `GET /api/roots`:
 - **Permanent roots** (`permanent`): every configured root after the first, from
   `notes_root`'s list form or a repeated `--root`. Like the notes root they are the
   daemon's configuration. They are served from every start, never written to the
-  state file, and cannot be removed from the home page. A folder in the state file
-  as a recent root that is now configured is dropped from the state file and served
-  once, as permanent. One configured root may sit inside another: each is served as
-  a root of its own, as a nested `mdn open` is.
-- **Recent roots** (`recent`), added by `mdn open` or by the browser extension when you open a
-  local markdown file. They persist to the state file with their slugs, so a root's
-  URL survives a restart. A recent root whose directory has since disappeared is
-  dropped when the daemon next starts, and any of them can be removed from the home
-  page.
+  state file, and cannot be removed from the home page. A folder that is in the
+  state file as a recent root and is now configured is served once, as permanent,
+  and the start logs it. Its entry stays in the state file, so a start without that
+  configuration serves it as a recent root again, under its old slug. One
+  configured root may sit inside another: each is served as a root of its own, as a
+  nested `mdn open` is.
+- **Recent roots** (`recent`), added by `mdn open` or by the browser extension when
+  you open a local markdown file. They persist to the state file with their slugs,
+  so a root's URL survives a restart. A recent root whose directory has since
+  disappeared is not served, and leaves the state file once the daemon has bound its
+  port; a start that fails leaves the state file exactly as it was. Any recent root
+  can be removed from the home page.
 
 Registering a path that is already a root returns the existing root rather than
 duplicating it; the comparison is on the real path, so a symlinked alias resolves to
@@ -497,8 +508,9 @@ the API does not promise rename durability across power loss.
 the URL `GET` reads and `PUT` replaces, rather than a new noun, so there is one path
 grammar, one confinement check and one error envelope for all four
 ([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5700721960)). Both
-work in any registered root — the notes root and every folder added with `mdn open`
-— on the same terms as the save, which has always written to all of them
+work in any root the daemon serves — the notes root, the permanent roots and every
+folder added with `mdn open` — on the same terms as the save, which has always
+written to all of them
 ([#76](https://github.com/davison/md-notes/issues/76#issuecomment-5700724927)).
 
 `POST` takes the note's whole path under the root. It refuses to overwrite: the file
@@ -1751,9 +1763,11 @@ On loopback the daemon assumes a single-user machine: everything that can reach 
 port already runs as the user who owns the notes. Under `tailnet_host` that is no
 longer who is on the other end. The people and devices your **tailnet ACL admits to
 this node** can reach the login page, and one of them holding the token can read,
-search and edit every root the daemon serves — the notes root and every folder added
-with `mdn open`, including any that was only ever meant to be looked at locally — and
-add a clip to the notes root's clips directory.
+search and edit every root the daemon serves — the notes root, every permanent root
+and every folder added with `mdn open`, including any that was only ever meant to be
+looked at locally — and add a clip to the notes root's clips directory. A second
+`--root` or a `notes_root` list puts that whole folder within the token holder's
+reach too.
 
 So: keep the ACL as narrow as the notes deserve, ideally to your own devices; use
 `serve` rather than `funnel`; and treat `mdn token --rotate` as the way to revoke a
