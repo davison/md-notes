@@ -8,7 +8,7 @@ as a code project's docs.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/app/wide-dark.png">
-  <img src="docs/images/app/wide-light.png" alt="md-notes in a wide window: the navigator on the left with folders of notes, a note about backups in the middle with a table and a shell code block, and a search for 'restic' on the right listing the matching lines.">
+  <img src="docs/images/app/wide-light.png" alt="md-notes in a wide window: the navigator on the left with folders of notes, a note about backups in the middle with a table and a shell code block, and a search for 'weekend' on the right finding it in three notes.">
 </picture>
 
 ## Why you might want it
@@ -27,7 +27,8 @@ as a code project's docs.
 
 - **Renders notes properly**: headings, tables, task lists, footnotes and
   highlighted code, in a light or dark theme that follows your system. The
-  navigator lists only markdown, and leaves out whatever your `.gitignore` does.
+  navigator lists only markdown, leaves out hidden files, and in a git
+  repository leaves out whatever `.gitignore` does.
 - **Flips to a capable editor with one key.** `Ctrl+E` turns the rendered note
   into a CodeMirror editor with vim keybindings, and back.
 - **Saves as you type, and keeps up with other tools.** Every edit is saved
@@ -43,8 +44,8 @@ as a code project's docs.
 - **Opens any folder.** `mdn open ~/projects/some-repo` browses a project's
   markdown the same way, without making it part of your notes.
 - **Works on a phone and an e-ink tablet.** The layout gives the note the whole
-  screen on a small one, installs as an app on Android, and has settings for a
-  panel with no backlight.
+  screen on a small one, installs as an app on Android over your tailnet, and has
+  settings for a panel with no backlight.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/app/editor-dark.png">

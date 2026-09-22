@@ -6,8 +6,11 @@ tags: [work, on-call]
 Before handing over the pager on Monday morning:
 
 1. Close or re-home every incident still open in the tracker.
-2. Check the backup job ran on every database over the weekend.
+2. Check the backup job ran on every database.
 3. Write down anything that paged twice, even if it fixed itself.
+
+Weekend pages count too, even the ones that cleared on their own: the
+next person will meet them again on a Tuesday afternoon.
 
 ## Checking the database backups
 
