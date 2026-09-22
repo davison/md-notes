@@ -291,7 +291,13 @@ func TestLoadNotesRootStringOrList(t *testing.T) {
 			t.Errorf("%s: roots = %q, want %q", c.name, cfg.Roots, c.want)
 		}
 	}
-	for _, bad := range []string{"notes_root: {a: b}\n", "notes_root: [[/n]]\n"} {
+	for _, bad := range []string{
+		"notes_root: {a: b}\n",
+		"notes_root: [[/n]]\n",
+		"notes_root: [/n, ~]\n",
+		"notes_root: [/n, null]\n",
+		"notes_root:\n  - /n\n  -\n",
+	} {
 		p := filepath.Join(t.TempDir(), "config.yml")
 		os.WriteFile(p, []byte(bad), 0o644)
 		if _, err := Load(p); err == nil {

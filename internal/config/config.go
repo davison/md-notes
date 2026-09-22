@@ -91,6 +91,13 @@ func (r *Roots) UnmarshalYAML(node *yaml.Node) error {
 		}
 		return nil
 	case yaml.SequenceNode:
+		// A null item — `[/a, ~]`, or a bare `-` line — would decode as
+		// nothing at all and leave the list one shorter without a word.
+		for _, item := range node.Content {
+			if item.Kind == yaml.ScalarNode && item.Tag == "!!null" {
+				return fmt.Errorf("line %d: notes_root: an empty entry is not a folder", item.Line)
+			}
+		}
 		var many []string
 		if err := node.Decode(&many); err != nil {
 			return fmt.Errorf("notes_root: %w", err)
