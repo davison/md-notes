@@ -249,11 +249,13 @@ you have unsaved work:
 | The rendered view | It refreshes to the new text |
 | The editor, with no unsaved changes | The editor's text is replaced with the file's |
 | The editor, with an unsaved draft | A conflict banner: **Keep my draft**, **Load the file**, **Copy draft** |
+| The editor, with no unsaved changes, when Syncthing *deletes* the file | No conflict: the bar reads `Deleted on disk` in both modes, the text stays in the editor with **Recreate the note** offered, and the note carries on by itself if the file comes back |
 
 A draft is never dropped for you. [Conflicts](introduction.md#conflicts)
-describes the three buttons and the deleted-file case, where the save API cannot
-recreate a file and **Recreate the note** writes the draft back through the create
-prompt instead, beside **Copy draft** and **Discard draft**.
+describes the three buttons, the `Deleted on disk` state, and the deleted-file case
+under a draft, where the save API cannot recreate a file and **Recreate the note**
+writes the draft back through the create prompt instead, beside **Copy draft** and
+**Discard draft**.
 
 Note that this is a *second* kind of conflict, separate from Syncthing's. The
 banner is the daemon noticing that the file on disk moved under your draft.
