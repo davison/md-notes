@@ -230,6 +230,36 @@ describe("Editor", () => {
       expect(viewOf(container).state.selection.main.head).toBe(head);
     });
 
+    it("keeps insert mode through a Ctrl+E round trip, at the same generation", () => {
+      // The #192 gate, answered (a): the mode is parked with the caret, so a
+      // flip to the rendered view and back — an unmount and a remount with
+      // nothing replaced — returns a reader who was typing to insert mode,
+      // not only a recreate.
+      const s = session("one\ntwo\n");
+      const first = render(<Editor session={s} />);
+      const view = viewOf(first.container);
+      view.dispatch({ selection: { anchor: 2 } });
+      Vim.handleKey(getCM(view)!, "a", "user");
+      expect(view.state.selection.main.head).toBe(3);
+      const generation = s.state.generation;
+      first.unmount();
+
+      const second = render(<Editor session={s} />);
+      expect(s.state.generation).toBe(generation);
+      const again = viewOf(second.container);
+      expect(getCM(again)!.state.vim?.insertMode).toBe(true);
+      expect(again.state.selection.main.head).toBe(3);
+      second.unmount();
+
+      // And a round trip begun in normal mode comes back in normal mode.
+      const third = render(<Editor session={s} />);
+      Vim.handleKey(getCM(viewOf(third.container))!, "<Esc>", "user");
+      expect(getCM(viewOf(third.container))!.state.vim?.insertMode).toBeFalsy();
+      third.unmount();
+      const fourth = render(<Editor session={s} />);
+      expect(getCM(viewOf(fourth.container))!.state.vim?.insertMode).toBeFalsy();
+    });
+
     it("starts in normal mode when the text is replaced from disk", () => {
       // A rebuilt state is a different document: the caret is not kept, and
       // neither is the mode, as before.
