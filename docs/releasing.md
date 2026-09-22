@@ -187,7 +187,11 @@ diff dist/SHA256SUMS published.sha256 && echo reproduced
 Rebuild in a clean checkout, and keep the output in `dist/`, which is
 gitignored. The binaries carry a `vcs.modified` flag, so any untracked file
 that isn't ignored (a `DIST=` of your own, say) flips it and changes both
-binaries. `make release` wants an `amd64` or `arm64` Linux host because it runs
+binaries. They also carry a module version that Go derives from the tags it can
+see. At a tag, that is the tag itself. At an untagged commit it is a
+pseudo-version, which comes out differently in a full clone and in a shallow
+one. So compare a dry run's artifact against a clone made the way CI makes
+one: `git clone --depth 1 --branch <branch>`. `make release` wants an `amd64` or `arm64` Linux host because it runs
 one of the binaries it builds; the runner image makes no difference.
 
 **If you can't rebuild**, check the assets against `SHA256SUMS` instead, which
