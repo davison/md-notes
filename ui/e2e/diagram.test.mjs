@@ -470,6 +470,89 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
         await close();
       }
     });
+
+    /**
+     * The view follows the diagram as it is now, not as it was when it
+     * opened (review of PR #202, finding 1). Each case edits a note of its
+     * own, so none sees another's change.
+     */
+    const viewing = async (file, text, { profile = DESKTOP } = {}) => {
+      fs.writeFileSync(fixture.file(file), text);
+      const opened_ = await at(profile, fixture.url(file));
+      await loaded(opened_.page, 1);
+      await opened_.page.locator(".markdown img.diagram").click();
+      await opened(opened_.page);
+      return opened_;
+    };
+    const viewSrc = (page) => page.evaluate(() => document.querySelector(".diagram-viewer img")?.getAttribute("src") ?? null);
+    const noteSrc = (page) => page.evaluate(() => document.querySelector(".markdown img.diagram")?.getAttribute("src") ?? null);
+
+    it("names the action on the diagram's button, and describes it by its source", async () => {
+      const { page, close } = await at(DESKTOP, fixture.url("wide-lr.md"));
+      try {
+        await loaded(page, 1);
+        const button = page.getByRole("button", { name: "Open diagram at natural size" });
+        assert.equal(await button.count(), 1);
+        assert.equal(await button.getAttribute("aria-describedby"), await page.locator(".markdown img.diagram").getAttribute("id"));
+      } finally {
+        await close();
+      }
+    });
+
+    it("follows a change of palette while it is open", async () => {
+      const { page, close } = await viewing("view-palette.md", "# P\n\n" + fence(LONG_LR));
+      try {
+        assert.match(await viewSrc(page), /theme=light$/);
+        await page.emulateMedia({ colorScheme: "dark" });
+        await page.waitForFunction(() => document.querySelector(".markdown img.diagram")?.getAttribute("src").endsWith("theme=dark"));
+        await waitFor(async () => (await viewSrc(page)) === (await noteSrc(page)), "the view to follow the note's image to the dark palette");
+        await opened(page);
+      } finally {
+        await close();
+      }
+    });
+
+    it("follows the diagram when it is edited on disk while open, and hands focus back to it", async () => {
+      const { page, close } = await viewing("view-edit.md", "# E\n\n" + fence(LONG_LR) + "\nBelow.\n");
+      try {
+        const before = await viewSrc(page);
+        fs.writeFileSync(fixture.file("view-edit.md"), "# E\n\n" + fence(LONG_LR + "  H --> Z[Archive]\n") + "\nBelow.\n");
+        await waitFor(async () => {
+          const [v, n] = [await viewSrc(page), await noteSrc(page)];
+          return v !== before && v === n;
+        }, "the view to show the edited drawing");
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => !document.querySelector(".diagram-viewer"));
+        assert.equal(await focusedOpener(page), true, "focus is on the edited diagram");
+      } finally {
+        await close();
+      }
+    });
+
+    it("closes when the diagram is taken out of the note while open, with focus on the note's title", async () => {
+      const { page, close } = await viewing("view-gone.md", "# G\n\n" + fence(LONG_LR) + "\nBelow.\n");
+      try {
+        fs.writeFileSync(fixture.file("view-gone.md"), "# G\n\nNo diagram now.\n\nBelow.\n");
+        await page.waitForFunction(() => !document.querySelector(".diagram-viewer"));
+        assert.equal(await page.evaluate(() => document.activeElement?.matches(".note-title") ?? false), true, "focus is on the title");
+      } finally {
+        await close();
+      }
+    });
+
+    it("closes when the diagram's drawing fails while open", async () => {
+      const { page, close } = await viewing("view-fail.md", "# F\n\n" + fence(LONG_LR) + "\nBelow.\n");
+      try {
+        // Every drawing asked for from now on fails; a change of palette asks.
+        await page.route("**/api/r/*/diagram/**", (route) => route.abort("internetdisconnected"));
+        await page.emulateMedia({ colorScheme: "dark" });
+        await page.waitForFunction(() => !document.querySelector(".markdown img.diagram"));
+        await page.waitForFunction(() => !document.querySelector(".diagram-viewer"));
+        assert.equal(await page.evaluate(() => document.activeElement?.matches(".note-title") ?? false), true, "focus is on the title");
+      } finally {
+        await close();
+      }
+    });
   });
 
   it("shows as code a block the layout refuses, without ever asking for an image", async () => {
