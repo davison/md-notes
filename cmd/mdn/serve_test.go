@@ -2,13 +2,18 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // serveFixture is a scratch home for `mdn serve`: the folders it may serve,
@@ -131,5 +136,128 @@ func TestTokenCreatedLine(t *testing.T) {
 		if !strings.HasSuffix(got, c.want) || !strings.Contains(got, "in "+c.path+";") {
 			t.Errorf("tokenCreatedLine(%q, %v) = %q, want it to end %q", c.path, c.given, got, c.want)
 		}
+	}
+}
+
+// Every start names what it serves, and says when --root set the config
+// file's roots aside: the replace rule is the right one, and silent it
+// would be the trap #162 was (review of #198, finding 1).
+func TestServeLogsTheRootsItServes(t *testing.T) {
+	base, scratch := serveFixture(t, "notes", "projects", "other")
+	notes, projects, other := filepath.Join(base, "notes"), filepath.Join(base, "projects"), filepath.Join(base, "other")
+	configPath := filepath.Join(base, "config.yml")
+	os.WriteFile(configPath, []byte("notes_root: ["+notes+", "+projects+"]\n"), 0o644)
+
+	_, stderr := listRoots(t, scratch)
+	for _, want := range []string{"serving notes (notes): " + notes, "serving projects (permanent): " + projects} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("start from the file logged %q, want %q", stderr, want)
+		}
+	}
+	if strings.Contains(stderr, "replaced") {
+		t.Errorf("start from the file logged %q, want no replacement", stderr)
+	}
+
+	_, stderr = listRoots(t, append(scratch, "--root", other))
+	for _, want := range []string{
+		"--root replaced notes_root from " + configPath + " (" + notes + ", " + projects + ")",
+		"serving other (notes): " + other,
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("start with --root logged %q, want %q", stderr, want)
+		}
+	}
+	if strings.Contains(stderr, "serving notes") {
+		t.Errorf("start with --root logged %q, which still serves the file's roots", stderr)
+	}
+}
+
+// stateFixture writes a state file naming a folder that is gone and one
+// that is about to be configured, and returns it with its bytes.
+func stateFixture(t *testing.T, base string) (string, []byte) {
+	t.Helper()
+	statePath := filepath.Join(base, "state", "roots.json")
+	os.MkdirAll(filepath.Dir(statePath), 0o700)
+	data := []byte(`{"recent":[{"slug":"gone","path":"` + filepath.Join(base, "gone") +
+		`"},{"slug":"proj","path":"` + filepath.Join(base, "projects") + `"}]}`)
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return statePath, data
+}
+
+// A start that cannot bind its port changes nothing in the state file, not
+// even the tidying a successful start does (review of #198, finding 2).
+func TestServeFailedBindLeavesTheStateFile(t *testing.T) {
+	base, scratch := serveFixture(t, "notes", "projects")
+	statePath, before := stateFixture(t, base)
+	taken, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer taken.Close()
+	port := strconv.Itoa(taken.Addr().(*net.TCPAddr).Port)
+
+	var out, stderr bytes.Buffer
+	code := runServe(append(scratch, "--port", port,
+		"--root", filepath.Join(base, "notes"), "--root", filepath.Join(base, "projects")), &out, &stderr)
+	if code != 1 {
+		t.Fatalf("exit %d, want 1 for a port in use; stderr %q", code, stderr.String())
+	}
+	after, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Errorf("state file changed by a failed start:\nbefore %s\nafter  %s", before, after)
+	}
+}
+
+// A start that does bind drops the gone folder from the state file and
+// keeps the entry for the folder it now serves as configured.
+func TestServeSettlesTheStateFileOnceListening(t *testing.T) {
+	base, scratch := serveFixture(t, "notes", "projects")
+	statePath, before := stateFixture(t, base)
+	free, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := strconv.Itoa(free.Addr().(*net.TCPAddr).Port)
+	free.Close()
+
+	var stderr bytes.Buffer
+	srv, code := prepareServe(append(scratch, "--port", port,
+		"--root", filepath.Join(base, "notes"), "--root", filepath.Join(base, "projects")), &stderr)
+	if srv == nil {
+		t.Fatalf("exit %d: %s", code, stderr.String())
+	}
+	if after, _ := os.ReadFile(statePath); !bytes.Equal(after, before) {
+		t.Fatalf("state file changed before the port was bound: %s", after)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.ListenAndServe(ctx) }()
+	var once sync.Once
+	stop := func() { once.Do(func() { cancel(); <-done }) }
+	defer stop()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		after, _ := os.ReadFile(statePath)
+		if !bytes.Equal(after, before) {
+			if strings.Contains(string(after), filepath.Join(base, "gone")) ||
+				!strings.Contains(string(after), filepath.Join(base, "projects")) {
+				t.Fatalf("settled state file is %s", after)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the state file was never settled")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	stop() // the log is the daemon's until it has stopped writing to it
+	if !strings.Contains(stderr.String(), filepath.Join(base, "projects")+" is configured as a root") {
+		t.Errorf("no warning named the shadowed recent root: %q", stderr.String())
 	}
 }

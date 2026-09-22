@@ -83,6 +83,14 @@ type Registry struct {
 	mu        sync.Mutex
 	statePath string
 	roots     []Root
+	// shadowed are state-file entries for folders that are configured
+	// roots this run. They are not served as recent roots, and every save
+	// writes them back, so a start without that configuration finds them
+	// where they were.
+	shadowed []persisted
+	// stale is set when the state file named folders that are gone, and
+	// cleared by SettleState, which is what rewrites the file without them.
+	stale bool
 }
 
 type state struct {
@@ -109,10 +117,15 @@ func New(notesRoot, statePath string, warnf func(format string, args ...any)) (*
 // naming the same folder are ErrDuplicateRoot; one folder inside another
 // is allowed, as it is for a folder opened with `mdn open`.
 //
-// The state file is a cache: a problem reading or rewriting it is reported
-// through warnf (which may be nil) and never stops the daemon serving the
-// configured roots. Persisted folders that no longer exist are dropped, and
-// so is one that is now configured: it is served as configuration, once.
+// The state file is a cache: a problem reading it is reported through
+// warnf (which may be nil) and never stops the daemon serving the
+// configured roots. Building the registry never writes the file, so a
+// start that goes on to fail — the port already taken — leaves it byte for
+// byte as it was. Persisted folders that no longer exist are not served,
+// and SettleState rewrites the file without them once the daemon is up. A
+// persisted folder that is now configured is served once, as
+// configuration; warnf says so, and its entry stays in the file, so a
+// start without that configuration serves it as a recent root again.
 func NewConfigured(configured []string, statePath string, warnf func(format string, args ...any)) (*Registry, error) {
 	if warnf == nil {
 		warnf = func(string, ...any) {}
@@ -147,15 +160,21 @@ func NewConfigured(configured []string, statePath string, warnf func(format stri
 			warnf("ignoring recent roots: %s: %v", statePath, err)
 			return r, nil
 		}
-		dropped := false
 		for _, p := range st.Recent {
 			root, err := newRoot(p.Path, KindRecent)
 			if err != nil {
-				dropped = true
+				r.stale = true
 				continue
 			}
-			if _, ok := r.byPath(root); ok {
-				dropped = true
+			if existing, ok := r.byPath(root); ok {
+				if existing.Kind == KindRecent {
+					// The file named the same folder twice.
+					r.stale = true
+					continue
+				}
+				r.shadowed = append(r.shadowed, p)
+				warnf("%s is configured as a root (%s) and is also a recent root in %s; serving it as configured, and keeping its entry there for a start without it",
+					p.Path, existing.Kind, statePath)
 				continue
 			}
 			root.Slug = p.Slug
@@ -163,11 +182,6 @@ func NewConfigured(configured []string, statePath string, warnf func(format stri
 				root = r.withSlug(root)
 			}
 			r.roots = append(r.roots, root)
-		}
-		if dropped {
-			if err := r.save(); err != nil {
-				warnf("could not rewrite recent roots: %v", err)
-			}
 		}
 	}
 	return r, nil
@@ -393,7 +407,24 @@ func (r *Registry) Remove(slug string) (Root, error) {
 	return Root{}, fmt.Errorf("unknown root %q: %w", slug, os.ErrNotExist)
 }
 
-// save writes the recent roots atomically. Caller holds mu. With none left
+// SettleState rewrites the state file without the folders NewConfigured
+// found gone, if it found any. The daemon calls it once its port is bound,
+// so that only a start that succeeded tidies the file.
+func (r *Registry) SettleState() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.stale {
+		return nil
+	}
+	if err := r.save(); err != nil {
+		return err
+	}
+	r.stale = false
+	return nil
+}
+
+// save writes the recent roots atomically, with the shadowed entries after
+// them. Caller holds mu. With none left
 // the file says so as an empty list, `{"recent": []}`, rather than as null
 // (#125).
 func (r *Registry) save() error {
@@ -403,6 +434,7 @@ func (r *Registry) save() error {
 			st.Recent = append(st.Recent, persisted{Slug: x.Slug, Path: x.Path})
 		}
 	}
+	st.Recent = append(st.Recent, r.shadowed...)
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err

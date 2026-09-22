@@ -37,13 +37,16 @@ import (
 
 // Server serves the API and UI for a registry of roots.
 type Server struct {
-	reg    *roots.Registry
-	port   int
-	ui     fs.FS
-	mux    *http.ServeMux
-	log    *log.Logger
-	md     *render.Renderer
-	source *source.Store
+	// listening runs once the port is bound, before the first request is
+	// served. Nil for none.
+	listening func()
+	reg       *roots.Registry
+	port      int
+	ui        fs.FS
+	mux       *http.ServeMux
+	log       *log.Logger
+	md        *render.Renderer
+	source    *source.Store
 
 	// draw, svgs and drawSlots serve the diagram route: see diagram.go.
 	draw      drawFunc
@@ -124,6 +127,12 @@ type Validator interface {
 // Authorization header.
 func WithToken(v Validator) Option {
 	return func(s *Server) { s.token = v }
+}
+
+// WithListening runs f once ListenAndServe has bound its port: the moment a
+// start has succeeded, which is when the daemon tidies its state file.
+func WithListening(f func()) Option {
+	return func(s *Server) { s.listening = f }
 }
 
 // WithClipsDir sets where the clip endpoint writes, relative to the notes
@@ -214,6 +223,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
 	s.log.Printf("mdn listening on http://%s", srv.Addr)
+	if s.listening != nil {
+		s.listening()
+	}
 	select {
 	case err := <-errc:
 		return err
@@ -749,8 +761,8 @@ func noSuchNote(w http.ResponseWriter, file string) {
 // until its next restart is not a state the home page should be able to
 // ask for. A permanent root — any configured root after the first — is
 // configuration too, and is refused the same way under its own code,
-// `permanent_root`, so the sentence can say which it is. An unknown slug is `not_found`, which is also what removing the
-// same root twice gets. Under the tailnet name the request never reaches
+// `permanent_root`, so the sentence can say which it is. An unknown slug
+// is `not_found`, which is also what removing the same root twice gets. Under the tailnet name the request never reaches
 // here at all — the allow-list admits `GET /api/roots` and nothing else
 // under that path, and this endpoint is refused by that default.
 func (s *Server) removeRoot(w http.ResponseWriter, r *http.Request) {

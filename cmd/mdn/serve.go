@@ -64,6 +64,7 @@ func prepareServe(args []string, stderr io.Writer) (*server.Server, int) {
 		fmt.Fprintln(stderr, "mdn serve:", err)
 		return nil, 1
 	}
+	fromFile := cfg.Roots
 	cfg, err = cfg.Resolve(*configPath, overrides(fs, rootFlags, *port, *tailnetHost, maxWatches))
 	if err != nil {
 		fmt.Fprintln(stderr, "mdn serve:", err)
@@ -74,6 +75,15 @@ func prepareServe(args []string, stderr io.Writer) (*server.Server, int) {
 	if err != nil {
 		fmt.Fprintln(stderr, "mdn serve:", err)
 		return nil, 1
+	}
+	// Which folders are served, and from where, is said at every start:
+	// the replace rule is right, and silent it would be the same trap as
+	// the --root that kept only its last value (#162).
+	if len(rootFlags) > 0 && len(fromFile) > 0 {
+		logger.Print(replacedLine(*configPath, fromFile))
+	}
+	for _, root := range reg.List() {
+		logger.Printf("serving %s (%s): %s", root.Slug, root.Kind, root.Path)
 	}
 	secret, created, err := token.Open(*tokenFile)
 	if err != nil {
@@ -89,11 +99,24 @@ func prepareServe(args []string, stderr io.Writer) (*server.Server, int) {
 		server.WithToken(secret),
 		server.WithClipsDir(cfg.ClipsDir),
 		server.WithTailnetHost(cfg.TailnetHost),
+		// The state file is tidied only by a start that got its port, so a
+		// failed one leaves it exactly as it was.
+		server.WithListening(func() {
+			if err := reg.SettleState(); err != nil {
+				logger.Printf("could not rewrite recent roots: %v", err)
+			}
+		}),
 	)
 	if cfg.TailnetHost != "" {
 		logger.Printf("also answering to https://%s; every request under that name must present the token or a session cookie", cfg.TailnetHost)
 	}
 	return srv, 0
+}
+
+// replacedLine says that --root set aside the roots the configuration file
+// names, and which ones.
+func replacedLine(configPath string, fromFile []string) string {
+	return fmt.Sprintf("--root replaced notes_root from %s (%s)", configPath, strings.Join(fromFile, ", "))
 }
 
 // tokenCreatedLine is the first-start hint. With --token-file given, a bare

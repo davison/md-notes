@@ -110,9 +110,18 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	if len(got) != 2 || got[0].Kind != KindNotes || got[1].Path != kept || got[1].Slug != "kept" {
 		t.Fatalf("after reload List() = %+v", got)
 	}
+	// Loading does not write: the gone folder leaves the file only when the
+	// daemon, up and serving, settles it.
+	before, _ := os.ReadFile(statePath)
+	if !strings.Contains(string(before), gone) {
+		t.Fatalf("loading rewrote the state file: %s", before)
+	}
+	if err := r2.SettleState(); err != nil {
+		t.Fatal(err)
+	}
 	data, _ := os.ReadFile(statePath)
-	if strings.Contains(string(data), gone) {
-		t.Fatalf("dropped root still persisted: %s", data)
+	if strings.Contains(string(data), gone) || !strings.Contains(string(data), kept) {
+		t.Fatalf("after SettleState the state file is %s", data)
 	}
 }
 
@@ -232,8 +241,11 @@ func TestNewWarnsAndContinuesOnStateProblems(t *testing.T) {
 	os.Chmod(dir, 0o555)
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 	r, err = New(notes, statePath, warnf)
-	if err != nil || len(r.List()) != 1 || len(warnings) != 1 {
+	if err != nil || len(r.List()) != 1 || len(warnings) != 0 {
 		t.Fatalf("unwritable state: err %v, roots %+v, warnings %q", err, r.List(), warnings)
+	}
+	if err := r.SettleState(); err == nil {
+		t.Fatal("SettleState into an unwritable directory reported no error")
 	}
 }
 
@@ -1077,24 +1089,53 @@ func TestNewConfiguredDuplicatesAndNesting(t *testing.T) {
 }
 
 // A folder once opened with `mdn open` and since configured is served once,
-// as configuration, and leaves the state file.
-func TestNewConfiguredPromotesAPersistedRecentRoot(t *testing.T) {
+// as configuration, with a warning naming it; its state-file entry is kept,
+// through saves as well, so a start without the configuration serves it as
+// a recent root again, under the same slug.
+func TestNewConfiguredShadowsAPersistedRecentRoot(t *testing.T) {
 	base := t.TempDir()
-	notes, projects := filepath.Join(base, "notes"), filepath.Join(base, "projects")
-	os.Mkdir(notes, 0o755)
-	os.Mkdir(projects, 0o755)
+	notes, projects, other := filepath.Join(base, "notes"), filepath.Join(base, "projects"), filepath.Join(base, "other")
+	for _, d := range []string{notes, projects, other} {
+		os.Mkdir(d, 0o755)
+	}
 	statePath := filepath.Join(t.TempDir(), "roots.json")
-	os.WriteFile(statePath, []byte(`{"recent":[{"slug":"projects","path":"`+projects+`"}]}`), 0o600)
-	r, err := NewConfigured([]string{notes, projects}, statePath, nil)
+	original := []byte(`{"recent":[{"slug":"proj","path":"` + projects + `"}]}`)
+	os.WriteFile(statePath, original, 0o600)
+	var warnings []string
+	warnf := func(f string, a ...any) { warnings = append(warnings, fmt.Sprintf(f, a...)) }
+
+	r, err := NewConfigured([]string{notes, projects}, statePath, warnf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := r.List(); len(got) != 2 || got[1].Kind != KindPermanent {
+	if got := r.List(); len(got) != 2 || got[1].Kind != KindPermanent || got[1].Slug != "projects" {
 		t.Fatalf("List() = %+v, want projects once, as permanent", got)
 	}
-	data, _ := os.ReadFile(statePath)
-	if strings.Contains(string(data), projects) {
-		t.Errorf("the state file still names the configured folder: %s", data)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], projects) {
+		t.Errorf("warnings = %q, want one naming %s", warnings, projects)
+	}
+	if err := r.SettleState(); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(statePath); string(data) != string(original) {
+		t.Errorf("state file changed to %s", data)
+	}
+	// A save for another reason keeps the entry.
+	if _, err := r.Add(other); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(statePath); !strings.Contains(string(data), projects) {
+		t.Errorf("a save dropped the shadowed entry: %s", data)
+	}
+
+	// Without the configuration it is a recent root again.
+	again, err := New(notes, statePath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := again.List()
+	if len(got) != 3 || got[1].Slug != "other" || got[2].Slug != "proj" || got[2].Kind != KindRecent {
+		t.Errorf("after a start without it List() = %+v", got)
 	}
 }
 
