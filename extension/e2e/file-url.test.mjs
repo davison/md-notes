@@ -2,21 +2,19 @@
  * End-to-end check of the file-URL intercept, against the built daemon and the
  * built extension loaded into headless Chromium.
  *
- * It is not part of `make check`: it needs a Chromium binary and a built `mdn`,
- * neither of which CI installs. Run it with
+ * It is not part of `make check`, and CI does not run it: it needs
+ * Playwright's Chromium, a built `mdn` and a built extension. Run it with
  *
  *     make build extension
  *     pnpm --dir extension e2e
  *
- * Playwright is declared by `ui/package.json`, which `make ui-deps` installs
- * and `ui/e2e` shares; `PLAYWRIGHT_ROOT` still names another installation.
- *
- * and it skips itself, loudly, when a prerequisite is missing.
+ * `prerequisites.mjs` says where Playwright comes from, and it skips the
+ * suite with one line naming what is missing — the browser download
+ * included — or fails it under CI.
  */
 
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
@@ -25,32 +23,13 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { gate, loadPlaywright, missingPrerequisite } from "./prerequisites.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const extensionDir = path.resolve(here, "..");
 const repoRoot = path.resolve(extensionDir, "..");
 const dist = path.join(extensionDir, "dist");
 const mdnBin = process.env.MDN_BIN ?? path.join(repoRoot, "mdn");
-
-function loadPlaywright() {
-  const roots = [process.env.PLAYWRIGHT_ROOT, extensionDir, path.join(repoRoot, "ui"), repoRoot].filter(Boolean);
-  for (const root of roots) {
-    try {
-      const require = createRequire(path.join(root, "noop.js"));
-      return require("playwright");
-    } catch {
-      // try the next place
-    }
-  }
-  return null;
-}
-
-function missingPrerequisite(playwright) {
-  if (playwright === null) return "playwright is not installed (set PLAYWRIGHT_ROOT)";
-  if (!fs.existsSync(path.join(dist, "manifest.json"))) return "extension/dist is not built";
-  if (!fs.existsSync(mdnBin)) return `no mdn binary at ${mdnBin} (set MDN_BIN)`;
-  return null;
-}
 
 /** Chromium's id for an unpacked extension: sha256 of its path, hex mapped a-p. */
 function unpackedExtensionId(dir) {
@@ -84,7 +63,7 @@ async function waitFor(predicate, what, timeoutMs = 15000) {
 }
 
 const playwright = loadPlaywright();
-const blocker = missingPrerequisite(playwright);
+const blocker = gate(missingPrerequisite(playwright));
 
 describe("file URL intercept", { skip: blocker ?? false }, () => {
   let tmp, notesDir, outsideDir, port, daemon, context, worker, extensionId, appOrigin;
