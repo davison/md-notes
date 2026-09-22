@@ -44,7 +44,7 @@ const fence = (src) => "```mermaid\n" + src + "```\n";
  */
 /**
  * More diagrams than the daemon's measuring budget covers (review of PR
- * #181): sixty dense graphs, each tens of milliseconds to lay out, then a
+ * #181): sixty dense graphs, each over ten milliseconds to lay out, then a
  * block the layout refuses, then the target paragraph. Most go out
  * unmeasured, the refused block among them, so the page meets both the
  * boxes it has to keep its place for and the route's 422.
@@ -60,10 +60,20 @@ function manyNote(start) {
   for (let d = 1; d <= 60; d++) {
     lines.push("```mermaid", "flowchart TD");
     const fenceLine = lines.length - 1;
-    for (let e = 0; e < 160; e++) {
-      const a = rand(80);
-      const b = rand(80);
-      if (a !== b) lines.push(`  G${d}N${a} --> G${d}N${b}`);
+    // Ten layers of twenty nodes, each linked to two in the next layer,
+    // and forty links that skip a layer: 200 nodes and 400 links, the
+    // node and link bounds, and wide ranks that are slow to order and
+    // place. Random links between 80 nodes stopped being slow enough when
+    // the layout got faster (review of PR #200, finding 1); these take
+    // about as long now as those did then, and every one is drawn.
+    for (let l = 0; l < 9; l++) {
+      for (let w = 0; w < 20; w++) {
+        for (let k = 0; k < 2; k++) lines.push(`  G${d}L${l}N${w} --> G${d}L${l + 1}N${rand(20)}`);
+      }
+    }
+    for (let x = 0; x < 40; x++) {
+      const l = rand(8);
+      lines.push(`  G${d}L${l}N${rand(20)} --> G${d}L${l + 2}N${rand(20)}`);
     }
     if (d === 40) at.inDiagram = fenceLine + 3;
     lines.push("```", "");
