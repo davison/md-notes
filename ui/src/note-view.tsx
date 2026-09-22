@@ -1,7 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { diagramURL, fetchNote, type Note } from "./api";
 import { DiagramViewer } from "./diagram-viewer";
-import { DiagramPool, OPEN_CLASS, decorate, holdInView, useDiagramTheme } from "./diagrams";
+import {
+  DiagramPool,
+  OPEN_CLASS,
+  decorate,
+  diagramKeys,
+  followViewed,
+  holdInView,
+  useDiagramTheme,
+  type ViewedDiagram,
+} from "./diagrams";
 import { animationsOff } from "./settings";
 
 /**
@@ -29,8 +38,11 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
   const body = useRef<HTMLDivElement>(null);
   const theme = useDiagramTheme();
   const pool = useRef(new DiagramPool());
-  // The diagram whose natural-size view is open: the button it stands in.
-  const [viewing, setViewing] = useState<HTMLElement | null>(null);
+  // The diagram whose natural-size view is open, and what the view shows of
+  // it now. See the effect that follows it, below.
+  const [view, setView] = useState<View | null>(null);
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   // Opening a different note clears the pane; a version bump for the same
   // note refetches in place so a live update does not flash.
@@ -45,7 +57,7 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
       shown.current = key;
       setNote(null);
       setError(null);
-      setViewing(null);
+      setView(null);
     }
     fetchNote(slug, path, { sizes: true, signal: abort.signal }).then(
       (n) => {
@@ -131,12 +143,57 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
     else if (pane) pane.scrollTop = 0;
   }, [note, slug, path, line]);
 
+  // The natural-size view shows the diagram as it is now, not as it was
+  // when it opened (review of PR #202, finding 1). Whatever changes the
+  // note's images — a new palette is a new src, a live update re-decorates,
+  // an image that fails takes its box away — is a change to the markup
+  // below, so the view is checked against the pool on every one of them. A
+  // diagram edited in place is followed to its new drawing; one that is gone
+  // closes the view, and focus goes to the note's title.
+  useEffect(() => {
+    const scope = body.current;
+    if (!view || !scope || !note) return;
+    const check = () => {
+      const current = viewRef.current;
+      if (!current) return;
+      const now = followViewed(pool.current, note.diagrams ?? [], current.viewed);
+      if (!now) {
+        closeView();
+        return;
+      }
+      const next = snapshot(now.image, now.viewed);
+      if (!sameView(current, next)) setView(next);
+    };
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(scope, { subtree: true, childList: true, attributes: true, attributeFilter: ["src"] });
+    return () => observer.disconnect();
+  }, [view !== null, note]);
+
+  /**
+   * Closes the view and puts focus back on the diagram it showed, or on the
+   * note's title when that diagram is no longer in the note. Focus moves
+   * before the view goes, so it never falls to the document's body.
+   */
+  const closeView = () => {
+    const current = viewRef.current;
+    const now = current && note ? followViewed(pool.current, note.diagrams ?? [], current.viewed) : null;
+    const target = now?.image.parentElement ?? body.current?.closest("article")?.querySelector<HTMLElement>(".note-title");
+    target?.focus();
+    setView(null);
+  };
+
   const onClick = (e: MouseEvent) => {
     // A diagram opens at its natural size: a click, a tap, or Enter or
     // Space on its button, which the browser turns into a click.
     const open = (e.target as HTMLElement | null)?.closest<HTMLElement>(`button.${OPEN_CLASS}`);
-    if (open && body.current?.contains(open)) {
-      setViewing(open);
+    if (open && body.current?.contains(open) && note) {
+      const keys = diagramKeys(note.diagrams ?? []);
+      for (const [key, img] of pool.current) {
+        if (img.parentElement !== open) continue;
+        setView(snapshot(img, { key, index: keys.indexOf(key), count: keys.length }));
+        break;
+      }
       return;
     }
     const a = (e.target as HTMLElement | null)?.closest("a");
@@ -162,31 +219,46 @@ export function NoteView({ slug, path, version = 0, line = null, onTitle }: Note
 
   return (
     <article class="note-article" onClick={onClick}>
-      <h1 class="note-title">{note.title}</h1>
+      <h1 class="note-title" tabIndex={-1}>
+        {note.title}
+      </h1>
       {note.frontmatter && Object.keys(note.frontmatter).length > 0 && <Metadata data={note.frontmatter} />}
       <div ref={body} class="markdown" dangerouslySetInnerHTML={{ __html: note.html }} />
-      {viewing && <Viewer opener={viewing} onClose={() => setViewing(null)} />}
+      {view && (
+        <DiagramViewer src={view.src} alt={view.alt} width={view.width} height={view.height} onClose={closeView} />
+      )}
     </article>
   );
 }
 
-/**
- * The natural-size view of the diagram in `opener`, read at render time so
- * a change of palette while it is open is followed, as the note's own image
- * follows it.
- */
-function Viewer({ opener, onClose }: { opener: HTMLElement; onClose: () => void }) {
-  const img = opener.querySelector("img");
-  if (!img) return null;
+/** An open natural-size view: which diagram, and what is shown of it. */
+interface View {
+  viewed: ViewedDiagram;
+  src: string;
+  alt: string;
+  width?: string;
+  height?: string;
+}
+
+function snapshot(img: HTMLImageElement, viewed: ViewedDiagram): View {
+  return {
+    viewed,
+    src: img.getAttribute("src") ?? "",
+    alt: img.alt,
+    width: img.getAttribute("width") ?? undefined,
+    height: img.getAttribute("height") ?? undefined,
+  };
+}
+
+function sameView(a: View, b: View): boolean {
   return (
-    <DiagramViewer
-      src={img.getAttribute("src") ?? ""}
-      alt={img.alt}
-      width={img.getAttribute("width") ?? undefined}
-      height={img.getAttribute("height") ?? undefined}
-      opener={opener}
-      onClose={onClose}
-    />
+    a.viewed.key === b.viewed.key &&
+    a.viewed.index === b.viewed.index &&
+    a.viewed.count === b.viewed.count &&
+    a.src === b.src &&
+    a.alt === b.alt &&
+    a.width === b.width &&
+    a.height === b.height
   );
 }
 

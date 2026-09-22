@@ -5,13 +5,9 @@ import { DiagramViewer } from "./diagram-viewer";
 afterEach(cleanup);
 
 function show() {
-  const opener = document.createElement("button");
-  document.body.append(opener);
   const onClose = vi.fn();
-  const view = render(
-    <DiagramViewer src="/d.svg?theme=light" alt="graph LR; A-->B" width="1891" height="171" opener={opener} onClose={onClose} />,
-  );
-  return { opener, onClose, view };
+  const view = render(<DiagramViewer src="/d.svg?theme=light" alt="graph LR; A-->B" width="1891" height="171" onClose={onClose} />);
+  return { onClose, view };
 }
 
 describe("DiagramViewer", () => {
@@ -43,11 +39,5 @@ describe("DiagramViewer", () => {
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.click(view.container.querySelector(".diagram-viewer-scroll")!);
     expect(onClose).toHaveBeenCalledOnce();
-  });
-
-  it("hands focus back to the diagram that opened it", () => {
-    const { opener, view } = show();
-    view.unmount();
-    expect(document.activeElement).toBe(opener);
   });
 });
