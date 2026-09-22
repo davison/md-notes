@@ -21,18 +21,19 @@
  * another device means logging in there — and not the extension's, whose job
  * ends at sending the tab to the right URL. Which is what is asserted.
  *
- * Like the two suites beside it, this is not part of `make check`:
+ * Like the two suites beside it, this is not part of `make check`, and CI
+ * does not run it:
  *
  *     make build extension
  *     pnpm --dir extension e2e
  *
- * Playwright is declared by `ui/package.json`, which `make ui-deps` installs
- * and `ui/e2e` shares; `PLAYWRIGHT_ROOT` still names another installation.
+ * `prerequisites.mjs` says where Playwright comes from, and it skips the
+ * suite with one line naming what is missing — the browser download
+ * included — or fails it under CI.
  */
 
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
@@ -41,6 +42,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { gate, loadPlaywright, missingPrerequisite } from "./prerequisites.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const extensionDir = path.resolve(here, "..");
@@ -59,27 +61,6 @@ const TAILNET_NAME = "mdn-e2e.tailnet.test";
  * configured to answer to — a daemon URL naming the wrong node of the tailnet.
  */
 const OTHER_NAME = "elsewhere.tailnet.test";
-
-function loadPlaywright() {
-  const roots = [process.env.PLAYWRIGHT_ROOT, extensionDir, path.join(repoRoot, "ui"), repoRoot].filter(Boolean);
-  for (const root of roots) {
-    try {
-      const require = createRequire(path.join(root, "noop.js"));
-      return require("playwright");
-    } catch {
-      // try the next place
-    }
-  }
-  return null;
-}
-
-function missingPrerequisite(playwright) {
-  if (playwright === null) return "playwright is not installed (set PLAYWRIGHT_ROOT)";
-  if (!fs.existsSync(path.join(dist, "manifest.json"))) return "extension/dist is not built";
-  if (!fs.existsSync(path.join(dist, "clip-inject.js"))) return "extension/dist has no clip-inject.js";
-  if (!fs.existsSync(mdnBin)) return `no mdn binary at ${mdnBin} (set MDN_BIN)`;
-  return null;
-}
 
 /** Chromium's id for an unpacked extension: sha256 of its path, hex mapped a-p. */
 function unpackedExtensionId(dir) {
@@ -130,7 +111,7 @@ const ARTICLE = `<!doctype html>
 </html>`;
 
 const playwright = loadPlaywright();
-const blocker = missingPrerequisite(playwright);
+const blocker = gate(missingPrerequisite(playwright));
 
 describe("against a daemon under a tailnet name", { skip: blocker ?? false }, () => {
   let tmp, notesDir, outsideDir, tokenFile, token, port, daemon, context, extensionId;

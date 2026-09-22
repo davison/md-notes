@@ -2,14 +2,16 @@
  * End-to-end check of the clipper, against the built daemon and the built
  * extension loaded into headless Chromium.
  *
- * Like the file-URL suite beside it, this is not part of `make check`: it
- * needs a Chromium binary and a built `mdn`, neither of which CI installs.
+ * Like the two suites beside it, this is not part of `make check`, and CI
+ * does not run it: it needs Playwright's Chromium, a built `mdn` and a built
+ * extension.
  *
  *     make build extension
  *     pnpm --dir extension e2e
  *
- * Playwright is declared by `ui/package.json`, which `make ui-deps` installs
- * and `ui/e2e` shares; `PLAYWRIGHT_ROOT` still names another installation.
+ * `prerequisites.mjs` says where Playwright comes from, and it skips the
+ * suite with one line naming what is missing — the browser download
+ * included — or fails it under CI.
  *
  * The clip is driven through the real popup document, opened as a tab with
  * `?tab=` naming the page to clip — a browser action popup cannot be clicked
@@ -18,7 +20,6 @@
 
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
@@ -27,33 +28,13 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { gate, loadPlaywright, missingPrerequisite } from "./prerequisites.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const extensionDir = path.resolve(here, "..");
 const repoRoot = path.resolve(extensionDir, "..");
 const dist = path.join(extensionDir, "dist");
 const mdnBin = process.env.MDN_BIN ?? path.join(repoRoot, "mdn");
-
-function loadPlaywright() {
-  const roots = [process.env.PLAYWRIGHT_ROOT, extensionDir, path.join(repoRoot, "ui"), repoRoot].filter(Boolean);
-  for (const root of roots) {
-    try {
-      const require = createRequire(path.join(root, "noop.js"));
-      return require("playwright");
-    } catch {
-      // try the next place
-    }
-  }
-  return null;
-}
-
-function missingPrerequisite(playwright) {
-  if (playwright === null) return "playwright is not installed (set PLAYWRIGHT_ROOT)";
-  if (!fs.existsSync(path.join(dist, "manifest.json"))) return "extension/dist is not built";
-  if (!fs.existsSync(path.join(dist, "clip-inject.js"))) return "extension/dist has no clip-inject.js";
-  if (!fs.existsSync(mdnBin)) return `no mdn binary at ${mdnBin} (set MDN_BIN)`;
-  return null;
-}
 
 /** Chromium's id for an unpacked extension: sha256 of its path, hex mapped a-p. */
 function unpackedExtensionId(dir) {
@@ -157,7 +138,7 @@ const PAGES = {
 };
 
 const playwright = loadPlaywright();
-const blocker = missingPrerequisite(playwright);
+const blocker = gate(missingPrerequisite(playwright));
 
 describe("clipping a page and a selection", { skip: blocker ?? false }, () => {
   let tmp, notesDir, clipsDir, tokenFile, token, port, daemon, context, extensionId;
