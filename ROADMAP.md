@@ -11,3 +11,4 @@
 | M7 | No root registered by accident, a navigator sorted by recency, and an installable app | [#114](https://github.com/davison/md-notes/issues/114) | [Done](docs/milestones/7-roots-recency-and-the-installable-app.md) |
 | M8 | The first release: a tag, two daemon channels and a release page | [#133](https://github.com/davison/md-notes/issues/133) | [Done](docs/milestones/8-the-first-release.md) |
 | M9 | Flowcharts, drawn by the daemon | [#169](https://github.com/davison/md-notes/issues/169) | [Done](docs/milestones/9-flowcharts-drawn-by-the-daemon.md) |
+| M10 | Before the next release: diagrams that read, the bugs that bite, a README for strangers | [#186](https://github.com/davison/md-notes/issues/186) | [Done](docs/milestones/10-before-the-next-release.md) |
