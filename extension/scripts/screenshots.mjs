@@ -14,6 +14,7 @@
  * Written for the Chrome Web Store listing (davison/md-notes#135) and kept,
  * when that channel was withdrawn, for the documentation (#160, #195): the
  * README and docs/extension.md show these, and the UI they photograph moves.
+ * `ui/scripts/screenshots.mjs` takes the app's own pictures the same way.
  *
  * The awkward parts come from the extension's own e2e suites
  * (`extension/e2e/`): the unpacked extension id, the profile preference that
@@ -250,7 +251,7 @@ async function main() {
   //
   // Every refusal above this line happens before anything is created, which is
   // the point of them being up there: a run that refused for a busy 7337 after
-  // making this directory would leave it behind, and the README's own
+  // making this directory would leave it behind, and CONTRIBUTING's own
   // `unshare` recovery would then refuse on the directory instead.
   const notesDir = path.join(fs.realpathSync(os.tmpdir()), "notes");
   if (fs.existsSync(notesDir)) {

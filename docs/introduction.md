@@ -62,7 +62,7 @@ and the daemon installs from the Arch User Repository or from a `.deb` rather th
 of a working copy; the browser extension is a zip on the same release page, loaded
 unpacked, the Chrome Web Store channel having been withdrawn before the first release
 ([#135](https://github.com/davison/md-notes/issues/135#issuecomment-5744118645)). The
-[README's installation section](../README.md#installing) has the commands and
+[Installing md-notes](install.md) has the commands and
 [Cutting a release](releasing.md) the machinery. The same milestone took the things a
 first public release should not carry: a note's own HTML can no longer wear the
 renderer's structural classes or its `data-line` marker, so it cannot plant a decoy
@@ -1268,7 +1268,7 @@ the layout at its image's request.
 The viewports are the suite's own literals rather than Playwright's
 device registry, whose numbers move between releases
 ([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426)). It
-needs Chromium, which is a separate download; see the README's **Building** section.
+needs Chromium, which is a separate download; see [CONTRIBUTING.md](../CONTRIBUTING.md#what-you-need).
 It is not part of `make check`, which is what keeps a 150 MB browser off the ordinary
 developer loop.
 
