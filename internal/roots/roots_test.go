@@ -1,6 +1,7 @@
 package roots
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -1148,5 +1149,61 @@ func TestNewConfiguredNamesTheRootThatFails(t *testing.T) {
 	}
 	if _, err := NewConfigured(nil, filepath.Join(t.TempDir(), "s.json"), nil); err == nil {
 		t.Fatal("want an error for no roots at all")
+	}
+}
+
+// A shadowed entry's slug stays reserved while it is hidden, so a folder
+// opened meanwhile cannot take it, and the entry comes back under its own
+// slug on a start without the configuration. The reviewer's sequence on
+// PR #198 (round two, finding 1).
+func TestShadowedSlugIsReserved(t *testing.T) {
+	base := t.TempDir()
+	notes, projects := filepath.Join(base, "notes"), filepath.Join(base, "projects")
+	other, another := filepath.Join(base, "other"), filepath.Join(base, "c", "projects")
+	for _, d := range []string{notes, projects, other, another} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	statePath := filepath.Join(t.TempDir(), "roots.json")
+	os.WriteFile(statePath, []byte(`{"recent":[{"slug":"projects-2","path":"`+projects+
+		`"},{"slug":"other","path":"`+other+`"}]}`), 0o600)
+
+	r, err := NewConfigured([]string{notes, projects}, statePath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, ok := r.Get("projects"); !ok || p.Path != projects || p.Kind != KindPermanent {
+		t.Fatalf("projects = %+v, %v", p, ok)
+	}
+	opened, err := r.Add(another)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened.Slug == "projects-2" || opened.Slug == "projects" {
+		t.Errorf("a folder opened while projects-2 is shadowed took %q", opened.Slug)
+	}
+	var st state
+	data, _ := os.ReadFile(statePath)
+	if err := json.Unmarshal(data, &st); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, p := range st.Recent {
+		if prev, ok := seen[p.Slug]; ok {
+			t.Errorf("slug %q is in the state file twice: %s and %s", p.Slug, prev, p.Path)
+		}
+		seen[p.Slug] = p.Path
+	}
+
+	// Without the configuration, every entry comes back under its own slug.
+	again, err := New(notes, statePath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for slug, path := range map[string]string{"projects-2": projects, opened.Slug: another, "other": other} {
+		if got, ok := again.Get(slug); !ok || got.Path != path || got.Kind != KindRecent {
+			t.Errorf("after a start without the configuration %q = %+v, %v; want %s", slug, got, ok, path)
+		}
 	}
 }
