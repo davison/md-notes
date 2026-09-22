@@ -960,3 +960,152 @@ func TestRemoveFreesTheSlug(t *testing.T) {
 		t.Fatalf("Add after Remove = %+v, %v; want the freed slug", got, err)
 	}
 }
+
+// Removing the last recent root leaves a state file that says there are
+// none, as an empty list and not as null (#125).
+func TestRemoveTheLastRecentWritesAnEmptyList(t *testing.T) {
+	r, _, statePath := newTestRegistry(t)
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Add(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Remove("proj"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(data), "{\n  \"recent\": []\n}"; got != want {
+		t.Errorf("state file = %q, want %q", got, want)
+	}
+}
+
+// Several configured roots (M10-R5, #162): the first is the notes root, the
+// rest are permanent, in the order given, and none of them is a
+// registration Remove can undo or the state file records.
+func TestNewConfiguredServesEveryConfiguredRoot(t *testing.T) {
+	base := t.TempDir()
+	notes, projects, work := filepath.Join(base, "notes"), filepath.Join(base, "projects"), filepath.Join(base, "work")
+	for _, d := range []string{notes, projects, work} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	statePath := filepath.Join(t.TempDir(), "roots.json")
+	r, err := NewConfigured([]string{notes, projects, work}, statePath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := r.List()
+	want := []struct {
+		slug string
+		kind Kind
+	}{{"notes", KindNotes}, {"projects", KindPermanent}, {"work", KindPermanent}}
+	if len(got) != len(want) {
+		t.Fatalf("List() = %+v", got)
+	}
+	for i, w := range want {
+		if got[i].Slug != w.slug || got[i].Kind != w.kind {
+			t.Errorf("root %d = %+v, want %s (%s)", i, got[i], w.slug, w.kind)
+		}
+	}
+	if n, _ := r.Notes(); n.Path != notes {
+		t.Errorf("Notes() = %+v, want the first configured root", n)
+	}
+	if _, err := r.Remove("projects"); !errors.Is(err, ErrPermanentRoot) {
+		t.Errorf("Remove(permanent root) err = %v, want ErrPermanentRoot", err)
+	}
+	if _, err := r.Remove("notes"); !errors.Is(err, ErrNotesRoot) {
+		t.Errorf("Remove(notes root) err = %v, want ErrNotesRoot", err)
+	}
+	if len(r.List()) != 3 {
+		t.Errorf("a refused Remove changed the registry: %+v", r.List())
+	}
+	// Opening a permanent root is the root that is already there, not a
+	// recent one, and nothing is written for it.
+	if again, err := r.Add(projects); err != nil || again.Kind != KindPermanent || again.Slug != "projects" {
+		t.Errorf("Add(permanent root) = %+v, %v", again, err)
+	}
+	if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a registry with no recent roots wrote a state file: %v", err)
+	}
+}
+
+// The same folder twice in the configured list is refused, however it is
+// spelled; one folder inside another is served as two roots.
+func TestNewConfiguredDuplicatesAndNesting(t *testing.T) {
+	base := t.TempDir()
+	notes := filepath.Join(base, "notes")
+	inner := filepath.Join(notes, "projects")
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "alias")
+	if err := os.Symlink(notes, alias); err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(t.TempDir(), "roots.json")
+	for _, c := range []struct {
+		name  string
+		paths []string
+	}{
+		{"the same path twice", []string{notes, inner, notes}},
+		{"a symlink alias", []string{notes, alias}},
+		{"a trailing slash", []string{inner + "/", notes, inner}},
+	} {
+		_, err := NewConfigured(c.paths, state, nil)
+		if !errors.Is(err, ErrDuplicateRoot) {
+			t.Errorf("%s: err = %v, want ErrDuplicateRoot", c.name, err)
+		}
+	}
+
+	r, err := NewConfigured([]string{notes, inner}, state, nil)
+	if err != nil {
+		t.Fatalf("a nested root: %v", err)
+	}
+	if got := r.List(); len(got) != 2 || got[1].Kind != KindPermanent || got[1].Path != inner {
+		t.Errorf("List() = %+v, want the inner folder as a permanent root", got)
+	}
+	// And the other way round: the notes root inside a permanent root.
+	if _, err := NewConfigured([]string{inner, notes}, state, nil); err != nil {
+		t.Errorf("the notes root inside a permanent root: %v", err)
+	}
+}
+
+// A folder once opened with `mdn open` and since configured is served once,
+// as configuration, and leaves the state file.
+func TestNewConfiguredPromotesAPersistedRecentRoot(t *testing.T) {
+	base := t.TempDir()
+	notes, projects := filepath.Join(base, "notes"), filepath.Join(base, "projects")
+	os.Mkdir(notes, 0o755)
+	os.Mkdir(projects, 0o755)
+	statePath := filepath.Join(t.TempDir(), "roots.json")
+	os.WriteFile(statePath, []byte(`{"recent":[{"slug":"projects","path":"`+projects+`"}]}`), 0o600)
+	r, err := NewConfigured([]string{notes, projects}, statePath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.List(); len(got) != 2 || got[1].Kind != KindPermanent {
+		t.Fatalf("List() = %+v, want projects once, as permanent", got)
+	}
+	data, _ := os.ReadFile(statePath)
+	if strings.Contains(string(data), projects) {
+		t.Errorf("the state file still names the configured folder: %s", data)
+	}
+}
+
+func TestNewConfiguredNamesTheRootThatFails(t *testing.T) {
+	notes := t.TempDir()
+	missing := filepath.Join(t.TempDir(), "missing")
+	_, err := NewConfigured([]string{notes, missing}, filepath.Join(t.TempDir(), "s.json"), nil)
+	if err == nil || !strings.Contains(err.Error(), missing) {
+		t.Fatalf("err = %v, want it to name %s", err, missing)
+	}
+	if _, err := NewConfigured(nil, filepath.Join(t.TempDir(), "s.json"), nil); err == nil {
+		t.Fatal("want an error for no roots at all")
+	}
+}

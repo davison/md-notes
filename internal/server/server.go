@@ -747,7 +747,9 @@ func noSuchNote(w http.ResponseWriter, file string) {
 // The configured notes root is refused `notes_root`: it is the daemon's
 // configuration rather than a registration, and a daemon serving nothing
 // until its next restart is not a state the home page should be able to
-// ask for. An unknown slug is `not_found`, which is also what removing the
+// ask for. A permanent root — any configured root after the first — is
+// configuration too, and is refused the same way under its own code,
+// `permanent_root`, so the sentence can say which it is. An unknown slug is `not_found`, which is also what removing the
 // same root twice gets. Under the tailnet name the request never reaches
 // here at all — the allow-list admits `GET /api/roots` and nothing else
 // under that path, and this endpoint is refused by that default.
@@ -759,6 +761,10 @@ func (s *Server) removeRoot(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, roots.ErrNotesRoot):
 		writeSourceError(w, http.StatusForbidden, "notes_root",
 			"the notes root is the daemon's configuration, not a registration; it cannot be removed")
+		return
+	case errors.Is(err, roots.ErrPermanentRoot):
+		writeSourceError(w, http.StatusForbidden, "permanent_root",
+			"a permanent root is the daemon's configuration, not a registration; it cannot be removed")
 		return
 	case errors.Is(err, os.ErrNotExist):
 		writeSourceError(w, http.StatusNotFound, "not_found", "no such root: "+slug)

@@ -14,11 +14,20 @@ import (
 	"sync"
 )
 
-// Kind distinguishes the permanent notes root from folders added later.
+// Kind distinguishes the configured roots from folders added later.
 type Kind string
 
 const (
-	KindNotes  Kind = "notes"
+	// KindNotes is the first configured root: the notes root the clipper
+	// writes to and clips_dir resolves against. There is exactly one.
+	KindNotes Kind = "notes"
+	// KindPermanent is every configured root after the first — another
+	// `--root`, or another entry in notes_root's list. Like the notes root
+	// it is the daemon's configuration: served from every start, never
+	// written to the state file, and not removable.
+	KindPermanent Kind = "permanent"
+	// KindRecent is a folder registered at runtime with `mdn open` (or
+	// the extension), remembered in the state file and removable.
 	KindRecent Kind = "recent"
 )
 
@@ -52,6 +61,17 @@ var ErrNoNote = errors.New("no such file inside the directory")
 // would put it straight back.
 var ErrNotesRoot = errors.New("the notes root is configured, not registered")
 
+// ErrPermanentRoot is ErrNotesRoot for the configured roots after the
+// first: configuration as well, which a removal could not make stick.
+var ErrPermanentRoot = errors.New("a permanent root is configured, not registered")
+
+// ErrDuplicateRoot is returned by NewConfigured when two configured paths
+// name the same folder, symlinks evaluated. A list someone wrote with a
+// folder in it twice is a mistake in that list, and serving it once
+// without a word would be the silent half-acceptance a repeated --root
+// once got (#162).
+var ErrDuplicateRoot = errors.New("names the same folder as an earlier root")
+
 // ErrTooManyLinks is returned by the lexical walk below when a chain of
 // symlinks is longer than it will follow. It is deliberately not silence:
 // a walk that gave up and answered "does not leave the root" would hand
@@ -77,21 +97,44 @@ type persisted struct {
 	Path string `json:"path"`
 }
 
-// New builds a registry with notesRoot as its permanent root and reloads
-// any recent roots persisted at statePath. The state file is a cache: a
-// problem reading or rewriting it is reported through warnf (which may be
-// nil) and never stops the daemon serving the notes root. Persisted
-// folders that no longer exist are dropped.
+// New builds a registry with notesRoot as its only configured root; see
+// NewConfigured.
 func New(notesRoot, statePath string, warnf func(format string, args ...any)) (*Registry, error) {
+	return NewConfigured([]string{notesRoot}, statePath, warnf)
+}
+
+// NewConfigured builds a registry from the configured roots — the first is
+// the notes root, the rest permanent roots, in the order given — and
+// reloads any recent roots persisted at statePath. Two configured paths
+// naming the same folder are ErrDuplicateRoot; one folder inside another
+// is allowed, as it is for a folder opened with `mdn open`.
+//
+// The state file is a cache: a problem reading or rewriting it is reported
+// through warnf (which may be nil) and never stops the daemon serving the
+// configured roots. Persisted folders that no longer exist are dropped, and
+// so is one that is now configured: it is served as configuration, once.
+func NewConfigured(configured []string, statePath string, warnf func(format string, args ...any)) (*Registry, error) {
 	if warnf == nil {
 		warnf = func(string, ...any) {}
 	}
-	r := &Registry{statePath: statePath}
-	notes, err := newRoot(notesRoot, KindNotes)
-	if err != nil {
-		return nil, fmt.Errorf("notes root: %w", err)
+	if len(configured) == 0 {
+		return nil, errors.New("no notes root")
 	}
-	r.roots = append(r.roots, r.withSlug(notes))
+	r := &Registry{statePath: statePath}
+	for i, path := range configured {
+		kind, what := KindPermanent, "root "+path
+		if i == 0 {
+			kind, what = KindNotes, "notes root"
+		}
+		root, err := newRoot(path, kind)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", what, err)
+		}
+		if earlier, ok := r.byPath(root); ok {
+			return nil, fmt.Errorf("%s %w (%s)", path, ErrDuplicateRoot, earlier.Path)
+		}
+		r.roots = append(r.roots, r.withSlug(root))
+	}
 
 	data, err := os.ReadFile(statePath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -195,8 +238,9 @@ func (r *Registry) byPath(candidate Root) (Root, bool) {
 	return Root{}, false
 }
 
-// List returns the roots, the notes root first, then recents in the order
-// they were added.
+// List returns the roots: the notes root first, then the permanent roots in
+// the order they were configured, then recents in the order they were
+// added.
 func (r *Registry) List() []Root {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -319,8 +363,9 @@ func (root Root) hasFile(file string) error {
 // in it are left exactly as they are, and a root removed by mistake is
 // registered again with `mdn open`.
 //
-// An unknown slug is os.ErrNotExist and the notes root is ErrNotesRoot;
-// neither changes the registry or the state file.
+// An unknown slug is os.ErrNotExist, the notes root is ErrNotesRoot and a
+// permanent root is ErrPermanentRoot; none changes the registry or the
+// state file.
 func (r *Registry) Remove(slug string) (Root, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -328,8 +373,11 @@ func (r *Registry) Remove(slug string) (Root, error) {
 		if x.Slug != slug {
 			continue
 		}
-		if x.Kind != KindRecent {
+		switch x.Kind {
+		case KindNotes:
 			return Root{}, ErrNotesRoot
+		case KindPermanent:
+			return Root{}, ErrPermanentRoot
 		}
 		kept := make([]Root, 0, len(r.roots)-1)
 		kept = append(kept, r.roots[:i]...)
@@ -345,9 +393,11 @@ func (r *Registry) Remove(slug string) (Root, error) {
 	return Root{}, fmt.Errorf("unknown root %q: %w", slug, os.ErrNotExist)
 }
 
-// save writes the recent roots atomically. Caller holds mu.
+// save writes the recent roots atomically. Caller holds mu. With none left
+// the file says so as an empty list, `{"recent": []}`, rather than as null
+// (#125).
 func (r *Registry) save() error {
-	var st state
+	st := state{Recent: []persisted{}}
 	for _, x := range r.roots {
 		if x.Kind == KindRecent {
 			st.Recent = append(st.Recent, persisted{Slug: x.Slug, Path: x.Path})
