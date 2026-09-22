@@ -2,7 +2,7 @@
 
 md-notes is a local service that turns folders of markdown files into a notes
 application in the browser. This page describes what exists and works today, at the
-end of [milestone nine](milestones/9-flowcharts-drawn-by-the-daemon.md): the
+end of [milestone ten](milestones/10-before-the-next-release.md): the
 daemon and the rendered viewer from
 [milestone one](milestones/1-daemon-and-rendered-viewer.md), the editor from
 [milestone two](milestones/2-editor-autosave-and-live-update.md), the browser half
@@ -12,8 +12,9 @@ five added to them, the tailnet clipping and clipper repairs of
 [milestone six](milestones/6-tailnet-clipping-and-the-m5-backlog.md), and what
 milestone seven did to roots, to the navigator and to installing the app on a phone,
 all of it carrying a version number and installable from a package since
-[milestone eight](milestones/8-the-first-release.md), and the flowcharts milestone nine
-draws.
+[milestone eight](milestones/8-the-first-release.md), the flowcharts
+[milestone nine](milestones/9-flowcharts-drawn-by-the-daemon.md) draws, and what
+milestone ten fixed and documented before the next release.
 Notes are created, edited and deleted in the app; renaming one is still done with other
 tools.
 
@@ -61,7 +62,7 @@ Milestone eight gave all of it a version and a way in.
 and the daemon installs from the Arch User Repository or from a `.deb` rather than out
 of a working copy; the browser extension is a zip on the same release page, loaded
 unpacked, the Chrome Web Store channel having been withdrawn before the first release
-([#135](https://github.com/davison/md-notes/issues/135#issuecomment-5744118645)). The
+([#135](https://github.com/davison/md-notes/issues/135#issuecomment-5744118645)).
 [Installing md-notes](install.md) has the commands and
 [Cutting a release](releasing.md) the machinery. The same milestone took the things a
 first public release should not carry: a note's own HTML can no longer wear the
@@ -85,6 +86,30 @@ this app's origin can read and write every note — so no diagram source ever ru
 styles or inserts anything in the browser. A block outside the supported subset, one
 the daemon refuses to draw, and every other mermaid diagram type stay the code block
 they were ([Flowcharts](#flowcharts)).
+
+Milestone ten is what a second release should not ship without. Flowcharts read and
+route better: a wide one is never shown with labels under 12 pixels, scrolling in a
+box of its own instead, and any diagram opens at its natural size; a link that points
+back runs in a lane outside the nodes, the main chain is drawn straight, and a
+subgraph's title is kept clear of links; no palette draws a box behind the drawing;
+and a drawing refused at the deadline on a busy machine is tried again after a minute
+rather than staying code until the daemon restarts ([Flowcharts](#flowcharts)). A note
+with 20,000 tagged code blocks renders in a second or so rather than in over a minute.
+Three things render differently from v0.1.0 because of it: a fence tagged `el`, or
+with a file name ending in `.el`, `.cl` or `.lisp`, is highlighted exactly as an
+`elisp` or `cl` fence is; a tag longer than 32 bytes that is not one of chroma's lexer
+names or aliases shows as plain code; and so does a `jungle` fence, whose lexer never
+finishes ([The web UI](#the-web-ui)). A repeated `--root` is no longer silently
+dropped: every one is served, `notes_root` takes a list, and the folders after the
+first are permanent roots ([Roots](#roots)). A note deleted on disk while its editor
+held nothing unsaved says so rather than claiming a conflict, and the vim mode comes
+back with the caret ([Conflicts](#conflicts), [Editing](#editing)). Every install
+route carries the manual page, the Go and Node that build a release are pinned so that
+a release can be rebuilt from its tag to the same bytes ([Checking a
+release](releasing.md#checking-a-release)), and CI runs on pinned runners and current
+actions. The README now says what md-notes is and shows it, with installing and
+running on pages of their own ([Installing md-notes](install.md), [Running
+md-notes](running.md)), and the extension has a [privacy page](privacy.md).
 
 The browser half is a Chromium extension that clips a readable page or a selection
 into the notes root as markdown, and opens a local markdown file in the app instead
@@ -768,7 +793,11 @@ what is on screen; [The browser tab](#the-browser-tab) below says how. The panes
   rather than once per block. A fence is shown as plain code, without a search, when
   its tag is like that and longer than 32 bytes, or once 16 different tags like that
   have come before it in the note. So is a fence in Jungle, which chroma's lexer never
-  finishes. The per-block search is what made a note of 20,000 `mermaid` blocks take
+  finishes. A fence tagged `el`, or with a file name ending in `.el`, `.cl` or `.lisp`,
+  is highlighted by the lexer `elisp` or `cl` uses, which colours some names as
+  builtins and keywords that v0.1.0 did not
+  ([#190](https://github.com/davison/md-notes/issues/190#issuecomment-5774618609)).
+  The per-block search is what made a note of 20,000 `mermaid` blocks take
   over a minute to render ([#190](https://github.com/davison/md-notes/issues/190)).
   A mermaid flowchart is drawn by the daemon and shown as an image in front of its
   code block — see [Flowcharts](#flowcharts). A bar above the note carries the mode,
@@ -1217,7 +1246,7 @@ that device end to end, including the two ways to reach your notes from one.
 ### What holds these numbers
 
 The figures in the two sections above are not only documented, they are measured on
-every push. `make e2e` runs a suite of 83 checks under `ui/e2e` in headless Chromium
+every push. `make e2e` runs a suite of 116 checks under `ui/e2e` in headless Chromium
 against the built daemon on a temporary root, and CI runs it as a job of its own: the
 pane rectangles at four phone profiles and a desktop control, the 960-pixel
 breakpoint walked at 959, 960 and 961, the 1290-pixel one walked at 1289 and 1290 —
@@ -1241,9 +1270,10 @@ deleting a note end to end, in the wide layout and in the drawer layout: a name 
 into the prompt, a bare title landing in the open note's folder, a refusal corrected
 in place, the new note reaching a second tab through the events stream, the delete
 button holding one place across an edit, and a deletion that a cancelled confirmation
-does not perform. It drives the navigator's two orders in both layouts — the choice
-surviving a reload, a note saved in the app and a note rewritten on disk each moving
-to the top with no reload — and the home page's **Remove** control: the confirmation
+does not perform, and a note deleted on disk under an editor with nothing unsaved
+saying so, with no conflict, and carrying on when the file comes back. It drives the
+navigator's two orders in both layouts — the choice surviving a reload, a note saved
+in the app and a note rewritten on disk each moving to the top with no reload — and the home page's **Remove** control: the confirmation
 naming the folder, a cancelled removal that removes nothing, the files still on disk
 afterwards, and a second tab landing on the home page when the root it was open on
 goes. And it holds [the installable app](#installing-the-app) to Chrome's installability
@@ -1255,16 +1285,25 @@ daemon is answering and the cached one answers when it is not, that the worker's
 named after its contents, and that the roots page and three `/r/` routes all say the
 daemon is unreachable rather than that the root does not exist. It draws
 [a flowchart](#flowcharts) in each of the three palettes, reading each palette's
-background back out of the image, follows a change of the setting without a reload,
-shrinks a wide diagram to the column, shows as code a block the layout refuses without
-asking for an image, keeps the code block when the drawing cannot be fetched, redraws a
-diagram edited on disk without fetching an unchanged one again, and opens a drawing
-directly as a document to show it cannot run a script even with one spliced into it. At
-desktop and Pixel 7 sizes, with every drawing held back until after the scroll, it
-lands a line link centred on its target below twelve diagrams — inside the ninth, on a
-block shown as code, on a paragraph, and on the paragraph when every drawing fails — and
-inside and below sixty dense diagrams the daemon had no time to measure, one refused by
-the layout at its image's request.
+background back out of the image and checking that it matches the pane beside it, in
+the note and in the natural-size view, follows a change of the setting without a
+reload, shrinks a diagram a little wider than the column to fit it, and at five widths
+from desktop to a 320-pixel phone holds a wider one at the floor in its own scroll
+box while the page never scrolls sideways. It opens the natural-size view by
+click, by keyboard and by tap, and follows it through a change of palette, an edit on
+disk, the diagram's removal or failure and the note's deletion. It shows as code a
+block the layout refuses without asking for an image, keeps the code block when the
+drawing cannot be fetched, redraws a diagram edited on disk without fetching an
+unchanged one again, and opens a drawing directly as a document to show it cannot run a
+script even with one spliced into it. At desktop and Pixel 7 sizes, with every drawing
+held back until after the scroll, it lands a line link centred on its target below
+twelve diagrams — inside the ninth, on a block shown as code, on a paragraph, and on the
+paragraph when every drawing fails — below measured diagrams that fail and give way to
+taller code blocks, and inside and below sixty dense diagrams the daemon had no time to
+measure, one refused by the layout at its image's request; and at all five widths it
+lands one below a wide diagram held at the floor. Its own harness is tested too: a
+suite run without the browser download skips with a line naming the command that
+fetches it, and fails instead under CI.
 The viewports are the suite's own literals rather than Playwright's
 device registry, whose numbers move between releases
 ([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426)). It
