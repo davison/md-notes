@@ -606,3 +606,50 @@ func waitForStream(t *testing.T, req *http.Request) (*http.Response, error) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+// A permanent root (M10-R5, #162) is listed with its own kind, and a DELETE
+// for it is refused under its own code, leaving it served.
+func TestPermanentRootIsListedAndNotRemovable(t *testing.T) {
+	base := t.TempDir()
+	notes, projects := filepath.Join(base, "notes"), filepath.Join(base, "projects")
+	for _, d := range []string{notes, projects} {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg, err := roots.NewConfigured([]string{notes, projects}, filepath.Join(base, "roots.json"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, _, err := token.Open(filepath.Join(base, "token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(reg, port, fstest.MapFS{"index.html": {Data: []byte("app")}}, log.New(io.Discard, "", 0), WithToken(store))
+	t.Cleanup(s.Close)
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	resp := do(t, ts, "GET", "/api/roots", "", nil)
+	var list struct {
+		Roots []struct{ Slug, Path, Kind string }
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Roots) != 2 || list.Roots[0].Kind != "notes" ||
+		list.Roots[1].Kind != "permanent" || list.Roots[1].Path != projects {
+		t.Fatalf("roots = %+v", list.Roots)
+	}
+
+	resp = do(t, ts, "DELETE", "/api/roots/projects", "", nil)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status %d, want 403", resp.StatusCode)
+	}
+	if code, msg := refusalOf(t, resp); code != "permanent_root" || !strings.Contains(msg, "permanent root") {
+		t.Errorf("code %q, message %q", code, msg)
+	}
+	if slugs := registeredSlugs(t, ts); len(slugs) != 2 {
+		t.Errorf("roots = %v, want both still served", slugs)
+	}
+}
