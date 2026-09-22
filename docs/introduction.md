@@ -95,21 +95,22 @@ subgraph's title is kept clear of links; no palette draws a box behind the drawi
 and a drawing refused at the deadline on a busy machine is tried again after a minute
 rather than staying code until the daemon restarts ([Flowcharts](#flowcharts)). A note
 with 20,000 tagged code blocks renders in a second or so rather than in over a minute.
-Three things render differently from v0.1.0 because of it: a fence tagged `el`, or
-with a file name ending in `.el`, `.cl` or `.lisp`, is highlighted exactly as an
-`elisp` or `cl` fence is; a tag longer than 32 bytes that is not one of chroma's lexer
-names or aliases shows as plain code; and so does a `jungle` fence, whose lexer never
+Four things render differently from v0.1.0 because of it: a fence tagged `el`, or with
+a file name ending in `.el`, `.cl` or `.lisp`, is highlighted exactly as an `elisp` or
+`cl` fence is; a tag longer than 32 bytes that is not one of chroma's lexer names or
+aliases shows as plain code; so does such a fence once 16 different tags like that
+have come before it in the note; and so does a `jungle` fence, whose lexer never
 finishes ([The web UI](#the-web-ui)). A repeated `--root` is no longer silently
 dropped: every one is served, `notes_root` takes a list, and the folders after the
 first are permanent roots ([Roots](#roots)). A note deleted on disk while its editor
-held nothing unsaved says so rather than claiming a conflict, and the vim mode comes
-back with the caret ([Conflicts](#conflicts), [Editing](#editing)). Every install
-route carries the manual page, the Go and Node that build a release are pinned so that
-a release can be rebuilt from its tag to the same bytes ([Checking a
-release](releasing.md#checking-a-release)), and CI runs on pinned runners and current
-actions. The README now says what md-notes is and shows it, with installing and
-running on pages of their own ([Installing md-notes](install.md), [Running
-md-notes](running.md)), and the extension has a [privacy page](privacy.md).
+held nothing unsaved says so rather than claiming a conflict, and **Recreate the
+note** brings the editor back in the vim mode it was in ([Conflicts](#conflicts),
+[Editing](#editing)). Every install route carries the manual page, the Go and Node
+that build a release are pinned so that a release can be rebuilt from its tag to the
+same bytes ([Checking a release](releasing.md#checking-a-release)), and CI runs on
+pinned runners and current actions. The README now says what md-notes is and shows it,
+with installing and running on pages of their own ([Installing md-notes](install.md),
+[Running md-notes](running.md)), and the extension has a [privacy page](privacy.md).
 
 The browser half is a Chromium extension that clips a readable page or a selection
 into the notes root as markdown, and opens a local markdown file in the app instead
@@ -1273,43 +1274,43 @@ button holding one place across an edit, and a deletion that a cancelled confirm
 does not perform, and a note deleted on disk under an editor with nothing unsaved
 saying so, with no conflict, and carrying on when the file comes back. It drives the
 navigator's two orders in both layouts — the choice surviving a reload, a note saved
-in the app and a note rewritten on disk each moving to the top with no reload — and the home page's **Remove** control: the confirmation
-naming the folder, a cancelled removal that removes nothing, the files still on disk
-afterwards, and a second tab landing on the home page when the root it was open on
-goes. And it holds [the installable app](#installing-the-app) to Chrome's installability
-criteria item by item — the manifest read back both over HTTP and out of the browser's
-own parse, each icon measured from its own header, the worker activated at scope `/` —
-together with the rules that matter about it: that no request under `/api/` is ever
-answered from the worker's cache, that a rebuilt shell wins over the cached one while the
-daemon is answering and the cached one answers when it is not, that the worker's cache is
-named after its contents, and that the roots page and three `/r/` routes all say the
-daemon is unreachable rather than that the root does not exist. It draws
-[a flowchart](#flowcharts) in each of the three palettes, reading each palette's
+in the app and a note rewritten on disk each moving to the top with no reload — and
+the home page's **Remove** control: the confirmation naming the folder, a cancelled
+removal that removes nothing, the files still on disk afterwards, and a second tab
+landing on the home page when the root it was open on goes. And it holds [the
+installable app](#installing-the-app) to Chrome's installability criteria item by item
+— the manifest read back both over HTTP and out of the browser's own parse, each icon
+measured from its own header, the worker activated at scope `/` — together with the
+rules that matter about it: that no request under `/api/` is ever answered from the
+worker's cache, that a rebuilt shell wins over the cached one while the daemon is
+answering and the cached one answers when it is not, that the worker's cache is named
+after its contents, and that the roots page and three `/r/` routes all say the daemon
+is unreachable rather than that the root does not exist. It draws [a
+flowchart](#flowcharts) in each of the three palettes, reading each palette's
 background back out of the image and checking that it matches the pane beside it, in
 the note and in the natural-size view, follows a change of the setting without a
 reload, shrinks a diagram a little wider than the column to fit it, and at five widths
-from desktop to a 320-pixel phone holds a wider one at the floor in its own scroll
-box while the page never scrolls sideways. It opens the natural-size view by
-click, by keyboard and by tap, and follows it through a change of palette, an edit on
-disk, the diagram's removal or failure and the note's deletion. It shows as code a
-block the layout refuses without asking for an image, keeps the code block when the
-drawing cannot be fetched, redraws a diagram edited on disk without fetching an
-unchanged one again, and opens a drawing directly as a document to show it cannot run a
-script even with one spliced into it. At desktop and Pixel 7 sizes, with every drawing
-held back until after the scroll, it lands a line link centred on its target below
-twelve diagrams — inside the ninth, on a block shown as code, on a paragraph, and on the
+from desktop to a 320-pixel phone holds a wider one at the floor in its own scroll box
+while the page never scrolls sideways. It opens the natural-size view by click, by
+keyboard and by tap, and follows it through a change of palette, an edit on disk, the
+diagram's removal or failure and the note's deletion. It shows as code a block the
+layout refuses without asking for an image, keeps the code block when the drawing
+cannot be fetched, redraws a diagram edited on disk without fetching an unchanged one
+again, and opens a drawing directly as a document to show it cannot run a script even
+with one spliced into it. At desktop and Pixel 7 sizes, with every drawing held back
+until after the scroll, it lands a line link centred on its target below twelve
+diagrams — inside the ninth, on a block shown as code, on a paragraph, and on the
 paragraph when every drawing fails — below measured diagrams that fail and give way to
-taller code blocks, and inside and below sixty dense diagrams the daemon had no time to
-measure, one refused by the layout at its image's request; and at all five widths it
-lands one below a wide diagram held at the floor. Its own harness is tested too: a
+taller code blocks, and inside and below sixty dense diagrams the daemon had no time
+to measure, one refused by the layout at its image's request; and at all five widths
+it lands one below a wide diagram held at the floor. Its own harness is tested too: a
 suite run without the browser download skips with a line naming the command that
-fetches it, and fails instead under CI.
-The viewports are the suite's own literals rather than Playwright's
-device registry, whose numbers move between releases
+fetches it, and fails instead under CI. The viewports are the suite's own literals
+rather than Playwright's device registry, whose numbers move between releases
 ([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426)). It
-needs Chromium, which is a separate download; see [CONTRIBUTING.md](../CONTRIBUTING.md#what-you-need).
-It is not part of `make check`, which is what keeps a 150 MB browser off the ordinary
-developer loop.
+needs Chromium, which is a separate download; see
+[CONTRIBUTING.md](../CONTRIBUTING.md#what-you-need). It is not part of `make check`,
+which is what keeps a 150 MB browser off the ordinary developer loop.
 
 ## Editing
 
