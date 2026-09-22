@@ -521,6 +521,14 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
           const [v, n] = [await viewSrc(page), await noteSrc(page)];
           return v !== before && v === n;
         }, "the view to show the edited drawing");
+        // Still a modal: focus stayed inside it through the update, and Tab
+        // cannot walk out to the page behind (review of PR #202, round two).
+        await page.waitForTimeout(300);
+        assert.equal((await viewer(page)).focusInside, true, "focus left the view when it followed the edit");
+        for (let i = 0; i < 3; i++) {
+          await page.keyboard.press("Tab");
+          assert.equal((await viewer(page)).focusInside, true, `focus left the view after ${i + 1} Tab presses`);
+        }
         await page.keyboard.press("Escape");
         await page.waitForFunction(() => !document.querySelector(".diagram-viewer"));
         assert.equal(await focusedOpener(page), true, "focus is on the edited diagram");
@@ -535,6 +543,40 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
         fs.writeFileSync(fixture.file("view-gone.md"), "# G\n\nNo diagram now.\n\nBelow.\n");
         await page.waitForFunction(() => !document.querySelector(".diagram-viewer"));
         assert.equal(await page.evaluate(() => document.activeElement?.matches(".note-title") ?? false), true, "focus is on the title");
+      } finally {
+        await close();
+      }
+    });
+
+    it("closes, rather than moving to another diagram, when the open one is deleted and another appended", async () => {
+      const three = (a, b, c) => "# T\n\n" + [a, b, c].map((d) => fence(`graph LR; ${d}1 --> ${d}2\n`)).join("\n") + "\nBelow.\n";
+      fs.writeFileSync(fixture.file("view-swap.md"), three("P", "Q", "R"));
+      const { page, close } = await at(DESKTOP, fixture.url("view-swap.md"));
+      try {
+        await loaded(page, 3);
+        await page.locator(".markdown img.diagram").nth(1).click();
+        await opened(page);
+        const opened_ = await viewSrc(page);
+        // Q deleted and S appended: as many diagrams as before, and R, which
+        // the reader did not open, now where Q was.
+        fs.writeFileSync(fixture.file("view-swap.md"), three("P", "R", "S"));
+        await page.waitForFunction(() => document.querySelectorAll(".markdown img.diagram").length === 3 && !document.querySelector(".diagram-viewer"), null, { timeout: 10000 })
+          .catch(async () => assert.fail(`the view stayed open, showing ${await viewSrc(page)} (opened on ${opened_})`));
+        assert.equal(await page.evaluate(() => document.activeElement?.matches(".note-title") ?? false), true, "focus is on the title");
+      } finally {
+        await close();
+      }
+    });
+
+    it("closes when the whole note is deleted while open, with focus on the title the pane shows instead", async () => {
+      const { page, close } = await viewing("view-deleted.md", "# D\n\n" + fence(LONG_LR));
+      try {
+        fs.unlinkSync(fixture.file("view-deleted.md"));
+        await page.waitForFunction(() => !document.querySelector(".diagram-viewer"));
+        await page.waitForTimeout(300);
+        // The note's pane now says why there is no note, under its own title.
+        const active = await page.evaluate(() => (document.activeElement?.matches(".note-title") ? "title" : document.activeElement?.tagName));
+        assert.equal(active, "title", `focus fell to ${active}`);
       } finally {
         await close();
       }
