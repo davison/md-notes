@@ -84,11 +84,8 @@ is gone when the browser closes:
 - per tab, the last thing the extension did there: the `file:` address it
   acted on, if any, and a one-line result — opened in the app, or why not —
   which is what the popup shows when the toolbar badge has something to say.
-  It is dropped when the tab loads another page — a web page, another file,
-  or another address in the app it was sent to — and when the tab closes.
-  Moving between notes inside the app changes the address without loading a
-  page, so until one of those the record of how the tab got there stays with
-  it.
+  It is dropped when the tab goes anywhere else — a web page, another file,
+  or another note in the app it was sent to — and when the tab closes.
 
 The extension keeps nothing else: no cookies of its own, no `localStorage`, no
 IndexedDB, and no files. (The daemon's app, once a tab has been sent to it, is
