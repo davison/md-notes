@@ -333,6 +333,78 @@ describe("NotePane", () => {
     expect(screen.queryByRole("button", { name: "Recreate the note" })).toBeNull();
   });
 
+  describe("a clean note deleted on disk (#30)", () => {
+    /** The note open in the editor with nothing typed, then deleted under it. */
+    async function deletedClean(onRecreate?: (path: string, draft: string) => void) {
+      const view = render(<NotePane slug="n" path="a.md" version={0} onRecreate={onRecreate} />);
+      await waitFor(() => expect(screen.getByText("body")).toBeTruthy());
+      fireEvent.keyDown(document.body, ctrlE);
+      await waitFor(() => expect(editorText()).toContain("body"));
+      expect(status()).toBe("Saved");
+      file = null;
+      view.rerender(<NotePane slug="n" path="a.md" version={1} onRecreate={onRecreate} />);
+      await waitFor(() => expect(status()).toBe("Deleted on disk"));
+      return view;
+    }
+    const notice = () => document.querySelector(".gone-notice");
+
+    it("says the note no longer exists, not that there were unsaved edits, and keeps the text", async () => {
+      await deletedClean();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByText(/while you had unsaved edits/)).toBeNull();
+      expect(screen.queryByText("Conflict: draft kept")).toBeNull();
+      expect(notice()?.textContent).toContain("no longer exists on disk");
+      expect(editorText()).toContain("body");
+      expect(screen.queryByRole("button", { name: "Keep my draft" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull();
+    });
+
+    it("carries on over the file when it comes back, with nothing to dismiss", async () => {
+      const { rerender } = await deletedClean();
+      file = { source: "back again\n", revision: "r2" };
+      rerender(<NotePane slug="n" path="a.md" version={2} />);
+      await waitFor(() => expect(editorText()).toContain("back again"));
+      expect(status()).toBe("Saved");
+      expect(notice()).toBeNull();
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("in view mode says the same thing in the bar, over the rendered view's not-found", async () => {
+      // The view shows the file as it is on disk, as it does in a conflict;
+      // what changes is the bar above it, which used to read "Conflict:
+      // draft kept" over a note nobody had edited.
+      const { rerender } = await deletedClean();
+      fireEvent.keyDown(document.body, ctrlE);
+      await waitFor(() => expect(bar()).toBe("Viewing"));
+      await waitFor(() => expect(screen.getByText("not found")).toBeTruthy());
+      expect(status()).toBe("Deleted on disk");
+      expect(notice()?.textContent).toContain("no longer exists on disk");
+      expect(screen.queryByText("Conflict: draft kept")).toBeNull();
+
+      file = { source: "back again\n", revision: "r2" };
+      rerender(<NotePane slug="n" path="a.md" version={2} />);
+      await waitFor(() => expect(screen.getByText("back again")).toBeTruthy());
+      await waitFor(() => expect(status()).toBe("Saved"));
+      expect(notice()).toBeNull();
+    });
+
+    it("offers Recreate the note with the text it kept", async () => {
+      const recreate = vi.fn();
+      await deletedClean(recreate);
+      fireEvent.click(screen.getByRole("button", { name: "Recreate the note" }));
+      expect(recreate).toHaveBeenCalledWith("a.md", "body\n");
+      expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+    });
+
+    it("turns into the deleted conflict once the reader types", async () => {
+      await deletedClean();
+      type("mine\n");
+      await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("deleted on disk while you had unsaved edits"));
+      expect(status()).toBe("Conflict: draft kept");
+      expect(notice()).toBeNull();
+    });
+  });
+
   it("shows a read failure in the editor", async () => {
     file = null;
     render(<NotePane slug="n" path="a.md" />);
