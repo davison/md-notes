@@ -59,6 +59,9 @@ type Server struct {
 	// sizes and measureBudget serve the note endpoint's measuring.
 	sizes         *sizeCache
 	measureBudget time.Duration
+	// now is the clock a deadline refusal's expiry is read against; a test
+	// replaces it.
+	now func() time.Time
 
 	// token validates the bearer token a non-loopback client presents.
 	// Nil accepts nothing, so a daemon built without one refuses every
@@ -159,6 +162,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 		sizes:     newSizeCache(sizeCacheEntries),
 
 		measureBudget: measureBudget,
+		now:           time.Now,
 		clipsDir:      config.DefaultClipsDir,
 		listDirs:      tree.Dirs,
 		sessions:      session.New(session.DefaultTTL),

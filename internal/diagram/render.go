@@ -43,15 +43,22 @@ func RenderLimits(ctx context.Context, src []byte, theme Theme, lim Limits) (out
 	d, err := layout(ctx, f, lim)
 	if err != nil {
 		if errors.Is(context.Cause(ctx), errTimeout) {
-			return nil, refuse(Limit, 0, "the layout took longer than %v", lim.Timeout)
+			return nil, deadline(lim)
 		}
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		if errors.Is(context.Cause(ctx), errTimeout) {
-			return nil, refuse(Limit, 0, "the layout took longer than %v", lim.Timeout)
+			return nil, deadline(lim)
 		}
 		return nil, fmt.Errorf("diagram: %w", err)
 	}
 	return writeSVG(d, theme), nil
+}
+
+// deadline is the refusal for a layout the render deadline ended.
+func deadline(lim Limits) *Refusal {
+	r := refuse(Limit, 0, "the layout took longer than %v", lim.Timeout)
+	r.Deadline = true
+	return r
 }
