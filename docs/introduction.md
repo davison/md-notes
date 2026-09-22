@@ -838,6 +838,15 @@ syntax:
   wraps at a space;
 - `%%` comments.
 
+**How it is drawn.** Nodes are placed in ranks along the diagram's direction, like
+mermaid's own layout. A link that points back against the flow runs in a lane of its
+own outside the nodes, below the row in `LR` and `RL` and beside the column in `TB`
+and `BT`, and it leaves and enters its nodes by the side that faces that lane. The
+longest chain of links is drawn on one straight line, provided that no node on it
+fans out to more than two links or collects more than two. A subgraph's title sits
+where no link crosses it. If there is no such place, the subgraph is widened to make
+one ([#188](https://github.com/davison/md-notes/issues/188)).
+
 **What is skipped.** `style`, `classDef`, `class`, `:::class`, `linkStyle` and `click`
 are recognised and skipped whole, up to the end of their line or their `;`. The drawing
 is in the theme's colours, and an image has nothing to click, so a styled flowchart
