@@ -45,14 +45,15 @@ func TestServeOverrides(t *testing.T) {
 		t.Helper()
 		fs := flag.NewFlagSet("mdn serve", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
-		root := fs.String("root", "", "")
+		var roots []string
+		fs.Func("root", "", func(v string) error { roots = append(roots, v); return nil })
 		port := fs.Int("port", 0, "")
 		maxWatches := fs.Int("max-watches", config.DefaultMaxWatches, "")
 		tailnetHost := fs.String("tailnet-host", "", "")
 		if err := fs.Parse(args); err != nil {
 			t.Fatal(err)
 		}
-		return overrides(fs, *root, *port, *tailnetHost, maxWatches)
+		return overrides(fs, roots, *port, *tailnetHost, maxWatches)
 	}
 	if over := build(nil); over.MaxWatches != nil {
 		t.Fatalf("max-watches = %d without the flag, want nothing to override the file", *over.MaxWatches)
@@ -61,7 +62,7 @@ func TestServeOverrides(t *testing.T) {
 		t.Fatalf("--max-watches 0 = %v, want a request for no budget", over.MaxWatches)
 	}
 	if over := build([]string{"--max-watches", "500", "--root", "/n", "--port", "9"}); over.MaxWatches == nil ||
-		*over.MaxWatches != 500 || over.NotesRoot != "/n" || over.Port != 9 {
+		*over.MaxWatches != 500 || len(over.Roots) != 1 || over.Roots[0] != "/n" || over.Port != 9 {
 		t.Fatalf("overrides = %+v", over)
 	}
 	if over := build(nil); over.TailnetHost != "" {

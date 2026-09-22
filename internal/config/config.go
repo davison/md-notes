@@ -35,8 +35,11 @@ const DefaultClipsDir = "clips"
 
 // Config is the on-disk configuration, with any flag overrides applied.
 type Config struct {
-	// NotesRoot is the permanent notes folder. Required.
-	NotesRoot string `yaml:"notes_root"`
+	// Roots is notes_root: the configured folders, one path or a list of
+	// them. The first is the notes root the clipper writes to and clips_dir
+	// resolves against; the rest are served as permanent roots beside it.
+	// At least one is required. Resolve makes each absolute.
+	Roots Roots `yaml:"notes_root"`
 	// Port is the loopback port the daemon listens on.
 	Port int `yaml:"port"`
 	// MaxWatches caps the directories watched per root for live update.
@@ -56,13 +59,55 @@ type Config struct {
 // Overrides are the values a command line supplies, each taking precedence
 // over the configuration file when it is not the zero value.
 type Overrides struct {
-	NotesRoot string
-	Port      int
+	// Roots is every --root given, in order. Any at all replace notes_root
+	// from the file entirely, rather than adding to it: the first root is
+	// the notes root, and a list merged from two places would leave which
+	// one that is to a rule about ordering.
+	Roots []string
+	Port  int
 	// MaxWatches is nil when the flag was not given; zero is a request for
 	// no budget, the same as the file's own zero.
 	MaxWatches *int
 	// TailnetHost overrides tailnet_host when it is not empty.
 	TailnetHost string
+}
+
+// Roots is the notes_root key, which takes one path or a list of paths.
+type Roots []string
+
+// UnmarshalYAML accepts `notes_root: DIR` and `notes_root: [DIR, DIR]`
+// alike. Anything else — a mapping, a list of lists — is refused rather
+// than read as nothing.
+func (r *Roots) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		var one string
+		if err := node.Decode(&one); err != nil {
+			return err
+		}
+		*r = nil
+		if one != "" {
+			*r = Roots{one}
+		}
+		return nil
+	case yaml.SequenceNode:
+		var many []string
+		if err := node.Decode(&many); err != nil {
+			return fmt.Errorf("notes_root: %w", err)
+		}
+		*r = many
+		return nil
+	}
+	return fmt.Errorf("line %d: notes_root must be a path or a list of paths", node.Line)
+}
+
+// NotesRoot is the first configured root: the one clips are written to.
+// Empty before Resolve has found one.
+func (c Config) NotesRoot() string {
+	if len(c.Roots) == 0 {
+		return ""
+	}
+	return c.Roots[0]
 }
 
 // ErrEscapesRoot is returned for a configured path that would leave the
@@ -203,12 +248,14 @@ func Load(path string) (Config, error) {
 }
 
 // Resolve applies defaults and validates, with over taking precedence over
-// the file. The returned NotesRoot is absolute and MaxWatches is settled to
-// a non-nil value: positive is the per-root watch budget, zero is no budget
-// at all.
+// the file. The returned Roots are absolute, existing directories, no two
+// the same folder, and MaxWatches is settled to a non-nil value: positive
+// is the per-root watch budget, zero is no budget at all.
 func (c Config) Resolve(configPath string, over Overrides) (Config, error) {
-	if over.NotesRoot != "" {
-		c.NotesRoot = over.NotesRoot
+	from := "notes_root"
+	if len(over.Roots) > 0 {
+		c.Roots = append(Roots(nil), over.Roots...)
+		from = "--root"
 	}
 	if over.Port != 0 {
 		c.Port = over.Port
@@ -245,20 +292,44 @@ func (c Config) Resolve(configPath string, over Overrides) (Config, error) {
 	if c.Port < 1 || c.Port > 65535 {
 		return c, fmt.Errorf("port %d out of range", c.Port)
 	}
-	if c.NotesRoot == "" {
+	if len(c.Roots) == 0 {
 		return c, fmt.Errorf("no notes root: set notes_root in %s or pass --root", configPath)
 	}
-	abs, err := filepath.Abs(c.NotesRoot)
-	if err != nil {
-		return c, err
+	resolved := make(Roots, 0, len(c.Roots))
+	seen := map[string]string{}
+	for i, given := range c.Roots {
+		what := "root " + given
+		if i == 0 {
+			what = "notes root"
+		}
+		if strings.TrimSpace(given) == "" {
+			return c, fmt.Errorf("%s: an empty path is not a folder", from)
+		}
+		abs, err := filepath.Abs(given)
+		if err != nil {
+			return c, err
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return c, fmt.Errorf("%s: %w", what, err)
+		}
+		if !info.IsDir() {
+			return c, fmt.Errorf("%s %s is not a directory", what, abs)
+		}
+		// The same folder named twice is a mistake in the list, and is
+		// refused here where the list's author is looking, rather than
+		// served once in silence (#162). Symlinks are evaluated, as the
+		// registry compares folders.
+		real, err := filepath.EvalSymlinks(abs)
+		if err != nil {
+			return c, fmt.Errorf("%s: %w", what, err)
+		}
+		if earlier, ok := seen[real]; ok {
+			return c, fmt.Errorf("%s %s and %s name the same folder", from, earlier, given)
+		}
+		seen[real] = given
+		resolved = append(resolved, abs)
 	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return c, fmt.Errorf("notes root: %w", err)
-	}
-	if !info.IsDir() {
-		return c, fmt.Errorf("notes root %s is not a directory", abs)
-	}
-	c.NotesRoot = abs
+	c.Roots = resolved
 	return c, nil
 }
