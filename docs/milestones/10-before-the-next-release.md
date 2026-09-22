@@ -82,9 +82,15 @@ the last review saw. Both are given.
 
 Two pull requests merged with commits added after their last approval, which no later review
 comment covers. On PR #201 these were the fixes for the approval's nits 1 and 2, including the
-unit test that pins the Ctrl+E behaviour (`17fd406`, `0993e09`). On PR #203 they were the fixes
-for the approval's three nits
-([PR #203](https://github.com/davison/md-notes/pull/203#issuecomment-5775211633)). The PR #203
+unit test that pins the Ctrl+E behaviour: `17fd406` and `0993e09` on the branch,
+[`3787397`](https://github.com/davison/md-notes/commit/3787397) and
+[`ed08de1`](https://github.com/davison/md-notes/commit/ed08de1) on `main`. On PR #203 they were
+the fixes for the approval's three nits, and a change to CONTRIBUTING's suite count, to 109
+tests, made after the rebase: `c086418` and `9ac5c03` on the branch,
+[`e8d7477`](https://github.com/davison/md-notes/commit/e8d7477) and
+[`4c394fe`](https://github.com/davison/md-notes/commit/4c394fe) on `main`
+([PR #203](https://github.com/davison/md-notes/pull/203#issuecomment-5775211633)). That rebase
+also resolved a conflict in `ui/e2e/diagram.test.mjs`, which no review saw either. The PR #203
 approval said its first nit "needs no re-review"
 ([PR #203](https://github.com/davison/md-notes/pull/203#issuecomment-5775157856)).
 
@@ -112,8 +118,8 @@ tests), `make e2e` passed 116 of 116, and `pnpm --dir extension e2e` passed 29 o
 
 ## The human gates
 
-Two gates were raised in the milestone, one on #190 and one on #192. The operator resolved
-both, each as option (a). No task plan listed a blocking ask-the-human point.
+Two gates were raised in the milestone, one on #190 and one on #192. Both were resolved as
+option (a). No task plan listed a blocking ask-the-human point.
 
 **Jungle, on #190** ([#190](https://github.com/davison/md-notes/issues/190#issuecomment-5773668362)),
 raised at 08:47:10Z. While building #190's comparison corpus, the implementer found that
@@ -170,10 +176,34 @@ anyway. Left out, each open for the operator to pull in
 The pre-flight on `c4ab83e` found `govulncheck` and `pnpm audit` clean, and only patch releases
 outdated. They were not taken, and chroma stayed held by #147.
 
-The tasks were sequenced in waves so that no two tasks in flight touched the same files. Wave
-one was #188, #190, #191 and #193, with #193 first because of its date. Wave two, after #188
-merged, was #187 and #192, then #189. Wave three was #195, then #194. QA and this record came
-last.
+**The plan** was waves, so that no two tasks in flight touched the same files. Wave one was
+#188, #190, #191 and #193, with #193 first because of its date. Wave two, after #188 merged,
+was #187 and #192, then #189, which touches the same diagram CSS and cache as #187. Wave three
+was #195, then #194, whose flowchart shot was to come after #187 and #188. QA and this record
+came last.
+
+**What ran** did not follow the plan in four places. The times are each task's **Started by**
+comment and each pull request's merge:
+
+| Task | Started | Merged | Against the plan |
+|------|---------|--------|------------------|
+| #191 | 08:21:39Z | 08:57:24Z | Started first and merged first, ahead of #193 |
+| #190 | 08:24:53Z | 10:13:09Z | |
+| #193 | 08:25:10Z | 09:06:13Z | |
+| #188 | 08:25:36Z | 09:41:06Z | |
+| #192 | 09:08:39Z | 10:09:35Z | Started 32 minutes before #188 merged |
+| #187 | 09:45:01Z | 10:48:08Z | |
+| #195 | 10:12:37Z | 10:54:17Z | Started while #187 was in review and before #189 had started |
+| #189 | 10:49:58Z | 11:25:47Z | |
+| #194 | 10:56:36Z | 11:33:13Z | Started before #189 merged |
+
+The consequences are on the record. Because #191 merged before #193, the round-one review of
+PR #197 found the manual page stale. #195 and #187 both changed the harness import line in
+`ui/e2e/diagram.test.mjs`, and that was PR #203's only rebase conflict
+([PR #203](https://github.com/davison/md-notes/pull/203#issuecomment-5775211633)). #194's
+flowchart shots showed the #180 box that #189 was still fixing. No comment records a reason for
+starting #192, #195 or #194 early; see
+[Coordinator mistakes](#coordinator-mistakes-on-the-record).
 
 ### Wide diagrams: a floor of 12/14, a scroll box, an overlay
 
@@ -360,9 +390,12 @@ Its consequence for `Ctrl+E` went to the gate above.
   runner script that prints one line for the whole run.
 - **The privacy page** is taken from PR #151's head `e707c7f`, rewritten for an unpacked zip,
   and checked claim by claim against `extension/src`; the store listing is not taken as a file
-  ([#195](https://github.com/davison/md-notes/issues/195#issuecomment-5774801415)). Three
-  store-era claims were wrong and were corrected, including that profile sync may carry the
-  settings.
+  ([#195](https://github.com/davison/md-notes/issues/195#issuecomment-5774801415)). The page
+  dropped the store-only material and one false claim, that profile sync may carry the
+  settings, and corrected three others: when the token is sent to a loopback daemon, that a
+  clip carries its kind, and what the per-tab record holds. The third correction, that the
+  record is dropped when the tab moves on, was then found false after a worker restart by the
+  first review of PR #203, and fixed in the code.
 - **The extension screenshot generator** is taken, moved to `extension/scripts/`, and run by
   `make extension-screenshots` ([#195](https://github.com/davison/md-notes/issues/195#issuecomment-5774818699)).
   **Rejected:** a target that always runs inside `unshare`, because Ubuntu 24.04 restricts
@@ -395,9 +428,11 @@ no e-ink CSS besides the palette tokens, and the view draws on `--pane`
 It was nit 2 of the first review of PR #202, and pre-existing
 ([#189](https://github.com/davison/md-notes/issues/189#issuecomment-5774861925)).
 
-**The natural-size view can still follow the wrong diagram in one case**, when one save deletes
-the open diagram and adds another after an edited one. It follows only a diagram new since the
-last check, otherwise it closes. The limit is stated in the code and was not captured
+**The natural-size view can still follow the wrong diagram in one case.** In the code's words,
+"the one case still followed wrongly is a diagram deleted while another new one lands at its
+place, which is indistinguishable from an edit" (`followViewed` in `ui/src/diagrams.ts`).
+Otherwise the view follows only a diagram new since the last check, or closes. The limit was
+not captured
 ([#186](https://github.com/davison/md-notes/issues/186#issuecomment-5775146918)).
 
 ## What the reviews changed
@@ -485,7 +520,7 @@ Dispositions: [#186](https://github.com/davison/md-notes/issues/186#issuecomment
 - **Round one** ([changes requested](https://github.com/davison/md-notes/pull/203#issuecomment-5774949425)):
   the privacy page said the per-tab record, which holds a `file:` URL, is dropped when the tab
   moves on. After a service-worker restart it was not. This was fixed in the code, with an e2e
-  case that stops the worker. The nits: a stale README pointer, PNGs a third larger than needed,
+  case that stops the worker. The nits: a stale README pointer, PNGs that oxipng made a third smaller at no cost,
   and a test header that claimed it never skips. The stale pointer was to a `README.md` in
   `extension/scripts/`, left from the store-era script.
 - **Round two** [approved](https://github.com/davison/md-notes/pull/203#issuecomment-5775157856),
@@ -535,8 +570,9 @@ subgraph-heavy inputs, the worst case took 127.5 ms against 38.9 ms for `slowest
 the reference host that is **about 0.69 s, roughly 2.9× inside the deadline**
 ([PR #200](https://github.com/davison/md-notes/pull/200#issuecomment-5774317213),
 [#186](https://github.com/davison/md-notes/issues/186#issuecomment-5774325248)). The implementer's
-own figure was 0.72 s, about 2.8×, and the reviewer judged the two to agree. Both are from shared
-machines. M9's record is sealed and stays as it is. This is the correction.
+own figure was 0.72 s, about 2.8×, and the reviewer judged the two to agree. The implementer's
+reply says its machine was shared and gives its figures as ±50%
+([PR #200](https://github.com/davison/md-notes/pull/200#issuecomment-5774193175)). M9's record is sealed and stays as it is. This is the correction.
 
 **#180 was reinterpreted after measurement.** #180, from M9 QA, said the e-ink drawing sat in a
 faint white box on the light page's `--bg`. Measurement on `df276bd` showed that the reading
@@ -585,7 +621,13 @@ coordinator disposed of them
 1. **The manual page said permanent roots are never written to `roots.json`.** A recent root
    that becomes configured keeps its hidden entry there, per the amended #191 decision. QA
    reproduced it. This was a documentation inaccuracy under M10-R10, and it is fixed in this
-   task's pull request: `contrib/mdn.1` now follows the introduction's Roots section.
+   task's pull request. The sentence was written in PR #197's round-one fix (`14950cd` on the
+   branch, [`823f3ca`](https://github.com/davison/md-notes/commit/823f3ca) on `main`), and the
+   round-two review passed it after comparing the page with the introduction point by point
+   ([PR #197](https://github.com/davison/md-notes/pull/197#issuecomment-5773890501)). The
+   introduction's "never written to the state file" had the same ambiguity, so the comparison
+   inherited the error. Both pages now say that a configured recent root keeps its entry, and
+   that it is served as configured.
 2. **`make man` also fills the placeholders inside the page's own source comment.** Cosmetic,
    since `man` never shows comments. Not captured.
 
@@ -618,12 +660,19 @@ the #180 box in the committed shots. The fix was to retake them after #204 merge
 disposition on #186. PR #197's has none, on #186 or on #193. Its four nits were all fixed in the
 PR before the approval, so nothing was left to dispose of, but the record does not say so.
 
-**Premises carried into briefs without measurement.** Three task goals repeated a capture's
+**Premises carried into briefs without measurement.** Two task goals repeated a capture's
 premise that measurement then overturned. #190's goal said "find the superlinear cost", and its
 plan found no superlinear part ([#190](https://github.com/davison/md-notes/issues/190)). #189's
-title and goal named a box on e-ink, which was the one palette without one. #183 assumed a
-16 px phone gutter. Each was found and handled by the task. None cost a round, but each was
-written by the coordinator from the capture's words.
+title and goal named a box on e-ink, which was the one palette without one
+([#189](https://github.com/davison/md-notes/issues/189)). Both were found and handled by the
+task, and neither cost a review round, but both goals were written by the coordinator from the
+capture's words.
+
+**Tasks started ahead of the plan's waves.** #192 started before #188 merged, #195 while #187 was
+in review and before #189 had started, and #194 before #189 merged. The table under
+[Scope](#scope-and-what-was-left-out) has the times. No comment records the start as a
+deliberate judgement. The early #195 cost a rebase conflict with #187, and the early #194 cost
+a retake of its flowchart shots.
 
 ## Corrections to the record itself
 
@@ -662,9 +711,9 @@ flowchart pair is drawn after #189 as well as #187 and #188
 ([#186](https://github.com/davison/md-notes/issues/186#issuecomment-5775828263)).
 
 **#188, the titles decision, not corrected on the issue.** It gives `pipeline.mmd` in TB as
-growing from 227 to 457 px. Round one's fix reserved only the missing room, and the width became
-326.4 px. PR #200's body and the approving review give the new figure, but no correction was
-posted on #188 ([PR #200](https://github.com/davison/md-notes/pull/200)).
+growing from 227 to 457 px, and `nested-title.mmd` in TB from 301 to 389 px. Round one's fix
+reserved only the missing room, and the widths became 326.4 px and 371.8 px. PR #200's body and
+the approving review give the new figures, but no correction was posted on #188 ([PR #200](https://github.com/davison/md-notes/pull/200)).
 
 **The introduction's e2e count.** It said 83 browser checks, the count at the end of M9. This
 task's stage one measured 116 on `53e6bed`, and QA's floor ran 116 of 116.
@@ -674,9 +723,19 @@ task's stage one measured 116 on `53e6bed`, and QA's floor ran 116 of 116.
 M10 adopted 18 captures, each closed by its task's `task finish`: #183; #184 and #174; #180 and
 #182; #178; #162, #155 and #125; #30, #112 and #123; #161, #168 and #167; #185; #160 and #153.
 
-It raised none. Every review disposition and QA's observations ended "not captured" or fixed in
-the pull request. The items left out of scope, listed under
-[Scope](#scope-and-what-was-left-out), stay open in the backlog.
+It raised two. [#185](https://github.com/davison/md-notes/issues/185), the README, was raised by
+the coordinator at the milestone's opening, at 08:15:49Z, 33 s before #186, and adopted by #194.
+[#207](https://github.com/davison/md-notes/issues/207), search results repeating context lines
+when two hits are close together, was raised after the record review. The first review of
+PR #205 said it "may be worth a backlog capture"
+([PR #205](https://github.com/davison/md-notes/pull/205#issuecomment-5775477268), finding 3), and
+the disposition of that review did not mention it. The record review of this task found the gap
+([PR #206](https://github.com/davison/md-notes/pull/206#issuecomment-5776193990), nit 10), and
+the coordinator captured it late, outside M10
+([#186](https://github.com/davison/md-notes/issues/186#issuecomment-5776203327)). Every other
+review disposition and QA's observations ended "not captured" or fixed in the pull request. The
+items left out of scope, listed under [Scope](#scope-and-what-was-left-out), stay open in the
+backlog.
 
 ## Where the record is silent
 
