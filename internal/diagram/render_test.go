@@ -134,6 +134,17 @@ func TestRenderDeadline(t *testing.T) {
 	if !errors.As(err, &r) || r.Kind != Limit || !strings.Contains(r.Reason, "took longer") {
 		t.Fatalf("got %v, want a deadline refusal", err)
 	}
+	// Marked as the deadline's, so a caller can try it again later
+	// (davison/md-notes#182); a bound on the source is not.
+	if !r.Deadline {
+		t.Error("a deadline refusal is not marked Deadline")
+	}
+	lim = DefaultLimits
+	lim.MaxNodes = 2
+	_, err = RenderLimits(context.Background(), []byte("graph LR; A-->B-->C"), Light, lim)
+	if !errors.As(err, &r) || r.Kind != Limit || r.Deadline {
+		t.Fatalf("got %+v, want a count refusal not marked Deadline", err)
+	}
 	// And the same block inside the default deadline draws.
 	if _, err := Render(context.Background(), slowest(), Light); err != nil {
 		t.Fatalf("default deadline: %v", err)

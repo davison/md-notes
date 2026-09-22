@@ -275,7 +275,7 @@ func (s *Server) measureDiagrams(ctx context.Context, list []render.Diagram) []r
 	refused := make([]bool, len(list))
 	var todo []int
 	for i := range list {
-		switch sz, ok := s.sizes.get(list[i].Hash); {
+		switch sz, ok := s.knownSize(list[i].Hash); {
 		case !ok:
 			todo = append(todo, i)
 		case sz.refused:
@@ -327,9 +327,23 @@ func (s *Server) measureDiagrams(ctx context.Context, list []render.Diagram) []r
 // — and caches the answer. A refusal is cached as well as an SVG, so a
 // hostile block costs its render deadline once rather than at every view.
 // An error means the context ended; nothing is cached for it.
+//
+// A refusal by the render deadline is the exception (davison/md-notes#182):
+// it may say only that the host was busy, so it is kept in the size cache
+// alone, until an expiry that backs off (see retryAfter), and the block is
+// drawn again after that.
 func (s *Server) drawDiagram(ctx context.Context, hash, themeName string, src []byte, theme diagram.Theme) (drawn, error) {
 	key := hash + "/" + themeName
-	if d, ok := s.svgs.get(key); ok {
+	cached := func() (drawn, bool) {
+		if d, ok := s.svgs.get(key); ok {
+			return d, true
+		}
+		if sz, ok := s.knownSize(hash); ok && sz.deadline != nil {
+			return drawn{refusal: sz.deadline}, true
+		}
+		return drawn{}, false
+	}
+	if d, ok := cached(); ok {
 		return d, nil
 	}
 	select {
@@ -339,7 +353,7 @@ func (s *Server) drawDiagram(ctx context.Context, hash, themeName string, src []
 	}
 	defer func() { <-s.drawSlots }()
 	// Another request may have drawn it while this one waited.
-	if d, ok := s.svgs.get(key); ok {
+	if d, ok := cached(); ok {
 		return d, nil
 	}
 	svg, err := s.draw(ctx, src, theme)
@@ -352,6 +366,13 @@ func (s *Server) drawDiagram(ctx context.Context, hash, themeName string, src []
 		s.svgs.put(key, d)
 		s.sizes.put(hash, drawnSize{w: d.width, h: d.height})
 		return d, nil
+	case errors.As(err, &refusal) && refusal.Deadline:
+		strikes := 1
+		if prev, ok := s.sizes.get(hash); ok && prev.deadline != nil {
+			strikes = prev.strikes + 1
+		}
+		s.sizes.put(hash, drawnSize{refused: true, deadline: refusal, strikes: strikes, retryAt: s.now().Add(retryAfter(strikes))})
+		return drawn{refusal: refusal}, nil
 	case errors.As(err, &refusal):
 		d := drawn{refusal: refusal}
 		s.svgs.put(key, d)
@@ -476,6 +497,42 @@ const sizeCacheEntries = 32768
 type drawnSize struct {
 	w, h    float64
 	refused bool
+	// deadline is set for a refusal by the render deadline, which holds
+	// only until retryAt; strikes counts such refusals in a row, for the
+	// backoff (davison/md-notes#182).
+	deadline *diagram.Refusal
+	strikes  int
+	retryAt  time.Time
+}
+
+// Deadline refusals are retried after a minute, then after twice as long
+// each time the same source is refused again, up to an hour: a busy
+// moment's refusal is drawn on the next open after it has passed, and a
+// block that is always too slow costs one render deadline per window
+// rather than one per open (the decision on davison/md-notes#189).
+const (
+	deadlineRetryFirst = time.Minute
+	deadlineRetryMax   = time.Hour
+)
+
+// retryAfter is how long the strikes-th deadline refusal in a row holds.
+func retryAfter(strikes int) time.Duration {
+	d := deadlineRetryFirst
+	for i := 1; i < strikes && d < deadlineRetryMax; i++ {
+		d *= 2
+	}
+	return min(d, deadlineRetryMax)
+}
+
+// knownSize is the size cache's answer for hash, with a deadline refusal
+// that has expired treated as not known, so the block is drawn again. The
+// entry itself stays, so a further refusal backs off from its count.
+func (s *Server) knownSize(hash string) (drawnSize, bool) {
+	sz, ok := s.sizes.get(hash)
+	if ok && sz.deadline != nil && !s.now().Before(sz.retryAt) {
+		return drawnSize{}, false
+	}
+	return sz, ok
 }
 
 // sizeCache is a least-recently-used map from source hash to drawnSize,

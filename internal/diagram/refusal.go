@@ -27,6 +27,11 @@ type Refusal struct {
 	Kind   Kind
 	Line   int // 1-based line of the block, or 0 when it is not about one line
 	Reason string
+	// Deadline is set when the render deadline ended the layout: a Limit
+	// that depends on how busy the machine was as well as on the block, so
+	// trying again later may draw it (davison/md-notes#182). Every other
+	// refusal is a property of the source alone.
+	Deadline bool
 }
 
 func (r *Refusal) Error() string {

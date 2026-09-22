@@ -847,3 +847,161 @@ func TestNoteWithoutSizesDrawsNothing(t *testing.T) {
 		t.Errorf("a plain note fetch lost its diagram list: %s", body)
 	}
 }
+
+// slowThenFast is a draw that the render deadline refuses until fast is
+// set, and a clock the test moves by hand (davison/md-notes#182).
+type slowThenFast struct {
+	fast  atomic.Bool
+	draws atomic.Int32
+	now   time.Time
+	mu    sync.Mutex
+}
+
+func (f *slowThenFast) install(s *Server) {
+	inner := s.draw
+	s.draw = func(ctx context.Context, src []byte, theme diagram.Theme) ([]byte, error) {
+		f.draws.Add(1)
+		if !f.fast.Load() {
+			return nil, &diagram.Refusal{Kind: diagram.Limit, Reason: "the layout took longer than 2s", Deadline: true}
+		}
+		return inner(ctx, src, theme)
+	}
+	f.now = time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return f.now
+	}
+}
+
+func (f *slowThenFast) advance(d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.now = f.now.Add(d)
+}
+
+// A block refused at the deadline on a busy host is drawn again once its
+// refusal has expired, rather than staying code until the daemon restarts;
+// until then, asking again draws nothing (davison/md-notes#182).
+func TestDiagramDeadlineRefusalIsRetried(t *testing.T) {
+	ts, base := newTestServer(t)
+	writeNote(t, base, "d.md", fence(testFlow))
+	f := &slowThenFast{}
+	f.install(serverOf(t, ts))
+	status := func() int {
+		t.Helper()
+		resp := do(t, ts, "GET", diagramURL("d.md", testFlow, "light"), "", nil)
+		readAll(t, resp.Body)
+		return resp.StatusCode
+	}
+	if got := status(); got != http.StatusUnprocessableEntity {
+		t.Fatalf("slow draw: status %d, want 422", got)
+	}
+	// The host is idle now, but the refusal is still fresh.
+	f.fast.Store(true)
+	f.advance(59 * time.Second)
+	if got := status(); got != http.StatusUnprocessableEntity {
+		t.Fatalf("within the expiry: status %d, want 422", got)
+	}
+	if sized, _ := measureNote(t, ts, "d.md"); sized != 0 {
+		t.Errorf("within the expiry the note sized the block")
+	}
+	if n := f.draws.Load(); n != 1 {
+		t.Fatalf("drew %d times within the expiry, want 1", n)
+	}
+	f.advance(2 * time.Second)
+	if got := status(); got != http.StatusOK {
+		t.Fatalf("after the expiry: status %d, want 200", got)
+	}
+	if sized, _ := measureNote(t, ts, "d.md"); sized != 1 {
+		t.Errorf("after the retry the note did not size the block")
+	}
+}
+
+// The note endpoint lists a block again once its deadline refusal has
+// expired, so the page asks for its image; before then it is code from the
+// start.
+func TestNoteListsADeadlineRefusalAgainAfterItExpires(t *testing.T) {
+	ts, base := newTestServer(t)
+	writeNote(t, base, "d.md", fence(testFlow))
+	f := &slowThenFast{}
+	f.install(serverOf(t, ts))
+	listed := func() int {
+		t.Helper()
+		resp := do(t, ts, "GET", "/api/r/notes/note/d.md?sizes=1", "", nil)
+		var note struct{ Diagrams []struct{ Hash string } }
+		if err := json.NewDecoder(resp.Body).Decode(&note); err != nil {
+			t.Fatal(err)
+		}
+		return len(note.Diagrams)
+	}
+	if n := listed(); n != 0 {
+		t.Fatalf("a deadline-refused block was listed (%d)", n)
+	}
+	f.fast.Store(true)
+	if n := listed(); n != 0 {
+		t.Fatalf("listed within the expiry (%d)", n)
+	}
+	f.advance(time.Minute)
+	if n := listed(); n != 1 {
+		t.Fatalf("not listed after the expiry (%d)", n)
+	}
+}
+
+// A block that is always too slow is drawn once per window, and the window
+// doubles, up to an hour: it cannot be re-rendered in a loop.
+func TestDiagramDeadlineRefusalBacksOff(t *testing.T) {
+	ts, base := newTestServer(t)
+	writeNote(t, base, "d.md", fence(testFlow))
+	f := &slowThenFast{}
+	f.install(serverOf(t, ts))
+	ask := func() {
+		t.Helper()
+		resp := do(t, ts, "GET", diagramURL("d.md", testFlow, "light"), "", nil)
+		readAll(t, resp.Body)
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("status %d, want 422", resp.StatusCode)
+		}
+	}
+	ask()
+	want := int32(1)
+	for _, window := range []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute, 16 * time.Minute, 32 * time.Minute, time.Hour, time.Hour} {
+		// Asked every second of the window, it is drawn only at the end.
+		for range 5 {
+			f.advance(window / 6)
+			ask()
+		}
+		if n := f.draws.Load(); n != want {
+			t.Fatalf("inside a %v window: drew %d times, want %d", window, n, want)
+		}
+		f.advance(window - 5*(window/6))
+		ask()
+		want++
+		if n := f.draws.Load(); n != want {
+			t.Fatalf("after a %v window: drew %d times, want %d", window, n, want)
+		}
+	}
+}
+
+// A refusal that is a property of the source is never drawn again, however
+// much time passes.
+func TestDiagramDeterministicRefusalIsNotRetried(t *testing.T) {
+	ts, base := newTestServer(t)
+	src := layoutRefused()
+	writeNote(t, base, "d.md", fence(src))
+	s := serverOf(t, ts)
+	f := &slowThenFast{}
+	f.fast.Store(true)
+	f.install(s)
+	for range 3 {
+		resp := do(t, ts, "GET", diagramURL("d.md", src, "light"), "", nil)
+		readAll(t, resp.Body)
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Fatalf("status %d, want 422", resp.StatusCode)
+		}
+		f.advance(24 * time.Hour)
+	}
+	if n := f.draws.Load(); n != 1 {
+		t.Errorf("drew %d times, want 1", n)
+	}
+}
