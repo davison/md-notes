@@ -1,0 +1,11 @@
+flowchart TB
+    subgraph outer [Outer group]
+      O1[Outer node]
+      subgraph inner ["Inner (quoted)"]
+        P[Parser] --> Q[Queue]
+      end
+    end
+    R[Request] --> P
+    O1 --> P
+    S[Side input] --> Q
+    Q --> Z[Done]

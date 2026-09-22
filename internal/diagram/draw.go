@@ -31,6 +31,7 @@ type dcluster struct {
 	x, y, w, h float64
 	title      []string
 	tx         float64 // the title's centre across the box
+	ref        int     // the subgraph
 }
 
 // titleBox is the rectangle a subgraph's title is drawn in.
@@ -88,6 +89,7 @@ func (e *engine) draw() *drawing {
 			w: math.Abs(b.x - a.x), h: math.Abs(b.y - a.y),
 			title: e.f.Subgraphs[c].Title,
 			tx:    (a.x + b.x) / 2,
+			ref:   c,
 		})
 	}
 	// Outer boxes first, so inner ones are drawn over them.
@@ -108,29 +110,90 @@ func (e *engine) draw() *drawing {
 		ed    Edge
 		pts   []point
 		label int
+		side  [2]*sideEnd // a back edge's From and To ends, where they use a side port
 	}
 	var ps []pending
-	for _, c := range e.chains {
+	var sides []*sideEnd
+	for ci, c := range e.chains {
 		ed := e.f.Edges[c.edge]
 		if ed.Line == LineInvisible {
 			continue
 		}
-		pts := make([]point, len(c.nodes))
-		for k, v := range c.nodes {
-			pts[k] = tf(e.nodes[v].x, e.nodes[v].y)
-		}
+		p := pending{edge: c.edge, ed: ed, label: c.label}
 		if c.reversed {
-			for i, j := 0, len(pts)-1; i < j; i, j = i+1, j-1 {
-				pts[i], pts[j] = pts[j], pts[i]
+			// In TB space a back edge's chain runs from its head, in the
+			// lower rank, along its lane to its tail.
+			ns := c.nodes
+			p.side[1] = e.sideEnd(ci, ns[0], ns[1], ed.To.Node >= 0)
+			p.side[0] = e.sideEnd(ci, ns[len(ns)-1], ns[len(ns)-2], ed.From.Node >= 0)
+			for _, se := range p.side {
+				if se != nil {
+					sides = append(sides, se)
+				}
 			}
 		}
-		ps = append(ps, pending{c.edge, ed, pts, c.label})
+		ps = append(ps, p)
+	}
+	e.spreadSides(sides)
+	for i := range ps {
+		p := &ps[i]
+		var c chain
+		for _, ch := range e.chains {
+			if ch.edge == p.edge {
+				c = ch
+				break
+			}
+		}
+		var tb []point
+		for k, v := range c.nodes {
+			nd := e.nodes[v]
+			pt := point{nd.x, nd.y}
+			if c.reversed {
+				// The side ends: aimed from a point inside the node, and
+				// through a corner level with it where the way to the lane
+				// is clear.
+				var se *sideEnd
+				switch k {
+				case 0:
+					se = p.side[1]
+				case len(c.nodes) - 1:
+					se = p.side[0]
+				}
+				if se != nil {
+					se.anchor = tf(nd.x, nd.y+se.off)
+					if se.corner {
+						corner := point{e.nodes[se.lane].x, nd.y + se.off}
+						if k == 0 {
+							tb = append(tb, pt, corner)
+						} else {
+							tb = append(tb, corner, pt)
+						}
+						continue
+					}
+				}
+			}
+			tb = append(tb, pt)
+		}
+		p.pts = make([]point, len(tb))
+		for k, q := range tb {
+			p.pts[k] = tf(q.x, q.y)
+		}
+		if c.reversed {
+			p.pts = reverse(p.pts)
+		}
 	}
 	// Where more than one edge meets a node on the same side, their ends
 	// are spread across that side in the order they arrive from, rather
 	// than all aimed at the centre, so their heads stay apart.
-	anchors := e.ports(d, len(ps), func(i int) (Edge, []point) { return ps[i].ed, ps[i].pts })
+	anchors := e.ports(d, len(ps), func(i int) (Edge, []point, [2]bool) {
+		return ps[i].ed, ps[i].pts, [2]bool{ps[i].side[0] != nil, ps[i].side[1] != nil}
+	})
 	for i, p := range ps {
+		for which, se := range p.side {
+			if se != nil {
+				anchors[i][which] = se.anchor
+			}
+		}
 		ed, pts := p.ed, p.pts
 		// Clip each end to the outline of what it touches: the node's
 		// shape, or the subgraph's box.
@@ -196,6 +259,87 @@ func (e *engine) draw() *drawing {
 	return d
 }
 
+// titleGap is how far a subgraph's title keeps from any edge.
+const titleGap = 3.0
+
+// placeTitles puts each subgraph's title in its band, at the place nearest
+// the centre that no edge crosses (davison/md-notes#174). Where there is
+// no such place the title stays centred, and the subgraph is returned with
+// the room its title needs, to be kept clear of its contents on the side
+// of the box the edges leave freer: negative on the left, positive on the
+// right.
+func placeTitles(d *drawing) map[int]float64 {
+	var curves [][]point
+	for _, e := range d.edges {
+		curves = append(curves, sample(e.pieces()))
+	}
+	blocked := map[int]float64{}
+	for i := range d.clusters {
+		c := &d.clusters[i]
+		if len(c.title) == 0 {
+			continue
+		}
+		tw, _ := textBox(c.title)
+		_, ty0, _, ty1 := c.titleBox()
+		ty0, ty1 = ty0-titleGap, ty1+titleGap
+		type span struct{ a, b float64 }
+		var busy []span
+		for _, pts := range curves {
+			for k := 0; k+1 < len(pts); k++ {
+				p, q := pts[k], pts[k+1]
+				if math.Max(p.y, q.y) < ty0 || math.Min(p.y, q.y) > ty1 {
+					continue
+				}
+				// The part of the segment inside the band.
+				xa, xb := p.x, q.x
+				if p.y != q.y {
+					at := func(y float64) float64 { return p.x + (q.x-p.x)*(y-p.y)/(q.y-p.y) }
+					ya, yb := math.Max(math.Min(p.y, q.y), ty0), math.Min(math.Max(p.y, q.y), ty1)
+					xa, xb = at(ya), at(yb)
+				}
+				busy = append(busy, span{math.Min(xa, xb) - titleGap, math.Max(xa, xb) + titleGap})
+			}
+		}
+		mid := c.x + c.w/2
+		lo, hi := c.x+clusterPad/2+tw/2, c.x+c.w-clusterPad/2-tw/2
+		if lo > hi {
+			lo, hi = mid, mid
+		}
+		free := func(x float64) bool {
+			for _, s := range busy {
+				if x-tw/2 < s.b && s.a < x+tw/2 {
+					return false
+				}
+			}
+			return true
+		}
+		cands := []float64{mid}
+		for _, s := range busy {
+			cands = append(cands, s.a-tw/2, s.b+tw/2)
+		}
+		best, found := mid, false
+		for _, x := range cands {
+			x = math.Min(math.Max(x, lo), hi)
+			if free(x) && (!found || math.Abs(x-mid) < math.Abs(best-mid)) {
+				best, found = x, true
+			}
+		}
+		c.tx = best
+		if !found {
+			left, right := c.x+clusterPad/2, c.x+c.w-clusterPad/2
+			first, last := right, left
+			for _, s := range busy {
+				first, last = math.Min(first, s.a), math.Max(last, s.b)
+			}
+			blocked[c.ref] = tw + 2*titleGap
+			if first-left >= right-last {
+				blocked[c.ref] = -blocked[c.ref]
+			}
+		}
+	}
+	return blocked
+}
+
 func sortByDepth(out []dcluster, cs []*cluster) {
 	idx := make([]int, len(cs))
 	for i := range idx {
@@ -252,11 +396,79 @@ func clipFrom(n dnode, from, p point) point {
 	return point{from.x + (p.x-from.x)*lo, from.y + (p.y-from.y)*lo}
 }
 
+// A sideEnd is one end of a back edge at a node: it leaves the node by the
+// side that faces the edge's lane (TB-space right), rather than by the
+// node's top or bottom, where it would crowd the main flow's ends.
+type sideEnd struct {
+	node   int     // lnode
+	lane   int     // the lane's dummy next to the node
+	up     bool    // the lane runs from here to lower ranks
+	corner bool    // nothing stands between the node and the lane in its rank
+	off    float64 // along the ranks from the node's centre
+	anchor point   // in final space
+}
+
+// sideEnd describes the end of back edge chain ci at lnode v, whose
+// neighbour in the chain is lane; nil where the end is a subgraph's.
+func (e *engine) sideEnd(ci, v, lane int, atNode bool) *sideEnd {
+	nd := e.nodes[v]
+	if !atNode || nd.kind != kReal || e.nodes[lane].back == 0 {
+		return nil
+	}
+	se := &sideEnd{node: v, lane: lane, up: e.nodes[lane].rank < nd.rank}
+	_, or, _ := e.extents(e.finalW[nd.ref], e.finalH[nd.ref])
+	lx := e.nodes[lane].x
+	se.corner = lx > nd.x+or
+	for _, u := range e.layers[nd.rank][nd.pos+1:] {
+		if o := e.nodes[u]; o.x-o.ol < lx && o.kind != kDummy {
+			se.corner = false
+		}
+	}
+	return se
+}
+
+// spreadSides spreads the side ends that share a node along its side, in
+// the order that keeps their lanes from crossing: those whose lanes run
+// to lower ranks first, inner lane nearest the top, then the others,
+// outer lane nearest the top.
+func (e *engine) spreadSides(ends []*sideEnd) {
+	by := map[int][]*sideEnd{}
+	var nodes []int
+	for _, se := range ends {
+		if _, ok := by[se.node]; !ok {
+			nodes = append(nodes, se.node)
+		}
+		by[se.node] = append(by[se.node], se)
+	}
+	for _, v := range nodes {
+		g := by[v]
+		if len(g) < 2 {
+			continue
+		}
+		sort.SliceStable(g, func(a, b int) bool {
+			if g[a].up != g[b].up {
+				return g[a].up
+			}
+			la, lb := e.nodes[g[a].lane].x, e.nodes[g[b].lane].x
+			if g[a].up {
+				return la < lb
+			}
+			return la > lb
+		})
+		nd := e.nodes[v]
+		_, _, rh := e.extents(e.finalW[nd.ref], e.finalH[nd.ref])
+		step := math.Min(12, rh*0.6/float64(len(g)-1))
+		for j, se := range g {
+			se.off = (float64(j) - float64(len(g)-1)/2) * step
+		}
+	}
+}
+
 // ports picks, for each edge's two ends, the point inside its node that the
 // end is aimed from. Ends meeting a node on the same side of it (before or
 // after it along the ranks) are spread across that side, in the order of
 // where they come from; a lone end is aimed from the centre.
-func (e *engine) ports(d *drawing, n int, edge func(int) (Edge, []point)) [][2]point {
+func (e *engine) ports(d *drawing, n int, edge func(int) (Edge, []point, [2]bool)) [][2]point {
 	out := make([][2]point, n)
 	type end struct {
 		edge, which int
@@ -265,9 +477,9 @@ func (e *engine) ports(d *drawing, n int, edge func(int) (Edge, []point)) [][2]p
 	groups := map[[2]int][]end{}
 	var keys [][2]int
 	for i := 0; i < n; i++ {
-		ed, pts := edge(i)
+		ed, pts, fixed := edge(i)
 		for which, nodeEnd := range []End{ed.From, ed.To} {
-			if nodeEnd.Node < 0 {
+			if nodeEnd.Node < 0 || fixed[which] {
 				continue
 			}
 			nd := d.nodes[nodeEnd.Node]

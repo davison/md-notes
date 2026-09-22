@@ -1,9 +1,11 @@
 package diagram
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 )
 
@@ -23,7 +25,15 @@ import (
 //     the ranks is a variable in a system of separation constraints, solved
 //     for a packed start and then relaxed towards straight edges without
 //     ever leaving the feasible region — so no two boxes can overlap,
-//     whatever the input.
+//     whatever the input. The longest chains are then put on one line
+//     where the constraints allow, and the rest relaxed around them.
+//
+// A back edge — one reversed to break a cycle — has its dummies ordered
+// after everything else at their level, so it runs in a lane outside the
+// nodes, and pulls only lightly on the nodes at its ends (#188). Once the
+// edges are drawn, each subgraph title is placed where no edge crosses it;
+// a title with no such place has room reserved for it beside the
+// subgraph's contents and the position pass is run again.
 //
 // All of it runs in "TB space", ranks down the page, and is turned into
 // the diagram's own direction at the end.
@@ -31,6 +41,8 @@ import (
 const (
 	nodeSep     = 24.0 // between two nodes in a rank
 	dummySep    = 12.0 // between an edge's dummy and anything else
+	backSep     = 24.0 // between a back edge's lane and a node
+	backWeight  = 0.25 // how hard a back edge pulls on the node at its end
 	clusterSep  = 16.0 // between a subgraph's border and its neighbour
 	clusterPad  = 12.0 // between a subgraph's border and its contents
 	rankGap     = 26.0 // half the gap between the ranks of two linked nodes
@@ -38,6 +50,7 @@ const (
 	loopReach   = 22.0 // how far a self-loop stands off its node
 	loopStep    = 12.0 // and each further one
 	relaxRounds = 40
+	titlePasses = 2 // extra position passes to make room for blocked titles
 	orderRounds = 24
 )
 
@@ -60,6 +73,7 @@ type lnode struct {
 	pos     int
 	x, y    float64
 	cluster int // innermost cluster, or -1
+	back    int // for a back edge's dummy, how many ranks the edge spans; 0 otherwise
 	up      []int
 	down    []int
 	upW     []float64
@@ -102,7 +116,8 @@ type engine struct {
 	anchorOf []int   // anchor lnode of each cluster, or -1
 	finalW   []float64
 	finalH   []float64
-	lines    [][]string // wrapped label per model node
+	lines    [][]string      // wrapped label per model node
+	reserve  map[int]float64 // room subgraphs keep for their titles: negative on the left, positive on the right
 }
 
 // check reports the context's error, if it has one, naming the phase of
@@ -142,7 +157,29 @@ func layout(ctx context.Context, f *Flowchart, lim Limits) (*drawing, error) {
 		return nil, err
 	}
 	e.positionY()
-	return e.draw(), nil
+	d := e.draw()
+	blocked := placeTitles(d)
+	// A title that every place in its band has an edge through gets room
+	// of its own beside the subgraph's contents, and the diagram is
+	// positioned again. Making room moves the edges too, and can block
+	// another title, so this is repeated, a bounded number of times.
+	for pass := 0; pass < titlePasses && len(blocked) > 0 && !e.dir.horizontal(); pass++ {
+		if e.reserve == nil {
+			e.reserve = map[int]float64{}
+		}
+		for c, r := range blocked {
+			if e.reserve[c] == 0 {
+				e.reserve[c] = r
+			}
+		}
+		if err := e.positionX(); err != nil {
+			return nil, err
+		}
+		e.positionY()
+		d = e.draw()
+		blocked = placeTitles(d)
+	}
+	return d, nil
 }
 
 // extents turns a final-space width and height into the TB-space extent
@@ -515,6 +552,9 @@ func (e *engine) normalise() error {
 		nodes := []int{u}
 		for r := ru + 1; r < rv; r++ {
 			d := &lnode{kind: kDummy, ref: c.edge, rank: r, cluster: cl}
+			if c.reversed {
+				d.back = rv - ru
+			}
 			if r == labelRank {
 				d.kind = kLabel
 				w, h := textBox(ed.Label)
@@ -535,6 +575,10 @@ func (e *engine) normalise() error {
 			switch {
 			case a.kind != kReal && b.kind != kReal:
 				w = 8
+			case c.reversed:
+				// A back edge runs in its own lane beside the nodes and
+				// should not pull a node of the main flow off its line.
+				w = backWeight
 			case a.kind != kReal || b.kind != kReal:
 				w = 2
 			}
@@ -651,6 +695,9 @@ func (e *engine) order() error {
 				e.arrange(r, sib, e.barycentres(r, false))
 			}
 		}
+		for r := range e.layers {
+			e.transpose(r)
+		}
 		if c := e.crossings(); c < bestCross {
 			best, bestCross, stale = e.snapshot(), c, 0
 		} else if stale++; stale >= 4 {
@@ -660,6 +707,60 @@ func (e *engine) order() error {
 	e.layers = best
 	e.setPositions()
 	return nil
+}
+
+// transpose swaps neighbours in rank r wherever that crosses fewer edges:
+// the barycentre sweeps leave ties that it settles, such as a side input
+// placed on the same side as a back edge's lane. Only two nodes at the
+// same level of the same subgraphs are swapped, so subgraphs stay
+// contiguous, and never a back edge's dummy, whose place arrange fixes.
+func (e *engine) transpose(r int) {
+	l := e.layers[r]
+	pairCross := func(u, v int) int {
+		n := 0
+		for _, side := range [2]bool{false, true} {
+			a, b := e.nodes[u].up, e.nodes[v].up
+			if side {
+				a, b = e.nodes[u].down, e.nodes[v].down
+			}
+			for _, x := range a {
+				for _, y := range b {
+					if e.nodes[x].pos > e.nodes[y].pos {
+						n++
+					}
+				}
+			}
+		}
+		return n
+	}
+	same := func(a, b []int) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				return false
+			}
+		}
+		return true
+	}
+	for pass := 0; pass < 4; pass++ {
+		swapped := false
+		for i := 0; i+1 < len(l); i++ {
+			u, v := l[i], l[i+1]
+			if e.nodes[u].back > 0 || e.nodes[v].back > 0 || !same(e.path[u], e.path[v]) {
+				continue
+			}
+			if pairCross(v, u) < pairCross(u, v) {
+				l[i], l[i+1] = v, u
+				e.nodes[u].pos, e.nodes[v].pos = i+1, i
+				swapped = true
+			}
+		}
+		if !swapped {
+			return
+		}
+	}
 }
 
 func (e *engine) snapshot() [][]int {
@@ -708,6 +809,11 @@ func (e *engine) barycentres(r int, down bool) map[int]float64 {
 		s := 0.0
 		for _, u := range nb {
 			s += float64(e.nodes[u].pos)
+			if e.nodes[u].back > 0 && e.nodes[v].back == 0 {
+				// A back edge's lane is outside the rank, so the node
+				// at its end is drawn towards that side.
+				s += float64(len(e.layers[other]))
+			}
 		}
 		k[v] = s / float64(len(nb))
 	}
@@ -748,7 +854,16 @@ func (e *engine) siblingOrder() []int {
 
 // arrange sorts rank r by key, keeping each subgraph's contents together
 // and sibling subgraphs in their shared order.
+//
+// A back edge's dummies go after everything else at their level, the
+// shorter edges' first, so that back edges run in lanes outside the nodes
+// and nested ones do not cross.
 func (e *engine) arrange(r int, sib []int, key map[int]float64) {
+	for _, v := range e.layers[r] {
+		if nd := e.nodes[v]; nd.back > 0 {
+			key[v] = 1e9 + float64(nd.back)*1e4 + float64(nd.ref)
+		}
+	}
 	var build func(depth int, items []int) []int
 	build = func(depth int, items []int) []int {
 		var plain []int
@@ -844,6 +959,11 @@ type constraint struct {
 // the drawn diagram.
 func (e *engine) padding(c int) (left, right, top, bottom float64) {
 	left, right, top, bottom = clusterPad, clusterPad, clusterPad, clusterPad
+	if r := e.reserve[c]; r < 0 {
+		left -= r
+	} else {
+		right += r
+	}
 	t := e.clusters[c].titleH
 	switch e.dir {
 	case TopBottom:
@@ -857,8 +977,12 @@ func (e *engine) padding(c int) (left, right, top, bottom float64) {
 }
 
 func (e *engine) sep(a, b int) float64 {
-	if e.nodes[a].kind == kReal && e.nodes[b].kind == kReal {
+	na, nb := e.nodes[a], e.nodes[b]
+	switch {
+	case na.kind == kReal && nb.kind == kReal:
 		return nodeSep
+	case na.kind == kReal && nb.back > 0, nb.kind == kReal && na.back > 0:
+		return backSep
 	}
 	return dummySep
 }
@@ -995,14 +1119,9 @@ func (e *engine) positionX() error {
 			}
 		}
 	}
-	type pair struct{ x, w float64 }
-	for round := 0; round < relaxRounds; round++ {
-		if err := e.check("position"); err != nil {
-			return err
-		}
-		// Loosen every subgraph border as far as its neighbours allow, so
-		// its contents can move, then move each node towards the weighted
-		// median of its neighbours, then pull the borders back in.
+	// loosen moves every subgraph border as far out as its neighbours
+	// allow, so that its contents can move; hug pulls them back in.
+	loosen := func() {
 		for _, v := range topo {
 			if isL(v) {
 				x[v] = lo(v)
@@ -1013,78 +1132,185 @@ func (e *engine) positionX() error {
 				x[v] = hi(v)
 			}
 		}
-		centre := make([]float64, len(e.clusters))
-		count := make([]float64, len(e.clusters))
-		for v, nd := range e.nodes {
-			if nd.kind != kPlaceholder {
-				for _, c := range e.path[v] {
-					centre[c] += x[v]
-					count[c]++
+	}
+	type pair struct{ x, w float64 }
+	var buf []pair
+	// relax moves each node that is not pinned towards the weighted
+	// median of its neighbours, round after round, never leaving the
+	// feasible region.
+	relax := func(pinned []bool) error {
+		for round := 0; round < relaxRounds; round++ {
+			if err := e.check("position"); err != nil {
+				return err
+			}
+			loosen()
+			centre := make([]float64, len(e.clusters))
+			count := make([]float64, len(e.clusters))
+			for v, nd := range e.nodes {
+				if nd.kind != kPlaceholder {
+					for _, c := range e.path[v] {
+						centre[c] += x[v]
+						count[c]++
+					}
 				}
 			}
-		}
-		moved := 0.0
-		for pass := 0; pass < 2; pass++ {
-			for li := range e.layers {
-				r := li
-				if pass == 1 {
-					r = len(e.layers) - 1 - li
-				}
-				l := e.layers[r]
-				for dirn := 0; dirn < 2; dirn++ {
-					for k := range l {
-						v := l[k]
-						if dirn == 1 {
-							v = l[len(l)-1-k]
-						}
-						nd := e.nodes[v]
-						var want float64
-						if nd.kind == kPlaceholder {
-							if count[nd.ref] == 0 {
+			moved := 0.0
+			for pass := 0; pass < 2; pass++ {
+				for li := range e.layers {
+					r := li
+					if pass == 1 {
+						r = len(e.layers) - 1 - li
+					}
+					l := e.layers[r]
+					for dirn := 0; dirn < 2; dirn++ {
+						for k := range l {
+							v := l[k]
+							if dirn == 1 {
+								v = l[len(l)-1-k]
+							}
+							if pinned != nil && pinned[v] {
 								continue
 							}
-							want = centre[nd.ref] / count[nd.ref]
-						} else {
-							var ps []pair
-							for i, u := range nd.up {
-								ps = append(ps, pair{x[u], nd.upW[i]})
-							}
-							for i, u := range nd.down {
-								ps = append(ps, pair{x[u], nd.downW[i]})
-							}
-							if len(ps) == 0 {
-								continue
-							}
-							sort.Slice(ps, func(a, b int) bool { return ps[a].x < ps[b].x })
-							total := 0.0
-							for _, p := range ps {
-								total += p.w
-							}
-							acc := 0.0
-							for i, p := range ps {
-								acc += p.w
-								if acc*2 >= total {
-									want = p.x
-									if acc*2 == total && i+1 < len(ps) {
-										want = (p.x + ps[i+1].x) / 2
+							nd := e.nodes[v]
+							var want float64
+							if nd.kind == kPlaceholder {
+								if count[nd.ref] == 0 {
+									continue
+								}
+								want = centre[nd.ref] / count[nd.ref]
+							} else if nd.back > 0 {
+								// A lane runs straight, as far out as its
+								// widest rank needs, and clear of the nodes
+								// at its ends.
+								want = x[v]
+								for _, nb := range [2][]int{nd.up, nd.down} {
+									for _, u := range nb {
+										w := x[u]
+										if e.nodes[u].kind == kReal {
+											w += e.nodes[u].or + backSep + nd.ol
+										}
+										want = math.Max(want, w)
 									}
-									break
+								}
+							} else {
+								ps := buf[:0]
+								for i, u := range nd.up {
+									ps = append(ps, pair{x[u], nd.upW[i]})
+								}
+								for i, u := range nd.down {
+									ps = append(ps, pair{x[u], nd.downW[i]})
+								}
+								if len(ps) == 0 {
+									continue
+								}
+								slices.SortFunc(ps, func(a, b pair) int { return cmp.Compare(a.x, b.x) })
+								buf = ps
+								total := 0.0
+								for _, p := range ps {
+									total += p.w
+								}
+								acc := 0.0
+								for i, p := range ps {
+									acc += p.w
+									if acc*2 >= total {
+										want = p.x
+										if acc*2 == total && i+1 < len(ps) {
+											want = (p.x + ps[i+1].x) / 2
+										}
+										break
+									}
 								}
 							}
-						}
-						nx := math.Min(math.Max(want, lo(v)), hi(v))
-						if !math.IsNaN(nx) && !math.IsInf(nx, 0) {
-							moved += math.Abs(nx - x[v])
-							x[v] = nx
+							nx := math.Min(math.Max(want, lo(v)), hi(v))
+							if !math.IsNaN(nx) && !math.IsInf(nx, 0) {
+								moved += math.Abs(nx - x[v])
+								x[v] = nx
+							}
 						}
 					}
 				}
 			}
+			hug()
+			if moved < 0.5 {
+				break
+			}
 		}
-		hug()
-		if moved < 0.5 {
+		return nil
+	}
+	if err := relax(nil); err != nil {
+		return err
+	}
+	// Straighten the main chains: the longest path of forward edges is
+	// put on one line wherever the constraints allow it, then the next
+	// longest among the nodes left, and everything else relaxes around
+	// them.
+	pinned := make([]bool, vars)
+	for {
+		if err := e.check("position"); err != nil {
+			return err
+		}
+		path := e.longestChain(pinned)
+		if path == nil {
 			break
 		}
+		// Back edges' lanes are moved out of the way along with the
+		// subgraph borders, and brought back in afterwards.
+		loosen()
+		prev := map[int]float64{}
+		for k := len(topo) - 1; k >= 0; k-- {
+			if v := topo[k]; v < n && e.nodes[v].back > 0 {
+				prev[v] = x[v]
+				x[v] = hi(v)
+			}
+		}
+		straighten := func(run []int) {
+			reals := 0
+			var xs []float64
+			l, h := math.Inf(-1), math.Inf(1)
+			for _, v := range run {
+				if e.nodes[v].kind == kReal {
+					reals++
+				}
+				xs = append(xs, x[v])
+				l, h = math.Max(l, lo(v)), math.Min(h, hi(v))
+			}
+			if reals < 2 || l > h {
+				return
+			}
+			sort.Float64s(xs)
+			at := math.Min(math.Max(xs[len(xs)/2], l), h)
+			for _, v := range run {
+				x[v] = at
+			}
+		}
+		// Runs of the path whose bounds all overlap are straightened
+		// separately; each member sits in its own rank, so moving one
+		// does not change another's bounds.
+		start := 0
+		l, h := math.Inf(-1), math.Inf(1)
+		for i, v := range path {
+			pinned[v] = true
+			nl, nh := math.Max(l, lo(v)), math.Min(h, hi(v))
+			if nl > nh {
+				straighten(path[start:i])
+				start, nl, nh = i, lo(v), hi(v)
+			}
+			l, h = nl, nh
+		}
+		straighten(path[start:])
+		for _, v := range topo {
+			if old, ok := prev[v]; ok {
+				if l := lo(v); !math.IsInf(l, -1) {
+					x[v] = l
+				} else {
+					x[v] = math.Min(old, hi(v))
+				}
+			}
+		}
+		hug()
+	}
+	if err := relax(pinned); err != nil {
+		return err
 	}
 	hug()
 	for v, nd := range e.nodes {
@@ -1094,6 +1320,80 @@ func (e *engine) positionX() error {
 		cl.x0, cl.x1 = x[cl.lVar], x[cl.rVar]
 	}
 	return nil
+}
+
+// longestChain is the longest path of forward edges between real nodes
+// that are not pinned, counted in real nodes, with the dummies of its edges
+// in rank order; nil if it has fewer than three real nodes. A fan is not a
+// chain: the path takes no edge out of a node with more than two forward
+// edges out, or into one with more than two in, so that a node's many
+// branches stay balanced around it rather than one of them being lined up.
+func (e *engine) longestChain(pinned []bool) []int {
+	outs := map[int]int{}
+	ins := map[int]int{}
+	for _, c := range e.chains {
+		if !c.reversed {
+			outs[c.nodes[0]]++
+			ins[c.nodes[len(c.nodes)-1]]++
+		}
+	}
+	var reals []int
+	for v, nd := range e.nodes {
+		if nd.kind == kReal && !pinned[v] {
+			reals = append(reals, v)
+		}
+	}
+	sort.SliceStable(reals, func(a, b int) bool { return e.nodes[reals[a]].rank < e.nodes[reals[b]].rank })
+	into := map[int][]int{} // chains into each real node
+	for ci, c := range e.chains {
+		if c.reversed {
+			continue
+		}
+		free := outs[c.nodes[0]] <= 2 && ins[c.nodes[len(c.nodes)-1]] <= 2
+		for _, v := range c.nodes {
+			if pinned[v] || (e.nodes[v].kind != kReal && e.nodes[v].kind != kDummy && e.nodes[v].kind != kLabel) {
+				free = false
+			}
+		}
+		if free {
+			h := c.nodes[len(c.nodes)-1]
+			into[h] = append(into[h], ci)
+		}
+	}
+	best := map[int]int{}
+	via := map[int]int{}
+	end := -1
+	for _, v := range reals {
+		best[v], via[v] = 1, -1
+		for _, ci := range into[v] {
+			if b := best[e.chains[ci].nodes[0]] + 1; b > best[v] {
+				best[v], via[v] = b, ci
+			}
+		}
+		if end < 0 || best[v] > best[end] {
+			end = v
+		}
+	}
+	if end < 0 || best[end] < 3 {
+		return nil
+	}
+	var path []int
+	for v := end; ; {
+		path = append(path, v)
+		ci := via[v]
+		if ci < 0 {
+			break
+		}
+		ns := e.chains[ci].nodes
+		for k := len(ns) - 2; k >= 1; k-- {
+			path = append(path, ns[k])
+		}
+		v = ns[0]
+	}
+	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
+		path[i], path[j] = path[j], path[i]
+	}
+	return path
 }
 
 // positionY places the ranks down the page, leaving room at each rank
@@ -1112,6 +1412,7 @@ func (e *engine) positionY() {
 		extra[cl.last+1] += bottom + clusterSep/2
 	}
 	top := make([]float64, R)
+	grow := make([]float64, len(e.clusters))
 	place := func() {
 		y := 0.0
 		for r := 0; r < R; r++ {
@@ -1139,7 +1440,7 @@ func (e *engine) positionY() {
 				y1 = math.Max(y1, e.clusters[k].y1)
 			}
 			_, _, pt, pb := e.padding(c)
-			cl.y0, cl.y1 = y0-pt, y1+pb
+			cl.y0, cl.y1 = y0-pt-grow[c]/2, y1+pb+grow[c]/2
 		}
 	}
 	place()
@@ -1150,9 +1451,12 @@ func (e *engine) positionY() {
 	// down the ranks: widen the gaps around one too narrow for its title.
 	for pass := 0; pass < 3; pass++ {
 		grew := false
-		for _, cl := range e.clusters {
+		for c, cl := range e.clusters {
 			need := cl.titleW + 2*clusterPad
 			if have := cl.y1 - cl.y0; have < need {
+				// The box itself grows, into room made for it at either
+				// end of its ranks.
+				grow[c] += need - have
 				extra[cl.first] += (need - have) / 2
 				extra[cl.last+1] += (need - have) / 2
 				grew = true
