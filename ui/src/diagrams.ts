@@ -48,6 +48,8 @@ export function boxOf(img: HTMLImageElement): HTMLElement | null {
   return box?.classList.contains(BOX_CLASS) ? box : null;
 }
 
+let imageIds = 0;
+
 /** Makes the box and the button once, around an image that has neither. */
 function frame(img: HTMLImageElement): HTMLElement {
   const existing = boxOf(img);
@@ -58,7 +60,16 @@ function frame(img: HTMLImageElement): HTMLElement {
   open.type = "button";
   open.className = OPEN_CLASS;
   open.title = "Open at natural size";
+  // The action is the button's name; the diagram's source, which is the
+  // image's alt and may be hundreds of characters, is its description
+  // (review of PR #202, nit 3). A button's content is not part of its name
+  // once it has a label, so the image is pointed at by id. The id has a
+  // colon, which no id in a note's own markup can have outside a footnote's
+  // `fn:N` (internal/render's idPattern), so a heading's link never finds it.
+  open.setAttribute("aria-label", "Open diagram at natural size");
   open.setAttribute("aria-haspopup", "dialog");
+  img.id ||= `diagram:${++imageIds}`;
+  open.setAttribute("aria-describedby", img.id);
   open.append(img);
   box.append(open);
   return box;
@@ -126,6 +137,58 @@ export class DiagramPool extends Map<string, HTMLImageElement> {
 }
 
 /**
+ * The pool's key for each listed diagram, in order: its source's hash and
+ * which occurrence of that source it is, so two identical diagrams in one
+ * note are told apart.
+ */
+export function diagramKeys(diagrams: readonly DiagramRef[]): string[] {
+  const occurrences = new Map<string, number>();
+  return diagrams.map((d) => {
+    const n = occurrences.get(d.hash) ?? 0;
+    occurrences.set(d.hash, n + 1);
+    return `${d.hash}#${n}`;
+  });
+}
+
+/**
+ * Which diagram a natural-size view is showing: the pool key it was opened
+ * on, where that diagram stood in the note's list, and how long the list was.
+ */
+export interface ViewedDiagram {
+  key: string;
+  index: number;
+  count: number;
+}
+
+/**
+ * The image a natural-size view should show now, after whatever has changed
+ * since it opened, or null when the diagram it was showing is gone.
+ *
+ * The same diagram, unchanged, is the same key, and its image may have a
+ * new `src` for a new palette. A diagram edited in place has a new key.
+ * When the note still lists the same number of diagrams, the one at the same
+ * position is taken to be the edited one, and the view follows it. Otherwise,
+ * or when that image is not standing (removed, refused, failed to load), the
+ * diagram is gone.
+ */
+export function followViewed(
+  pool: DiagramPool,
+  diagrams: readonly DiagramRef[],
+  viewed: ViewedDiagram,
+): { image: HTMLImageElement; viewed: ViewedDiagram } | null {
+  const standing = (key: string | undefined) => {
+    const img = key === undefined ? undefined : pool.get(key);
+    return img && img.isConnected && boxOf(img) ? img : null;
+  };
+  const keys = diagramKeys(diagrams);
+  const same = standing(viewed.key);
+  if (same) return { image: same, viewed: { key: viewed.key, index: keys.indexOf(viewed.key), count: keys.length } };
+  if (keys.length !== viewed.count) return null;
+  const moved = standing(keys[viewed.index]);
+  return moved ? { image: moved, viewed: { ...viewed, key: keys[viewed.index] } } : null;
+}
+
+/**
  * Puts each listed diagram's image in front of its code block inside
  * `scope`, which holds the note's rendered HTML.
  *
@@ -151,12 +214,10 @@ export function decorate(
     const line = Number(a.getAttribute("data-line"));
     if (!anchors.has(line)) anchors.set(line, a);
   }
-  const occurrences = new Map<string, number>();
+  const keys = diagramKeys(diagrams);
   const placed = new Set<string>();
-  for (const d of diagrams) {
-    const n = occurrences.get(d.hash) ?? 0;
-    occurrences.set(d.hash, n + 1);
-    const key = `${d.hash}#${n}`;
+  for (const [i, d] of diagrams.entries()) {
+    const key = keys[i];
     const anchor = anchors.get(d.line);
     const pre = anchor?.nextElementSibling;
     // The image's box may already stand between them, from an earlier call

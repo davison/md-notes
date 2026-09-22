@@ -12,24 +12,24 @@ import { useEffect, useRef } from "preact/hooks";
  * image do. Escape is answered on the window in the capture phase and
  * stopped there, as the dialog does (./dialog.tsx), so the drawer and the
  * note pane's own Escape listeners do not also act on it. Focus moves to the
- * close button on open, cycles between the button and the scrolling area,
- * which can be scrolled with the arrow keys, and goes back to the diagram
- * that opened it on close. That is `opener`, not whatever had focus, because
- * a click does not focus a button in every browser.
+ * close button on open and cycles between the button and the scrolling
+ * area, which can be scrolled with the arrow keys.
+ *
+ * What it shows is the caller's to keep current: the note view hands it the
+ * diagram as it is now, after a palette change or a live update, and puts
+ * focus back when it closes (see `followViewed` in ./diagrams).
  */
 export function DiagramViewer({
   src,
   alt,
   width,
   height,
-  opener,
   onClose,
 }: {
   src: string;
   alt: string;
   width?: string;
   height?: string;
-  opener: HTMLElement | null;
   onClose: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -47,10 +47,7 @@ export function DiagramViewer({
 
   useEffect(() => {
     box.current?.querySelector<HTMLElement>(".diagram-viewer-close")?.focus();
-    return () => {
-      if (opener?.isConnected) opener.focus();
-    };
-  }, [opener]);
+  }, []);
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Tab") return;

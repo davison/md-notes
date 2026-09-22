@@ -8,7 +8,9 @@ import {
   SOURCE_HIDDEN_CLASS,
   WIDTH_PROPERTY,
   decorate,
+  diagramKeys,
   diagramTheme,
+  followViewed,
   holdInView,
 } from "./diagrams";
 
@@ -56,6 +58,10 @@ describe("decorate", () => {
     expect(button.tagName).toBe("BUTTON");
     expect(button.className).toBe(OPEN_CLASS);
     expect(button.getAttribute("type")).toBe("button");
+    // The action is its name, and the source its description (review of PR #202, nit 3).
+    expect(button.getAttribute("aria-label")).toBe("Open diagram at natural size");
+    expect(button.getAttribute("aria-describedby")).toBe(img.id);
+    expect(img.id).toMatch(/^diagram:\d+$/);
     expect(box.className).toBe(BOX_CLASS);
     expect(box.previousElementSibling!.getAttribute("data-line")).toBe("7");
     expect(box.nextElementSibling!.tagName).toBe("PRE");
@@ -258,6 +264,47 @@ describe("decorate", () => {
     const before = scope.innerHTML;
     decorate(scope, [{ line: 3, hash: "h" }], url("light"), pool);
     expect(scope.innerHTML).toBe(before);
+  });
+});
+
+describe("followViewed", () => {
+  const list = (...hashes: string[]) => hashes.map((hash, i) => ({ line: 3 + 5 * i, hash }));
+  const html = (n: number) => Array.from({ length: n }, (_, i) => block(3 + 5 * i, `s${i}`)).join("");
+
+  it("keeps to the same diagram, with its current image, and its new place in the list", () => {
+    const scope = note(html(2));
+    const pool = new DiagramPool();
+    decorate(scope, list("a", "b"), url("light"), pool);
+    const viewed = { key: "b#0", index: 1, count: 2 };
+    decorate(scope, list("a", "b"), url("dark"), pool);
+    const now = followViewed(pool, list("a", "b"), viewed)!;
+    expect(now.image.getAttribute("src")).toContain("h=b&theme=dark");
+    scope.innerHTML = html(3);
+    decorate(scope, list("new", "a", "b"), url("dark"), pool);
+    expect(followViewed(pool, list("new", "a", "b"), viewed)!.viewed).toEqual({ key: "b#0", index: 2, count: 3 });
+  });
+
+  it("follows a diagram edited in place to its new drawing", () => {
+    const scope = note(html(2));
+    const pool = new DiagramPool();
+    decorate(scope, list("a", "b"), url("light"), pool);
+    // A live update: the note's HTML again, with the second block's source changed.
+    scope.innerHTML = html(2);
+    decorate(scope, list("a", "b2"), url("light"), pool);
+    const now = followViewed(pool, list("a", "b2"), { key: "b#0", index: 1, count: 2 })!;
+    expect(now.viewed.key).toBe("b2#0");
+    expect(now.image.getAttribute("src")).toContain("h=b2");
+  });
+
+  it("finds nothing when the diagram is gone, or has failed", () => {
+    const scope = note(html(2));
+    const pool = new DiagramPool();
+    decorate(scope, list("a", "b"), url("light"), pool);
+    decorate(scope, list("a"), url("light"), pool);
+    expect(followViewed(pool, list("a"), { key: "b#0", index: 1, count: 2 })).toBeNull();
+    pool.get("a#0")!.dispatchEvent(new Event("error"));
+    expect(followViewed(pool, list("a", "b"), { key: "a#0", index: 0, count: 2 })).toBeNull();
+    expect(diagramKeys(list("s", "t", "s"))).toEqual(["s#0", "t#0", "s#1"]);
   });
 });
 
