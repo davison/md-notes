@@ -14,7 +14,7 @@ DIST ?= dist
 # it reports, so it builds on a host that can run one of its own targets.
 HOST_ARCH = $(shell go env GOHOSTARCH)
 
-.PHONY: all build man ui ui-deps extension extension-dist extension-deps test vet check e2e vuln release install clean distclean
+.PHONY: all build man ui ui-deps extension extension-dist extension-deps extension-screenshots test vet check e2e vuln release install clean distclean
 
 # A system-wide install is the default, so that `make install` and the .deb
 # put the binary in the same place and contrib/mdn.service points at one path
@@ -95,6 +95,18 @@ check: vet test build extension
 # `node --test e2e/` is a module path to Node 24, not a directory to walk.
 e2e: build
 	pnpm --dir ui e2e
+
+## extension-screenshots: regenerate docs/images/extension/ from the built extension
+# Needs Playwright's Chromium, as `e2e` does, and port 7337 free: the daemon's
+# default address is in the pictures. With your own daemon on 7337, run it in
+# a network namespace of its own rather than stopping that daemon:
+#
+#     unshare --user --map-root-user --net -- \
+#       sh -c 'ip link set lo up; make extension-screenshots'
+#
+# The header of extension/scripts/screenshots.mjs says what else it refuses.
+extension-screenshots: build extension
+	node extension/scripts/screenshots.mjs
 
 ## vuln: scan the Go module graph and both lockfiles for published vulnerabilities
 # Not part of `check`, and deliberately: govulncheck downloads the

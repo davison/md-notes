@@ -160,6 +160,21 @@ browser download, it skips and names what is missing (`no mdn binary at …`)
 — worth knowing, because a suite that skips still exits 0 and reads like a
 pass. Under CI it fails instead, as `make e2e` does.
 
+The extension's screenshots in `docs/images/extension/` are generated, not
+hand-taken: `make extension-screenshots` drives the built extension through
+the same rig as that suite and writes four captioned 1280×800 frames. It
+needs port 7337 free, since the daemon's default address is in the pictures;
+with your own daemon there, run it in a network namespace instead of
+stopping yours:
+
+```
+unshare --user --map-root-user --net -- \
+  sh -c 'ip link set lo up; make extension-screenshots'
+```
+
+Rerun it when the popup, the options page or the app's layout changes, and
+look at what moved before committing the result.
+
 ## Running it while you work
 
 The daemon takes its configuration from `~/.config/mdn/config.yml`, and the
