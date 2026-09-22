@@ -464,6 +464,12 @@ code {
   margin-bottom: 0;
 }
 
+/* A note deleted on disk under a clean session (#30): the banner's shape,
+   without the colour of a conflict, since nothing is in dispute. */
+.conflict.gone-notice {
+  background: color-mix(in srgb, var(--accent) 7%, var(--pane));
+}
+
 /*
  * The create control, in the top bar beside the home link, so that it is on
  * screen whatever the navigator is scrolled to and whichever layout is on

@@ -17,8 +17,13 @@ import { fetchSource, saveSource, SourceError, type Source } from "./api";
  *   failed   the last save was refused; the draft is kept and can be retried
  *   conflict the file changed or vanished under a draft; the draft is kept
  *            until the conflict is resolved one way or the other
+ *   gone     the file was deleted on disk under a clean session: there were
+ *            no unsaved edits, so this is no conflict, but the note's last
+ *            text is kept on screen, and the file coming back is taken as
+ *            any clean session takes a change. Typing into it makes a draft
+ *            of a note that does not exist, which is the deleted conflict
  */
-export type Status = "loading" | "error" | "clean" | "pending" | "saving" | "failed" | "conflict";
+export type Status = "loading" | "error" | "clean" | "pending" | "saving" | "failed" | "conflict" | "gone";
 
 export interface Conflict {
   kind: "changed" | "deleted";
@@ -168,6 +173,12 @@ export class Session {
       this.set({ draft });
       return;
     }
+    if (s.status === "gone") {
+      // The reader has started a draft of a note that no longer exists:
+      // from here on it is theirs, and protected as any orphaned draft is.
+      this.set({ draft, status: "conflict", conflict: { kind: "deleted", current: null }, error: null });
+      return;
+    }
     if (s.status === "saving") {
       this.set({ draft });
       return;
@@ -216,7 +227,9 @@ export class Session {
   private save(keepalive = false): Promise<void> {
     if (this.inflight) return this.inflight;
     const s = this.state;
-    if (!s.base || s.status === "conflict" || s.status === "error" || s.status === "loading") return Promise.resolve();
+    if (!s.base || s.status === "conflict" || s.status === "gone" || s.status === "error" || s.status === "loading") {
+      return Promise.resolve();
+    }
     if (s.draft === s.base.source) {
       this.set({ status: "clean", error: null });
       return Promise.resolve();
@@ -312,6 +325,20 @@ export class Session {
       }
       return;
     }
+    if (s.status === "gone") {
+      // The file is back. Whatever it holds, and even under the revision it
+      // had before, a clean session takes it; the editor is rebuilt only
+      // when the text differs from what it is showing.
+      const changed = s.draft !== fetched.source;
+      this.set({
+        base: fetched,
+        draft: fetched.source,
+        status: "clean",
+        error: null,
+        generation: changed ? s.generation + 1 : s.generation,
+      });
+      return;
+    }
     if (s.status === "conflict") {
       if (s.conflict?.current && s.conflict.current.revision === fetched.revision) return;
       this.set({ conflict: { kind: "changed", current: fetched } });
@@ -362,6 +389,10 @@ export class Session {
         });
       } else if (!s.base) {
         this.set({ status: "error", error: { code: err.code, message: err.message } });
+      } else if ((s.status === "clean" || s.status === "gone") && s.draft === s.base.source) {
+        // Nothing was typed: the deleted-under-unsaved-edits conflict would
+        // be untrue, and there is nothing of the reader's for it to protect.
+        if (s.status !== "gone") this.set({ status: "gone", error: null });
       } else {
         this.cancel();
         this.set({ status: "conflict", conflict: { kind: "deleted", current: null }, error: null });
@@ -428,16 +459,19 @@ export class Session {
    * own draft: the conflict the deleted-on-disk banner was raised over is
    * over, and the session stands on the new revision with the same text.
    *
-   * Only a *deleted* conflict is adopted, and only when the draft is
-   * exactly what was written. An ordinary new note created at a path some
-   * tab still holds a draft for writes something else, and that draft is
-   * the thing the banner exists to protect: that case is left to the
-   * recheck the change stream triggers, which turns the banner into the
-   * changed-on-disk one with its three ways out.
+   * Only a *deleted* conflict, or a clean session whose file is gone, is
+   * adopted, and only when the draft is exactly what was written. An
+   * ordinary new note created at a path some tab still holds a draft for
+   * writes something else, and that draft is the thing the banner exists to
+   * protect: that case is left to the recheck the change stream triggers,
+   * which turns the banner into the changed-on-disk one with its three ways
+   * out. A gone session has no draft of its own to protect, and that same
+   * recheck simply takes the new file.
    */
   recreated(file: Source): boolean {
     const s = this.state;
-    if (s.status !== "conflict" || s.conflict?.kind !== "deleted") return false;
+    const orphaned = s.status === "gone" || (s.status === "conflict" && s.conflict?.kind === "deleted");
+    if (!orphaned) return false;
     if (s.draft !== file.source) return false;
     this.set({
       base: file,

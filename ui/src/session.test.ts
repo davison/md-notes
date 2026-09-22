@@ -460,15 +460,6 @@ describe("Session: external changes", () => {
     expect(s.state.draft).toBe("mine\n");
   });
 
-  it("a deleted file under a clean draft keeps the text as a deleted conflict", async () => {
-    const s = await opened();
-    daemon.file = null;
-    await s.changed();
-    expect(s.state.status).toBe("conflict");
-    expect(s.state.conflict?.kind).toBe("deleted");
-    expect(s.state.draft).toBe("one\n");
-  });
-
   it("the same revision changes nothing", async () => {
     const s = await opened();
     s.edit("mine\n");
@@ -689,6 +680,122 @@ describe("Session: stored drafts", () => {
     const s = getSession("n", "a.md");
     await s.open();
     expect(s.state.status).toBe("clean");
+  });
+});
+
+/**
+ * A clean session whose file is deleted on disk (#30). Nothing was typed,
+ * so there are no unsaved edits for a conflict to protect: the session
+ * says the note is gone, keeps its last text on screen, and carries on
+ * when the file comes back. Only the reader typing into it makes a draft
+ * worth protecting, and that is the deleted conflict as before.
+ */
+describe("Session: a clean note deleted on disk", () => {
+  async function deleted(): Promise<Session> {
+    const s = await opened();
+    daemon.file = null;
+    await s.changed();
+    return s;
+  }
+
+  it("is gone, not in conflict, and keeps the text", async () => {
+    const s = await deleted();
+    expect(s.state.status).toBe("gone");
+    expect(s.state.conflict).toBeNull();
+    expect(s.state.draft).toBe("one\n");
+    expect(s.state.base).toEqual({ source: "one\n", revision: "r1" });
+  });
+
+  it("holds nothing unsaved: no mirror, no unload guard, no save", async () => {
+    const s = await deleted();
+    expect(unsavedSessions()).toEqual([]);
+    expect(hasStoredDraft("n", "a.md")).toBe(false);
+    await s.flush();
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY * 2);
+    expect(daemon.puts()).toHaveLength(0);
+  });
+
+  it("stays gone, without a remount, when the file is still missing", async () => {
+    const s = await deleted();
+    const g = s.state.generation;
+    await s.changed();
+    expect(s.state.status).toBe("gone");
+    expect(s.state.generation).toBe(g);
+  });
+
+  it("takes the file when it comes back with other text", async () => {
+    const s = await deleted();
+    const g = s.state.generation;
+    daemon.write("back, different\n");
+    await s.changed();
+    expect(s.state.status).toBe("clean");
+    expect(s.state.conflict).toBeNull();
+    expect(s.state.draft).toBe("back, different\n");
+    expect(s.state.base?.revision).toBe("r2");
+    expect(s.state.generation).toBe(g + 1);
+  });
+
+  it("takes the file when it comes back with the same text, leaving the editor be", async () => {
+    const s = await deleted();
+    const g = s.state.generation;
+    daemon.write("one\n");
+    await s.changed();
+    expect(s.state.status).toBe("clean");
+    expect(s.state.base).toEqual({ source: "one\n", revision: "r2" });
+    expect(s.state.generation).toBe(g);
+  });
+
+  it("takes the file when it comes back under the very revision it had", async () => {
+    // A sync restoring the same bytes can bring the same revision token back;
+    // that is still the file returning, not "nothing changed".
+    const s = await deleted();
+    daemon.file = { source: "one\n", revision: "r1" };
+    await s.changed();
+    expect(s.state.status).toBe("clean");
+  });
+
+  it("becomes the deleted conflict once the reader types", async () => {
+    const s = await deleted();
+    s.edit("one\nmine\n");
+    expect(s.state.status).toBe("conflict");
+    expect(s.state.conflict).toEqual({ kind: "deleted", current: null });
+    expect(s.state.draft).toBe("one\nmine\n");
+    expect(unsavedSessions()).toEqual([s]);
+    expect(hasStoredDraft("n", "a.md")).toBe(true);
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY * 2);
+    expect(daemon.puts()).toHaveLength(0);
+  });
+
+  it("is recreated in place from its own text", async () => {
+    const s = await deleted();
+    const g = s.state.generation;
+    expect(noteRecreated("n", "a.md", { source: "one\n", revision: "r9" })).toBe(true);
+    expect(s.state.status).toBe("clean");
+    expect(s.state.base).toEqual({ source: "one\n", revision: "r9" });
+    expect(s.state.generation).toBe(g + 1);
+  });
+
+  it("is not recreated by a new note that says something else", async () => {
+    const s = await deleted();
+    expect(noteRecreated("n", "a.md", { source: "", revision: "r9" })).toBe(false);
+    expect(s.state.status).toBe("gone");
+    // The change stream then brings the new file in, as any return does.
+    daemon.write("");
+    await s.changed();
+    expect(s.state.status).toBe("clean");
+    expect(s.state.draft).toBe("");
+  });
+
+  it("a dirty draft whose file is deleted is still the deleted conflict", async () => {
+    const s = await opened();
+    s.edit("mine\n");
+    daemon.file = null;
+    await s.changed();
+    expect(s.state.status).toBe("conflict");
+    expect(s.state.conflict).toEqual({ kind: "deleted", current: null });
+    expect(s.state.draft).toBe("mine\n");
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY * 2);
+    expect(daemon.puts()).toHaveLength(0);
   });
 });
 

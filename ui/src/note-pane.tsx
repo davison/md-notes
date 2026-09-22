@@ -217,6 +217,7 @@ export function NotePane({ slug, path, version = 0, line = null, onDeleted, onRe
           onRecreate={onRecreate && (() => onRecreate(path, state.draft))}
         />
       )}
+      {state.status === "gone" && <GoneNotice onRecreate={onRecreate && (() => onRecreate(path, state.draft))} />}
       {mode === "edit" ? (
         <main class="editor-body">
           {state.status === "loading" && <p class="muted pad">Loading…</p>}
@@ -399,7 +400,37 @@ function SaveStatus({ session, state, mode }: { session: Session; state: Session
     }
     case "conflict":
       return <Status tone="error">Conflict: draft kept</Status>;
+    case "gone":
+      return <Status>Deleted on disk</Status>;
   }
+}
+
+/**
+ * Over a note deleted on disk while this tab had nothing unsaved in it
+ * (#30). It used to get the deleted-under-a-draft banner, which told the
+ * reader they had unsaved edits when they had none and stayed up after the
+ * file came back. There is no conflict to resolve, so this is a notice
+ * rather than an alert, with nothing to dismiss: it goes by itself when the
+ * file returns. The note's last text is still in the editor, which may be
+ * the only copy left, so the way to put it back is offered here too.
+ */
+function GoneNotice({ onRecreate }: { onRecreate?: () => void }) {
+  return (
+    <div class="conflict gone-notice" role="status">
+      <p>
+        This note no longer exists on disk. You had no unsaved edits, so nothing of yours is lost. Its last text
+        stays in the editor, and if the file comes back the note carries on from it.
+        {onRecreate ? " Recreate the note writes this text back under the same name." : ""}
+      </p>
+      {onRecreate && (
+        <p class="conflict-actions">
+          <button type="button" class="recreate-note" onClick={onRecreate}>
+            Recreate the note
+          </button>
+        </p>
+      )}
+    </div>
+  );
 }
 
 /**
