@@ -157,8 +157,31 @@ const FLOWS = (() => {
   return { text: lines.join("\n"), at };
 })();
 
-/** The page backgrounds each palette draws, as the canvas reads them back. */
-const BACKGROUND = { light: [251, 251, 250], dark: [27, 27, 27], eink: [255, 255, 255] };
+/**
+ * The backgrounds each palette draws, as the canvas reads them back: the
+ * note pane's own colour in each (davison/md-notes#180, #189).
+ */
+const BACKGROUND = { light: [255, 255, 255], dark: [32, 32, 32], eink: [255, 255, 255] };
+
+/**
+ * Four small diagrams whose code blocks are far taller than their drawings
+ * — 25 lines of source each, most of them comments — and a paragraph
+ * below. Each is measured, so its box is reserved; if its drawing then
+ * fails, the code block that replaces it moves everything below (review of
+ * PR #202, nit 2).
+ */
+const TALL_SOURCE = (() => {
+  const lines = ["# Tall source", ""];
+  for (let d = 1; d <= 4; d++) {
+    lines.push("```mermaid", "flowchart LR");
+    for (let c = 0; c < 22; c++) lines.push(`  %% note ${d}.${c}`);
+    lines.push(`  T${d}A[Tall ${d}] --> T${d}B[Source ${d}]`, "```", "");
+  }
+  lines.push("The needle-word paragraph.", "");
+  const paragraph = lines.length - 1;
+  for (let i = 0; i < 40; i++) lines.push(`Trailing paragraph ${i}.`, "");
+  return { text: lines.join("\n"), paragraph };
+})();
 
 describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
   let fixture, browser;
@@ -173,6 +196,7 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
     write("refused.md", "# Refused\n\n" + fence(layoutRefused()));
     write("live.md", "# Live\n\n" + fence("graph TD; P-->Q\n") + "\n" + fence("graph TD; X-->Y\n"));
     write("flows.md", FLOWS.text);
+    write("tall-source.md", TALL_SOURCE.text);
     MANY.forEach((m, i) => write(`many-${i}.md`, m.text));
     write("unreachable.md", "# Unreachable\n\n" + fence(FLOW));
     browser = await playwright.chromium.launch({ headless: true });
@@ -264,6 +288,55 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
         // and naturalWidth is a whole number, so within a pixel.
         assert.ok(Math.abs(seen.width - seen.natural) < 1, `drawn at ${seen.width}, natural ${seen.natural}`);
         assert.deepEqual(await cornerPixel(page), BACKGROUND[palette]);
+      } finally {
+        await close();
+      }
+    });
+  }
+
+  /**
+   * On screen, the drawing's background is the colour of the pane beside
+   * it, in the note and in the natural-size view: no palette draws a box
+   * round its diagram (davison/md-notes#180). Read from a screenshot, so it
+   * is what a reader sees.
+   */
+  for (const [palette, colorScheme, settings] of [
+    ["light", "light", null],
+    ["dark", "dark", null],
+    ["eink", "dark", { light: true }],
+  ]) {
+    it(`sits on the pane without a box in the ${palette} palette, and so does its natural-size view`, async () => {
+      const { page, close } = await open({ colorScheme, settings });
+      try {
+        await openNote(page, fixture.url("flow.md"));
+        await loaded(page, 1);
+        const pixels = async (selector) => {
+          const r = await page.locator(selector).boundingBox();
+          const shot = await page.screenshot();
+          return page.evaluate(
+            async ({ b64, pts }) => {
+              const img = new Image();
+              img.src = "data:image/png;base64," + b64;
+              await img.decode();
+              const c = document.createElement("canvas");
+              c.width = img.width;
+              c.height = img.height;
+              const g = c.getContext("2d");
+              g.drawImage(img, 0, 0);
+              return pts.map(([x, y]) => [...g.getImageData(Math.round(x), Math.round(y), 1, 1).data.slice(0, 3)]);
+            },
+            { b64: shot.toString("base64"), pts: [[r.x + 4, r.y - 5], [r.x + 3, r.y + 3]] },
+          );
+        };
+        const [pane, drawing] = await pixels(".markdown img.diagram");
+        assert.deepEqual(drawing, pane, `in the note: drawing ${drawing}, pane ${pane}`);
+        await page.locator(".markdown img.diagram").click();
+        await page.waitForFunction(() => {
+          const i = document.querySelector(".diagram-viewer img");
+          return !!i && i.complete && i.naturalWidth > 0;
+        });
+        const [viewPane, viewDrawing] = await pixels(".diagram-viewer img");
+        assert.deepEqual(viewDrawing, viewPane, `in the view: drawing ${viewDrawing}, pane ${viewPane}`);
       } finally {
         await close();
       }
@@ -756,12 +829,23 @@ describe("flowcharts in the reading view", { skip: blocker ?? false }, () => {
       ["on a block shown as code below the diagrams", FLOWS.at.codeBlock, "PRE", {}],
       ["on a paragraph below the diagrams", FLOWS.at.paragraph, "P", {}],
       ["on a paragraph below diagrams that all fail to load", FLOWS.at.paragraph, "P", { fail: true }],
+      [
+        "below measured diagrams that fail, each with a code block taller than its drawing",
+        TALL_SOURCE.paragraph,
+        "P",
+        { file: "tall-source.md", fail: true, sized: true },
+      ],
       ["inside a diagram the daemon had no time to measure", many(0).m.at.inDiagram, "IMG", { file: many(0).file, many: true }],
       ["below more diagrams than the daemon had time to measure", many(1).m.at.paragraph, "P", { file: many(1).file, many: true, refused: true }],
     ]) {
       it(`lands a hit ${what}, at ${profile.name}`, async () => {
         const seen = await landsOn(profile, line, opts);
         assert.equal(seen.tag, tag);
+        if (opts.sized) {
+          // The case is what it says: every box was reserved from a size,
+          // so only a fallback's own height can move the hit.
+          assert.ok(seen.listed === 4 && seen.unmeasured === 0, `${seen.unmeasured} of ${seen.listed} went out unmeasured`);
+        }
         if (opts.many) {
           // The case is what it says: the budget left most of the note's
           // diagrams without a size.

@@ -325,9 +325,10 @@ describe("followViewed", () => {
 
 describe("holdInView", () => {
   /**
-   * A note whose images the daemon did not measure (#177, review of PR #181):
-   * each has no box until it loads, so the target below it moves, and the
-   * scroll is taken again as each one settles — until the reader scrolls.
+   * A note with images above the target the daemon did not measure (#177,
+   * review of PR #181), which have no box until they load, and one it did,
+   * which can still fail: the scroll is taken again as each one settles —
+   * until the reader scrolls.
    */
   function setup() {
     const scope = note(block(3, "a") + block(8, "b") + '<p data-line="12">target</p>' + block(14, "after"));
@@ -349,14 +350,24 @@ describe("holdInView", () => {
   }
 
   it("scrolls to the target again when an unmeasured image above it loads or fails", () => {
-    const { target, scrolls, unmeasured, measured, below } = setup();
+    const { target, scrolls, unmeasured, below } = setup();
     const stop = holdInView(target);
     below.dispatchEvent(new Event("load"));
-    measured.dispatchEvent(new Event("load"));
     expect(scrolls).not.toHaveBeenCalled();
     unmeasured.dispatchEvent(new Event("load"));
     expect(scrolls).toHaveBeenCalledTimes(1);
     expect(scrolls).toHaveBeenCalledWith({ block: "center" });
+    stop();
+  });
+
+  it("scrolls to the target again when a measured image above it fails and its code block comes back", () => {
+    // Review of PR #202, nit 2, taken by #189: the reserved box goes, and the
+    // code block that replaces it is another height.
+    const { target, scrolls, measured } = setup();
+    const stop = holdInView(target);
+    measured.dispatchEvent(new Event("error"));
+    expect(scrolls).toHaveBeenCalledTimes(1);
+    expect(measured.isConnected).toBe(false);
     stop();
   });
 
