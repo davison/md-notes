@@ -18,9 +18,10 @@ stranger who has never heard of md-notes, and
 what the daemon and the app do. At every milestone boundary the record's PR
 brings their claims into line with what the milestone delivered:
 
-- **The README:** what md-notes does, the screenshots under `docs/images/`
-  (`make screenshots` regenerates them), the install channels, and the
-  documentation list. It names no release version: it links to the
+- **The README:** what md-notes does, the screenshots it embeds
+  (`make screenshots` regenerates `docs/images/app/`, and
+  `make extension-screenshots` regenerates `docs/images/extension/`), the
+  install channels, and the documentation list. It names no release version: it links to the
   releases page, so a release never makes it stale.
 - **The introduction:** its account of the daemon, roots, the HTTP API
   (endpoints, refusals and their codes), the web UI, editing, live update,
@@ -28,7 +29,8 @@ brings their claims into line with what the milestone delivered:
 
 The guides the README's Documentation section links to are the front door's
 second rank: `docs/install.md`, `docs/running.md`, `docs/extension.md`,
-`docs/privacy.md`, `docs/sync.md`, `docs/e-ink.md`, `CONTRIBUTING.md`,
-`docs/releasing.md`, and the man page `contrib/mdn.1`. Refresh one when the
+`docs/privacy.md`, `docs/sync.md`, `docs/e-ink.md`, `CONTRIBUTING.md` and
+`docs/releasing.md`. The man page `contrib/mdn.1` is not linked from the
+README, but it ships in both packages and ranks with them. Refresh one when the
 milestone changed a claim it makes, such as a flag, a command, a path or a
 count. Where the milestone changed none of these claims, leave it alone.
