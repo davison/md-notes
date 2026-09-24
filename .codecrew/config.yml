@@ -1,4 +1,4 @@
-codecrew: "2.0" # protocol version (SPEC.md §5): a different major is refused; not the CLI release — see gh codecrew version
+codecrew: "2.1" # protocol version (SPEC.md §5): a different major is refused; not the CLI release — see gh codecrew version
 hub: self
 
 # Role routing: who holds each role (SPEC §5). Declare all five at
