@@ -352,7 +352,7 @@ func TestUploadNamesADanglingResourcesLinkInsideTheRoot(t *testing.T) {
 	}
 	_, err := s.Upload("notes", "x.png", pngBytes(t, 22))
 	if !errors.Is(err, ErrResourcesLink) {
-		t.Fatalf("err = %v, want ErrImageType", err)
+		t.Fatalf("err = %v, want ErrResourcesLink", err)
 	}
 	if _, err := os.Lstat(filepath.Join(dir, "nowhere")); !os.IsNotExist(err) {
 		t.Fatal("created the link's target")
