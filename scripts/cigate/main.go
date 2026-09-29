@@ -1,7 +1,9 @@
 // Command cigate decides whether ci.yml's test jobs run (davison/md-notes#215).
 //
 // They are skipped when a push to main or a pull request is made only of
-// commits whose subject is `docs` or `chore`, scoped forms included. It reads
+// commits whose subject is `docs`, scoped forms included. `chore` runs the tests:
+// it is where SPEC section 4's housekeeping lives (a dependency bump, a
+// formatter's fix), which can change what the tests check. It reads
 // the subjects of every commit in the push or PR on stdin, one per line, and
 // prints `run=true` or `run=false` for the workflow to append to
 // $GITHUB_OUTPUT. One commit of any other type, or anything it cannot be sure
@@ -37,7 +39,7 @@ type input struct {
 	Subjects []string
 }
 
-var skippable = regexp.MustCompile(`^(docs|chore)(\([^)]*\))?!?:`)
+var skippable = regexp.MustCompile(`^docs(\([^)]*\))?!?:`)
 
 // decide reports whether the test jobs run.
 func decide(in input) bool {

@@ -13,8 +13,14 @@ func TestDecide(t *testing.T) {
 		want bool
 	}{
 		{"docs only push", input{Workflow: "ci", Event: "push", RefType: "branch", Subjects: []string{"docs: say more (#1)"}}, false},
-		{"chore only PR", input{Workflow: "ci", Event: "pull_request", RefType: "branch", Subjects: []string{"chore(deps): bump x"}}, false},
-		{"scoped and breaking forms", input{Workflow: "ci", Event: "push", RefType: "branch", Subjects: []string{"docs(readme): a", "chore!: b", "chore(x)!: c"}}, false},
+		{"scoped and breaking forms", input{Workflow: "ci", Event: "push", RefType: "branch", Subjects: []string{"docs(readme): a", "docs!: b", "docs(x)!: c"}}, false},
+		// chore is housekeeping (SPEC section 4: a dependency bump, a formatter's
+		// fix), which can change what the tests check, so it always runs them.
+		{"chore runs", input{Workflow: "ci", Event: "pull_request", RefType: "branch", Subjects: []string{"chore: bump x"}}, true},
+		{"chore(deps) runs", input{Workflow: "ci", Event: "pull_request", RefType: "branch", Subjects: []string{"chore(deps): bump x"}}, true},
+		{"chore(codecrew) runs", input{Workflow: "ci", Event: "push", RefType: "branch", Subjects: []string{"chore(codecrew): sync roles"}}, true},
+		{"chore breaking runs", input{Workflow: "ci", Event: "push", RefType: "branch", Subjects: []string{"chore!: a"}}, true},
+		{"one chore among docs runs everything", input{Workflow: "ci", Event: "pull_request", RefType: "branch", Subjects: []string{"docs: a", "chore: b"}}, true},
 		{"one feat among docs runs everything", input{Workflow: "ci", Event: "pull_request", RefType: "branch", Subjects: []string{"docs: a", "feat(ui): b", "docs: c"}}, true},
 		{"the head commit alone is not enough", input{Workflow: "ci", Event: "push", RefType: "branch", Subjects: []string{"fix: a", "docs: b"}}, true},
 		{"the tail commit alone is not enough", input{Workflow: "ci", Event: "push", RefType: "branch", Subjects: []string{"docs: a", "fix: b"}}, true},
@@ -43,7 +49,7 @@ func TestDecide(t *testing.T) {
 func TestRunReadsSubjectsAndPrintsTheOutput(t *testing.T) {
 	var out, errb bytes.Buffer
 	code := run([]string{"-workflow", "ci", "-event", "pull_request", "-ref-type", "branch"},
-		strings.NewReader("docs: a\nchore(x): b\n"), &out, &errb)
+		strings.NewReader("docs: a\ndocs(x): b\n"), &out, &errb)
 	if code != 0 || out.String() != "run=false\n" {
 		t.Errorf("code %d, out %q, err %q", code, out.String(), errb.String())
 	}
