@@ -55,7 +55,9 @@ version literal that has to be bumped by hand.
    commit is `docs` or `chore`, but that gate applies only to `ci` itself on a
    branch: under a release's `workflow_call` (the tag push, or the dry run's
    `workflow_dispatch`) it always says run, whatever the tagged commit's subject
-   is. `scripts/workflows/ci_release_path_test.go` and `scripts/cigate` hold
+   is. The test jobs also run whenever the gate does not positively say to skip,
+   so a gate that fails or cannot be built skips nothing.
+   `scripts/workflows/ci_release_path_test.go` and `scripts/cigate` hold
    this.
 2. **Builds** with `make release VERSION=<tag>`, using the Go and the Node the
    tag pins (see [Checking a release](#checking-a-release)): the static daemon
