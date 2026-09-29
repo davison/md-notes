@@ -221,6 +221,8 @@ func (s *Server) sourceError(w http.ResponseWriter, err error) {
 		writeSourceError(w, http.StatusRequestEntityTooLarge, "too_large", err.Error())
 	case errors.Is(err, source.ErrUploadTooLarge):
 		writeSourceError(w, http.StatusRequestEntityTooLarge, "too_large", err.Error())
+	case errors.Is(err, source.ErrResourcesLink):
+		writeSourceError(w, http.StatusUnprocessableEntity, "unsupported_source", err.Error())
 	case errors.Is(err, source.ErrImageType):
 		writeSourceError(w, http.StatusUnsupportedMediaType, "unsupported_type", err.Error())
 	// A chain of links nothing will follow to the end — the kernel's
