@@ -31,7 +31,7 @@ on:
 #   release").
 jobs:
   # Whether the test jobs below run (davison/md-notes#215). A push to main or a
-  # pull request made only of `docs` and `chore` commits skips them, and they
+  # pull request made only of `docs` commits skips them (`chore`, housekeeping, always runs them), and they
   # show as skipped, not missing. Every commit in the push or PR decides, not
   # the head alone. A release never skips: release.yml reaches this file through
   # workflow_call, where github.event_name is the caller's (a push, of a tag)
