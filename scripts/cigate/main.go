@@ -82,3 +82,4 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "run=%t\n", decide(in))
 	return 0
 }
+x
