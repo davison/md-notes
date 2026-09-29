@@ -324,6 +324,13 @@ func remoteAllowed(r *http.Request) bool {
 		// or removes one: the credential over the network reaches the
 		// same files the source save already reaches, and no more. Every
 		// other write under a root stays on the machine.
+		// An image upload is narrower still: the daemon picks the
+		// directory and the name, and only a checked image is written.
+		// M11-R2 puts it behind the same checks as every other write, and
+		// a paste on the phone is the same paste as on the desktop.
+		if r.Method == http.MethodPost && sub == "resources" {
+			return true
+		}
 		if r.Method == http.MethodPut || r.Method == http.MethodPost || r.Method == http.MethodDelete {
 			return sub == "source" || strings.HasPrefix(sub, "source/")
 		}

@@ -219,6 +219,10 @@ func (s *Server) sourceError(w http.ResponseWriter, err error) {
 		writeSourceError(w, http.StatusForbidden, "permission_denied", "note or directory is not readable/writable")
 	case errors.Is(err, source.ErrTooLarge):
 		writeSourceError(w, http.StatusRequestEntityTooLarge, "too_large", err.Error())
+	case errors.Is(err, source.ErrUploadTooLarge):
+		writeSourceError(w, http.StatusRequestEntityTooLarge, "too_large", err.Error())
+	case errors.Is(err, source.ErrImageType):
+		writeSourceError(w, http.StatusUnsupportedMediaType, "unsupported_type", err.Error())
 	// A chain of links nothing will follow to the end — the kernel's
 	// ELOOP, or one longer than the lexical walk's own bound — names no
 	// file anything can act on, and is not a fault of the daemon's. It
