@@ -56,6 +56,12 @@ proxy; every request under that name must authenticate.
 .PP
 Notes stay plain markdown files in a folder hierarchy, editable with any tool
 and synced by anything that syncs files.
+.PP
+An image pasted or dropped into the browser editor is copied into the root's
+.I _resources
+directory and linked from the note with a relative markdown image link.
+PNG, JPEG, GIF, WebP and SVG are accepted, judged by content, up to 16\ MiB
+each; an existing file is never replaced.
 .SH COMMANDS
 .TP
 .B serve
@@ -199,6 +205,21 @@ Start it with
 systemctl \-\-user enable \-\-now mdn
 .fi
 .RE
+.TP
+.IR root /_resources/
+Images pasted or dropped into the editor, in one directory at the top of each
+root, made when first needed.
+A paste is named by the first 32 hex digits of its SHA\-256; a dropped file
+keeps its own name, reduced to letters, digits,
+.BR . ,
+.B _
+and
+.BR \- ,
+with
+.BR \-2 ,
+.B \-3
+and so on added when the name is taken.
+A file already holding the same image is linked to rather than copied again.
 .PP
 The first three paths above follow
 .BR XDG_CONFIG_HOME " and " XDG_STATE_HOME

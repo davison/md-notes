@@ -327,6 +327,7 @@ the [tailnet section](#reaching-the-daemon-over-the-tailnet) says why.
 | `PUT /api/r/{slug}/source/{path...}` | Conditionally saves JSON `{source, revision}` and returns the saved `{source, revision}` |
 | `POST /api/r/{slug}/source/{path...}` | Creates the note at `{path...}`, never overwriting. Optional JSON body `{"source": "..."}`; no body at all creates an empty note. `201` with a `Location` header and `{root, path, source, revision}`. Missing parent directories are created. See [Creating and deleting notes](#creating-and-deleting-notes) |
 | `DELETE /api/r/{slug}/source/{path...}` | Removes exactly one regular markdown file inside the root. `204 No Content`. See [Creating and deleting notes](#creating-and-deleting-notes) |
+| `POST /api/r/{slug}/resources?name=` | Puts the image in the body into the root's top-level `_resources`, never overwriting. `201 {root, path, name, created}` for a new file, `200` with the same body when an identical file is already there. See [Uploading an image](#uploading-an-image) |
 | `GET /api/r/{slug}/raw/{path...}` | File bytes, for images and other assets. Served with `Content-Security-Policy: sandbox` and `X-Content-Type-Options: nosniff` |
 | `GET /api/r/{slug}/search?q=` | `{hits, truncated}`; each hit is a path, line number, matching text with match offsets, and the lines either side |
 | `GET /api/r/{slug}/tags` | `{tags: [{name, count, notes}]}`, sorted by count then name |
@@ -610,6 +611,62 @@ The daemon takes a path and not a title plus a folder: the rule that turns a typ
 title into `<title>.md` in a folder belongs to the client, and the daemon's job is to
 refuse every unsafe name it is handed. [Creating and deleting a
 note](#creating-and-deleting-a-note) is what the web UI composes with it.
+
+### Uploading an image
+
+`POST /api/r/{slug}/resources` is how the editor's [paste and
+drop](#pasting-and-dropping-images) put an image into a root. The body is the
+file's bytes and nothing else; its `Content-Type` is not read. The optional `name`
+query parameter is the dropped file's own name, and a paste sends none. The daemon
+chooses the directory and the name, and the client links to the `path` it is
+given ([#214](https://github.com/davison/md-notes/issues/214)).
+
+- **Where.** The one `_resources` directory at the top of the root, made if it is
+  missing. It is resolved and opened through a handle on the root, so a
+  `_resources` that is a link out of the root, with or without a target, is refused
+  before anything is made.
+- **What.** PNG, JPEG, GIF and WebP, recognised by their magic bytes, and SVG,
+  recognised as well-formed XML whose root element is `<svg>` in the SVG
+  namespace. The file's name and the request's `Content-Type` are never
+  consulted, and the extension is the daemon's (`.png`, `.jpg`, `.gif`, `.webp`,
+  `.svg`), so an HTML page called `x.png` is refused and a PNG called `x.html`
+  lands as `x.png`.
+- **How big.** At most 16 MiB. The body is read to one byte past that and no
+  further.
+- **What name.** With no `name`, the first 32 hex digits of the image's SHA-256,
+  so the same screenshot pasted twice is one file. With a `name`, its last path
+  segment without its extension, reduced to letters, digits, `.`, `_` and `-`
+  (every other run becomes one `-`, and leading and trailing dots and dashes go),
+  at most 100 bytes; a name that reduces to nothing falls back to the hash. On a
+  clash the name takes `-2`, `-3` and so on.
+- **Never overwriting.** Each candidate is created `O_CREATE|O_EXCL` through the
+  handle on `_resources`. A name already taken is only ever read: a regular file
+  holding exactly the same bytes is reused, answered `200` with `created: false`,
+  and anything else there — a different file, a directory, a link — moves the
+  upload on to the next suffix.
+
+An SVG may carry script, and one is accepted. What stops it running with the UI's
+origin is how it is read back: through the [raw endpoint](#the-http-api), with
+`Content-Security-Policy: sandbox` and `X-Content-Type-Options: nosniff`, so an SVG
+opened on its own runs no script, and one shown in a note is an `<img>`, which never
+runs any
+([decision](https://github.com/davison/md-notes/issues/214#issuecomment-5897126264)).
+
+Refusals use the save's `{code, error}` body:
+
+| Condition | Status | Code |
+|-----------|--------|------|
+| An empty body | 400 | `invalid_body` |
+| The root does not exist | 404 | `not_found` |
+| `_resources` is a file rather than a directory | 404 | `not_found` |
+| `_resources` resolves outside the root | 403 | `outside_root` |
+| Over 16 MiB | 413 | `too_large` |
+| Not one of the five image types, by content | 415 | `unsupported_type` |
+| A thousand names in a row taken | 409 | `exists` |
+
+It sits behind the same guard as every other write, on loopback and under a
+`tailnet_host` alike; see [what is reachable under that
+name](#what-is-reachable-under-that-name-and-what-is-not).
 
 ### Clipping a web page
 
@@ -1340,8 +1397,9 @@ endpoint, so they are subject to the same root confinement and the same Host and
 Origin guard as everything else, and the source is written back byte for byte —
 frontmatter, hard tabs, trailing spaces, a byte-order mark and a missing final
 newline all survive an edit untouched. The editor itself only ever edits: creating
-and deleting a note are the two controls below, on their own endpoints, and the save
-endpoint still has no create-on-missing path. Renaming a note is not in the
+and deleting a note are the two controls below, on their own endpoints, a pasted or
+dropped image is written by [an endpoint of its own](#pasting-and-dropping-images),
+and the save endpoint still has no create-on-missing path. Renaming a note is not in the
 application at all.
 
 Line endings survive too, with one qualification. CodeMirror splits a document on
@@ -1462,6 +1520,55 @@ been sent and the daemon will act on it either way
 Both changes reach the navigator through the [events stream](#live-update), in this
 tab and in every other one, exactly as a file written by another tool does. Neither
 path refetches the tree.
+
+### Pasting and dropping images
+
+An image pasted into the editor from the clipboard, or dragged in from a file
+manager, is copied into the root's `_resources` directory and linked from the note
+as a markdown image ([#214](https://github.com/davison/md-notes/issues/214)):
+
+```markdown
+![](../../_resources/3f0c9a2e41d7b85c06e1f2a9d4b7c830.png)
+![Holiday snap](../../_resources/Holiday-snap.png)
+```
+
+- **Where the file goes.** One `_resources` directory at the top of the root,
+  whatever folder the note is in — the layout notes carried over from Joplin
+  already have. It is made the first time it is needed.
+- **Where the link goes.** A paste goes at the cursor, replacing a selection; in
+  vim's normal mode it lands where a pasted line of text would. A drop goes at the
+  point it was dropped. Several files dropped at once give one link each, one per
+  line. The link climbs from the note's folder to the root (`../` per level), with
+  no scheme and no leading slash, so the reading view, Markor and any other
+  markdown reader resolve it the same way.
+- **What it is called.** A paste is named by its content — the first 32 hex digits
+  of its SHA-256 — so pasting the same image twice gives one file. A dropped file
+  keeps its own name, reduced to letters, digits, `.`, `_` and `-` (`Holiday
+  snap.PNG` becomes `Holiday-snap.png`), and takes `-2`, `-3` and so on if the name
+  is taken by a different file. An existing file is never replaced; one that holds
+  exactly the same image is linked to rather than copied again.
+- **The alt text.** A dropped file's name without its extension; empty for a paste.
+- **What is accepted.** PNG, JPEG, GIF, WebP and SVG, up to 16 MiB each, judged by
+  the file's content rather than its name. An SVG's script never runs from the app:
+  [Uploading an image](#uploading-an-image) says why.
+- **What is not taken.** A paste or drop with no image in it — text, a URL, a PDF —
+  is left to the editor exactly as before. In a drop that mixes images with other
+  files, the other files are left out and named.
+
+While the upload runs the editor says *Adding the image…* above the text, and you
+can go on typing: the link still lands where you pasted or dropped. If an image is
+refused or the daemon cannot be reached, nothing is inserted for it and a message
+above the editor says which file and why; **Dismiss** clears it, and so does the
+next image that goes in.
+
+The links go in as a single edit. One undo takes them all out again — the files
+stay in `_resources`, and a later paste of the same image links to the file
+already there. Otherwise the edit is like typing: autosave writes it, the save
+state shows it, and a [conflict](#conflicts) treats it as part of the draft.
+
+`_resources` does not appear in the navigator, because it holds no markdown, and
+search does not look inside it. Syncthing carries the new files to other devices
+like any other file in the root.
 
 ### Autosave and the save states
 
@@ -1808,6 +1915,7 @@ What an authenticated caller reaches is the UI's own API and nothing else:
 | the per-root reads — `tree`, `note`, `diagram`, `source`, `raw`, `search`, `tags`, `events` | `DELETE /api/roots/{slug}` |
 | | anything else under `/api/` |
 | `PUT`, `POST` and `DELETE` on `/api/r/{slug}/source/{path…}` | |
+| `POST /api/r/{slug}/resources` | |
 | `POST /api/clip`, to a caller presenting the token | |
 | the UI bundle and its client-side routes | |
 
@@ -1866,8 +1974,14 @@ applies to every registered root, `mdn open` ones included, for as long as they 
 registered — but `POST /api/roots` stays loopback-only, so nothing reachable over the
 tailnet can widen the set of roots it applies to.
 
-So a remote device reads, searches, creates, edits, deletes and clips into the notes
-the daemon already serves. It cannot add a root or remove one, and `mdn open` remains
+`POST /api/r/{slug}/resources`, which milestone eleven added, is admitted on the
+same ground as the clip: it is narrower than a note create, because the daemon
+chooses the directory and the name and writes only a checked image. A paste on the
+phone is then the same paste as on the desktop
+([decision](https://github.com/davison/md-notes/issues/214#issuecomment-5897126600)).
+
+So a remote device reads, searches, creates, edits, deletes, adds images and clips
+into the notes the daemon already serves. It cannot add a root or remove one, and `mdn open` remains
 a command for the daemon's own machine.
 
 ### The premise, restated
