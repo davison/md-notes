@@ -52,7 +52,7 @@ version literal that has to be bumped by hand.
    the checks every other commit runs — `make check` and the browser suite —
    and cannot drift from them. **A release never skips these checks.** On
    ordinary pushes and pull requests `ci.yml` skips `check` and `e2e` when every
-   commit is `docs` or `chore`, but that gate applies only to `ci` itself on a
+   commit is `docs` (every other type, `chore` included, runs them), but that gate applies only to `ci` itself on a
    branch: under a release's `workflow_call` (the tag push, or the dry run's
    `workflow_dispatch`) it always says run, whatever the tagged commit's subject
    is. The test jobs also run whenever the gate does not positively say to skip,
