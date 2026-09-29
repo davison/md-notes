@@ -236,6 +236,33 @@ export async function saveSource(
   return (await res.json()) as Source;
 }
 
+/** An image the daemon has put in, or found in, the root's `_resources`. */
+export interface UploadedImage {
+  /** Root-relative, slash-separated: `_resources/<name>`. */
+  path: string;
+  name: string;
+  /** False when a file with the same bytes was already there and is reused. */
+  created: boolean;
+}
+
+/**
+ * Sends one pasted or dropped image to the daemon, which decides its type
+ * by content and its name by the rule in the introduction. `name` is the
+ * dropped file's own name; a paste sends none. Rejects with a SourceError
+ * carrying the daemon's code — "too_large", "unsupported_type" — or with
+ * the unreachable message when there was no answer.
+ */
+export async function uploadImage(slug: string, file: Blob, name?: string): Promise<UploadedImage> {
+  const q = name ? `?name=${encodeURIComponent(name)}` : "";
+  const res = await send(`/api/r/${encodeURIComponent(slug)}/resources${q}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: file,
+  });
+  if (!res.ok) throw await sourceErrorFrom(res);
+  return (await res.json()) as UploadedImage;
+}
+
 /** A note the daemon has just created. */
 export interface CreatedNote {
   root: string;

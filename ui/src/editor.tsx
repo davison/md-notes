@@ -1,13 +1,15 @@
-import { useEffect, useRef } from "preact/hooks";
-import { EditorState } from "@codemirror/state";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
 import { EditorView, drawSelection, highlightActiveLine, keymap } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { tags } from "@lezer/highlight";
 import { Vim, getCM, vim } from "@replit/codemirror-vim";
 import type { Session } from "./session";
+import { uploadImage } from "./api";
+import { altFor, imageMarkdown, isImage, resourceLink } from "./image-link";
 
 const markdownStyle = HighlightStyle.define([
   { tag: tags.heading, fontWeight: "bold", color: "var(--accent)" },
@@ -76,6 +78,154 @@ export function withLineEnding(text: string, ending: string): string {
 }
 
 /**
+ * Where an image paste or drop will put its links, held while the uploads
+ * run. The range is mapped through every change made meanwhile — typing,
+ * a save's reload, another paste — so the links land where the reader put
+ * them rather than at a stale offset. A caret's position keeps to the left
+ * of text typed at that very point, so what the reader types after pasting
+ * stays after the link.
+ */
+interface Pending {
+  id: number;
+  from: number;
+  to: number;
+}
+const addPending = StateEffect.define<Pending>();
+const dropPending = StateEffect.define<number>();
+const pendingInserts = StateField.define<Pending[]>({
+  create: () => [],
+  update(value, tr) {
+    let next = tr.docChanged
+      ? value.map((p) => {
+          if (p.from === p.to) {
+            const at = tr.changes.mapPos(p.from, -1);
+            return { ...p, from: at, to: at };
+          }
+          // A selection being replaced keeps text typed at either edge
+          // outside it, so nothing the reader added is replaced too.
+          const from = tr.changes.mapPos(p.from, 1);
+          return { ...p, from, to: Math.max(from, tr.changes.mapPos(p.to, -1)) };
+        })
+      : value;
+    for (const e of tr.effects) {
+      if (e.is(addPending)) next = [...next, e.value];
+      else if (e.is(dropPending)) next = next.filter((p) => p.id !== e.value);
+    }
+    return next;
+  },
+});
+let pendingId = 0;
+
+/** What the editor tells the reader about an image paste or drop. */
+export interface Notice {
+  kind: "busy" | "error";
+  text: string;
+}
+const notifiers = new WeakMap<EditorView, (n: Notice | null) => void>();
+function notify(view: EditorView, n: Notice | null) {
+  notifiers.get(view)?.(n);
+}
+
+/**
+ * The files an event carries that the editor takes as images. None means
+ * the event is not the editor's: text, a URL and a non-image file all go
+ * on to CodeMirror's own handling, as they did before images were taken.
+ */
+function imagesIn(list: FileList | null | undefined): { images: File[]; others: File[] } {
+  const files = list ? Array.from(list) : [];
+  return { images: files.filter(isImage), others: files.filter((f) => !isImage(f)) };
+}
+
+/**
+ * Uploads pasted or dropped images and links them at from–to, replacing
+ * whatever was selected there. The links go in as one transaction that is
+ * its own history event, so one undo takes them all out and nothing typed
+ * before or after joins it; the uploaded files stay. A file the daemon
+ * refuses, or that never reaches it, is left out and named in the notice.
+ * A paste sends no name and gets empty alt text; a drop sends the file's
+ * name and uses it for the alt text.
+ */
+async function insertImages(
+  view: EditorView,
+  session: Session,
+  images: File[],
+  others: File[],
+  from: number,
+  to: number,
+  dropped: boolean,
+) {
+  const id = ++pendingId;
+  view.dispatch({ effects: addPending.of({ id, from, to }) });
+  notify(view, { kind: "busy", text: images.length === 1 ? "Adding the image…" : `Adding ${images.length} images…` });
+  const results = await Promise.allSettled(images.map((f) => uploadImage(session.slug, f, dropped ? f.name : undefined)));
+  // A view destroyed meanwhile — the reader switched to the rendered view
+  // — has nowhere to put the links; the files are uploaded, and a paste
+  // or drop again links the same files without storing them twice.
+  if (!notifiers.has(view)) return;
+  const at = view.state.field(pendingInserts).find((p) => p.id === id);
+  const links: string[] = [];
+  const problems: string[] = [];
+  results.forEach((r, i) => {
+    const label = dropped ? images[i].name : "the pasted image";
+    if (r.status === "fulfilled") {
+      links.push(imageMarkdown(dropped ? altFor(images[i].name) : "", resourceLink(session.path, r.value.path)));
+    } else {
+      const why = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      problems.push(`Could not add ${label}: ${why}${why.endsWith(".") ? "" : "."}`);
+    }
+  });
+  for (const f of others) problems.push(`Left out ${f.name}: not an image.`);
+  if (!at || links.length === 0) {
+    view.dispatch({ effects: dropPending.of(id) });
+  } else {
+    const insert = links.join("\n");
+    const main = view.state.selection.main;
+    // The caret follows the link when it is still where the paste was, as
+    // it would after typed text; a reader who has moved on is left there.
+    const follow = main.empty ? main.head === at.to || main.head === at.from : main.from === at.from && main.to === at.to;
+    view.dispatch({
+      changes: { from: at.from, to: at.to, insert },
+      selection: follow ? { anchor: at.from + insert.length } : undefined,
+      effects: dropPending.of(id),
+      annotations: [isolateHistory.of("full"), Transaction.userEvent.of(dropped ? "input.drop" : "input.paste")],
+      scrollIntoView: follow,
+    });
+  }
+  notify(view, problems.length ? { kind: "error", text: problems.join(" ") } : null);
+}
+
+/**
+ * Paste and drop of image files. Registered before CodeMirror's own
+ * handlers run, and taking the event only when it carries an image.
+ */
+function imageHandlers(session: Session) {
+  return EditorView.domEventHandlers({
+    paste(event, view) {
+      const { images, others } = imagesIn(event.clipboardData?.files);
+      if (images.length === 0) return false;
+      event.preventDefault();
+      const { from, to } = view.state.selection.main;
+      void insertImages(view, session, images, others, from, to, false);
+      return true;
+    },
+    drop(event, view) {
+      const { images, others } = imagesIn(event.dataTransfer?.files);
+      if (images.length === 0) return false;
+      event.preventDefault();
+      let pos: number | null = null;
+      try {
+        pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      } catch {
+        // No layout to measure against; the caret is the next best place.
+      }
+      const at = pos ?? view.state.selection.main.head;
+      void insertImages(view, session, images, others, at, at, true);
+      return true;
+    },
+  });
+}
+
+/**
  * Builds the editor state for a draft; exported so tests can drive the
  * keymap.
  *
@@ -101,6 +251,8 @@ export function createState(doc: string, session: Session): EditorState {
       markdown({ codeLanguages: languages }),
       syntaxHighlighting(markdownStyle),
       keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+      pendingInserts,
+      imageHandlers(session),
       theme,
       EditorView.updateListener.of((u) => {
         if (u.docChanged) {
@@ -170,6 +322,7 @@ function holdsDraft(state: EditorState, draft: string): boolean {
 export function Editor({ session }: { session: Session }) {
   const host = useRef<HTMLDivElement>(null);
   const generation = session.state.generation;
+  const [notice, setNotice] = useState<Notice | null>(null);
 
   useEffect(() => {
     defineEx();
@@ -179,6 +332,7 @@ export function Editor({ session }: { session: Session }) {
     const state = keep ? parked : createState(session.state.draft, session);
     const view = new EditorView({ state, parent });
     owners.set(view, session);
+    notifiers.set(view, setNotice);
     const cm = getCM(view);
     if (keep && session.editorInsert && cm) {
       Vim.handleKey(cm, "i", "api");
@@ -189,9 +343,24 @@ export function Editor({ session }: { session: Session }) {
       session.editorState = view.state;
       session.editorGeneration = generation;
       session.editorInsert = getCM(view)?.state.vim?.insertMode === true;
+      notifiers.delete(view);
       view.destroy();
     };
   }, [session, generation]);
 
-  return <div ref={host} class="editor" />;
+  return (
+    <>
+      {notice && (
+        <div class={`editor-notice ${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>
+          <span>{notice.text}</span>
+          {notice.kind === "error" && (
+            <button type="button" onClick={() => setNotice(null)}>
+              Dismiss
+            </button>
+          )}
+        </div>
+      )}
+      <div ref={host} class="editor" />
+    </>
+  );
 }
