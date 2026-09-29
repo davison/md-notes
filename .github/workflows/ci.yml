@@ -37,8 +37,10 @@ jobs:
   # workflow_call, where github.event_name is the caller's (a push, of a tag)
   # and github.workflow the caller's name, so scripts/cigate applies the gate
   # only when the workflow is `ci` on a branch, and workflow_dispatch always
-  # runs everything. scripts/workflows/ci_gate_test.go holds that. Any failure
-  # to list the commits runs everything.
+  # runs everything. scripts/workflows/ci_release_path_test.go holds that.
+  # The gate fails open twice: cigate runs everything when it cannot list the
+  # commits, and the test jobs run unless a gate that succeeded said `false`,
+  # so a gate that fails, or a cigate that will not build, skips nothing.
   gate:
     runs-on: ubuntu-24.04
     outputs:
@@ -53,14 +55,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
           BEFORE: ${{ github.event.before }}
           AFTER: ${{ github.sha }}
+        # bash, not the default `bash -e {0}`: pipefail, so a cigate that will
+        # not build turns this step red instead of passing it with no output.
+        shell: bash
         run: |
           subjects=$(mktemp)
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            gh api --paginate "repos/$REPO/pulls/$PR/commits" \
-              --jq '.[].commit.message | split("\n")[0]' > "$subjects" || : > "$subjects"
+            # compare, as for a push: the PR commits endpoint stops at 250 commits
+            gh api --paginate "repos/$REPO/compare/$PR_BASE...$PR_HEAD" \
+              --jq '.commits[].commit.message | split("\n")[0]' > "$subjects" || : > "$subjects"
           elif [ "$GITHUB_EVENT_NAME" = push ] && [ -n "${BEFORE//0/}" ]; then
             gh api --paginate "repos/$REPO/compare/$BEFORE...$AFTER" \
               --jq '.commits[].commit.message | split("\n")[0]' > "$subjects" || : > "$subjects"
@@ -73,7 +80,7 @@ jobs:
 
   check:
     needs: gate
-    if: needs.gate.outputs.run == 'true'
+    if: ${{ !cancelled() && needs.gate.outputs.run != 'false' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -109,7 +116,7 @@ jobs:
   # download never sits in front of them.
   e2e:
     needs: gate
-    if: needs.gate.outputs.run == 'true'
+    if: ${{ !cancelled() && needs.gate.outputs.run != 'false' }}
     runs-on: ubuntu-24.04
     # The whole job is a build and a seven-second suite; anything near this
     # is hung, and a hung job should not hold a runner for six hours.
