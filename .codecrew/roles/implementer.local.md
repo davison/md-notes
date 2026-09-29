@@ -21,7 +21,7 @@ statement to the CI, and you are careful with it:
 - Use `docs` only for a change CI need not test: prose and documentation
   pages. A change that affects what the tests check, or where you would want
   the tests run anyway, takes its true type: `fix(...)`, or `feat`, `test`,
-  `ci` or `build` where that is truer. That covers code (comments in source
+  `ci`, `build` or `refactor` where that is truer. That covers code (comments in source
   files included), tests, workflows, the Makefile, packaging, the man pages
   (`contrib/mdn.1`, `packaging/deb/mdn.1`), `go.mod` and `.gitignore`,
   whatever the change says about itself.
