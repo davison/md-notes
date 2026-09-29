@@ -68,7 +68,8 @@ type gatedCI struct {
 		Needs any    `yaml:"needs"`
 		If    string `yaml:"if"`
 		Steps []struct {
-			Run string `yaml:"run"`
+			Run   string `yaml:"run"`
+			Shell string `yaml:"shell"`
 		} `yaml:"steps"`
 	} `yaml:"jobs"`
 }
@@ -111,6 +112,14 @@ func TestTheSkipGateDecidesOnlyThroughCigate(t *testing.T) {
 	var script string
 	for _, s := range gate.Steps {
 		script += s.Run + "\n"
+		// The default `bash -e {0}` has no pipefail, so a cigate that fails to
+		// build would leave the step green with no output.
+		if strings.Contains(s.Run, "cigate") && s.Shell != "bash" {
+			t.Errorf("the step that runs cigate has shell %q, want bash: the default shell has no pipefail, so a broken cigate would pass the step and write no output", s.Shell)
+		}
+	}
+	if strings.Contains(script, "pulls/") {
+		t.Error("the gate lists a pull request's commits through pulls/N/commits, which stops at 250; use compare with --paginate")
 	}
 	for _, want := range []string{
 		"./scripts/cigate",
@@ -123,7 +132,10 @@ func TestTheSkipGateDecidesOnlyThroughCigate(t *testing.T) {
 		}
 	}
 
-	const want = "needs.gate.outputs.run == 'true'"
+	// Fail open: the jobs run unless a gate that succeeded said `false`. A gate
+	// that failed, or wrote no output because cigate would not build, leaves
+	// the output empty, and that must run the tests, on a release too.
+	const want = "${{ !cancelled() && needs.gate.outputs.run != 'false' }}"
 	for _, name := range []string{"check", "e2e"} {
 		job := ci.Jobs[name]
 		if needs, _ := job.Needs.(string); needs != "gate" {

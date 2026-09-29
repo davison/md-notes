@@ -16,7 +16,7 @@
 // tag) and github.workflow is the caller's name (`release`). So the gate only
 // applies when the workflow is ci itself, on a branch, on a push or a pull
 // request; workflow_dispatch, workflow_call and every other event run.
-// scripts/workflows/ci_gate_test.go holds the wiring, and main_test.go the
+// scripts/workflows/ci_release_path_test.go holds the wiring, and main_test.go the
 // decision.
 package main
 
