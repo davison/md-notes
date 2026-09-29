@@ -660,6 +660,7 @@ Refusals use the save's `{code, error}` body:
 | The root does not exist | 404 | `not_found` |
 | `_resources` is a file rather than a directory | 404 | `not_found` |
 | `_resources` resolves outside the root | 403 | `outside_root` |
+| `_resources` is a symbolic link with no target inside the root | 422 | `unsupported_source` |
 | Over 16 MiB | 413 | `too_large` |
 | Not one of the five image types, by content | 415 | `unsupported_type` |
 | A thousand names in a row taken | 409 | `exists` |
@@ -1556,7 +1557,14 @@ as a markdown image ([#214](https://github.com/davison/md-notes/issues/214)):
   files, the other files are left out and named.
 
 While the upload runs the editor says *Adding the image…* above the text, and you
-can go on typing: the link still lands where you pasted or dropped. If an image is
+can go on typing: the link still lands where you pasted or dropped. Switching to
+the reading view meanwhile does not lose it either: the link goes into the draft
+when the upload finishes, autosave writes it, and the editor shows it when you come
+back. The one thing that does lose the place is the note being reloaded from disk
+with different text before the upload finishes — a change from another device
+arriving on a note with nothing unsaved, or **Load the file** — and then nothing is
+inserted, and the message names the file that was saved and says to paste or drop
+it again, which links that same file rather than storing it twice. If an image is
 refused or the daemon cannot be reached, nothing is inserted for it and a message
 above the editor says which file and why; **Dismiss** clears it, and so does the
 next image that goes in.
