@@ -23,7 +23,9 @@ and without ever replacing a file; and CI stops running the test suites for push
 requests made only of docs and chore commits, while a release always runs every check
 ([#213](https://github.com/davison/md-notes/issues/213)).
 
-The scope was the operator's: "exactly two captures", in the coordinator's words
+The scope was the operator's, given in the coordinator session and relayed by the
+coordinator: "open a milestone for #208 and #212"
+([#213](https://github.com/davison/md-notes/issues/213#issuecomment-5900867536)). The scope Decision records it as "exactly two captures"
 ([#213](https://github.com/davison/md-notes/issues/213#issuecomment-5897063989)). Both captures
 carry the operator's ask as the coordinator relayed it. [#212](https://github.com/davison/md-notes/issues/212):
 "allow an image to be pasted from the clipboard or dragged into the editor from a file
@@ -65,11 +67,11 @@ the last review saw. Both are given.
 | [#215](https://github.com/davison/md-notes/issues/215) CI skips docs-only changes | M11-R3, M11-R4 (part) | #208 | [PR #218](https://github.com/davison/md-notes/pull/218), two rounds | `c2d04dd` | `28d93d7` | [`623758e`](https://github.com/davison/md-notes/commit/623758e) | 22:43:52Z |
 
 Both pull requests merged with one commit added after the approval, which no later review
-comment covers. On PR #219 it was the fix for round two's only nit, the failure message of one
-test: `0115d53` on the branch, [`e3ca09d`](https://github.com/davison/md-notes/commit/e3ca09d)
+comment covers. Each was taken from its approving review's nit list. On PR #219 it was round
+two's only nit, a test failure message that named the wrong error: `0115d53` on the branch, [`e3ca09d`](https://github.com/davison/md-notes/commit/e3ca09d)
 on `main` ([PR #219](https://github.com/davison/md-notes/pull/219#issuecomment-5897671117)). On
-PR #218 it was the fix for round two's nit 2, adding `refactor` to the implementer rule's list
-of types: `28d93d7` on the branch,
+PR #218 it was round two's nit 2, a one-word change to a role file: `refactor` added to the
+implementer rule's list of types, so that it matches the reviewer's: `28d93d7` on the branch,
 [`623758e`](https://github.com/davison/md-notes/commit/623758e) on `main`
 ([PR #218](https://github.com/davison/md-notes/pull/218#issuecomment-5900450086)).
 
@@ -158,8 +160,11 @@ QA judged it that way
 its ask-the-human lines were edited to say so; the milestone body was left as written, with that
 Decision as its annotation.
 
-Both resolution comments are posted under the operator's account, which is also the account
-every seat in this project uses. Neither says whether it was typed by the operator or relayed.
+Every seat in this project posts under the one account, so the account alone does not say who
+typed a comment. The coordinator recorded afterwards that the operator typed both resolution
+comments himself on GitHub, and removed the `cc:needs-decision` label each time, and that he
+confirmed each in the coordinator session: "#215 resolved", and "forgot to submit the comment.
+There now (option a)" ([#213](https://github.com/davison/md-notes/issues/213#issuecomment-5900867536)).
 
 ## Decisions
 
@@ -170,7 +175,8 @@ R4), with M11-R4's docs split between them and the record left to this housekeep
 ([#213](https://github.com/davison/md-notes/issues/213#issuecomment-5897063989)). The two tasks
 touch disjoint files, so both were dispatched at once. The coordinator records that the operator
 said to run the loop without stopping unless a `cc:needs-decision` gate blocks, and took that as
-a standing merge confirmation for the milestone's tasks and its record.
+a standing merge confirmation for the milestone's tasks and its record. That instruction was
+given in the coordinator session and relayed by the coordinator ([#213](https://github.com/davison/md-notes/issues/213#issuecomment-5900867536)).
 
 At opening, `govulncheck` was clean, and `pnpm outdated` in `ui/` showed six patch releases,
 none security-relevant, none in scope. None was taken. **Left out on purpose:** #107, #108, #110,
@@ -265,9 +271,10 @@ The rule came through the two gates above. How #215 carried the first resolution
   skipped jobs; and putting the rule in `implementer.md`, which is CodeCrew's contract text and
   would become a fork that `roles sync` refuses.
 
-A matching reviewer check was first "not taken", and then added on the operator's ask, relayed
-by the coordinator as "add the reviewer check too"
-([#215](https://github.com/davison/md-notes/issues/215#issuecomment-5897288081)). The reviewer
+A matching reviewer check was first "not taken", and then added on the operator's ask, given in
+the coordinator session and relayed by the coordinator as "add the reviewer check too"
+([#215](https://github.com/davison/md-notes/issues/215#issuecomment-5897288081),
+[#213](https://github.com/davison/md-notes/issues/213#issuecomment-5900867536)). The reviewer
 reads every commit's type against its diff, and the two files are worded from the same source so
 they cannot drift.
 
@@ -338,7 +345,8 @@ introduced the gate ([`eed22ae`](https://github.com/davison/md-notes/commit/eed2
 
 Every implementation pull request was reviewed by a clean-context session under the reviewer
 contract, with the reviewer seat routed to the operator. Each merged under the operator's standing
-confirmation, posted as an operator-confirmation comment on it
+confirmation. Its operator-confirmation comment was posted by `gh codecrew task finish
+--operator-confirm`, resting on that standing confirmation ([#213](https://github.com/davison/md-notes/issues/213#issuecomment-5900867536))
 ([PR #219](https://github.com/davison/md-notes/pull/219#issuecomment-5897717165),
 [PR #218](https://github.com/davison/md-notes/pull/218#issuecomment-5900489850)).
 
@@ -442,23 +450,27 @@ The last three were raised at 23:05Z from QA's observations and stay open. No re
 pull request proposed a capture. The items left out of scope, listed under
 [Scope](#scope-sequencing-and-merge-authority), stay open in the backlog.
 
-## Corrections not made on the trail
+## Corrections to the record itself
 
-**#214, the naming trade-off.** It gives `Café.png` → `Caf-.png`. The first review of PR #219
-measured `Caf.png`, because a trailing `-` is trimmed, and called the Decision text "slightly
-off" ([PR #219](https://github.com/davison/md-notes/pull/219#issuecomment-5897496416)). No
-correction was posted on #214.
+**#214, the naming trade-off.** Its example gave `Café.png` → `Caf-.png`. The first review of
+PR #219 measured `Caf.png` and called the Decision text "slightly off"
+([PR #219](https://github.com/davison/md-notes/pull/219#issuecomment-5897496416)). The
+correction on #214 says a run of disallowed characters at the end of the stem is trimmed rather
+than replaced, and that the rule is otherwise as stated
+([#214](https://github.com/davison/md-notes/issues/214#issuecomment-5900867770)).
+
+**Where the operator's words came from.** Posted after QA, for this record
+([#213](https://github.com/davison/md-notes/issues/213#issuecomment-5900867536)): see
+[The human gates](#the-human-gates) and [Where the record is silent](#where-the-record-is-silent).
 
 ## Where the record is silent
 
-**Who typed the two gate resolutions.** See [The human gates](#the-human-gates). Every seat posts
-as the same account, and neither resolution says how the operator's words reached it.
-
-**The operator's other instructions are in the coordinator's words.** The scope, the standing
-merge confirmation, and "add the reviewer check too" are all relayed by the coordinator, with no
-link to where the operator said them
-([#213](https://github.com/davison/md-notes/issues/213#issuecomment-5897063989),
-[#215](https://github.com/davison/md-notes/issues/215#issuecomment-5897288081)).
+**The operator's session words have no source on the trail.** The coordinator's attribution
+comment says which words the operator typed on GitHub (both #215 gate resolutions and the label
+removals) and which it relayed from the session: the scope, the standing merge confirmation, "add
+the reviewer check too", and the capture request behind #212 ([#213](https://github.com/davison/md-notes/issues/213#issuecomment-5900867536)). The relayed words
+are quoted as the coordinator gave them; the session they came from is not on GitHub. #208's
+words, from 2026-09-22, are relayed in the capture and the comment does not cover them.
 
 **Two approvals did not see their last commits.** See the note under
 [What shipped](#what-shipped-in-the-order-it-merged). Both commits were fixes for the approving
