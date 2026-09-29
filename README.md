@@ -30,7 +30,9 @@ as a code project's docs.
   navigator lists only markdown, leaves out hidden files, and in a git
   repository leaves out whatever `.gitignore` does.
 - **Flips to a capable editor with one key.** `Ctrl+E` turns the rendered note
-  into a CodeMirror editor with vim keybindings, and back.
+  into a CodeMirror editor with vim keybindings, and back. Paste or drop an image
+  into it, and the file is copied into a `_resources` folder in your notes and
+  linked from the note.
 - **Saves as you type, and keeps up with other tools.** Every edit is saved
   automatically, and a change made on disk by anything else shows up without a
   refresh. A note changed elsewhere under an unsaved draft asks before anything

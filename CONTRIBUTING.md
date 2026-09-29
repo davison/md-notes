@@ -151,9 +151,9 @@ red scan means something was published, not that the build broke.
 phone layout, the drawer, the middle-width layout, the display settings and
 the scrollbars, the tap targets, the asset cache, creating and deleting a
 note, the navigator's two orders, removing a root, the installable app, the
-service worker's cache name, flowcharts drawn as images, and what a suite
-does when the browser is missing: ten suites, 116 tests. It is CI's second
-job.
+service worker's cache name, flowcharts drawn as images, images pasted and
+dropped into the editor, and what a suite does when the browser is missing:
+eleven suites, 120 tests. It is CI's second job.
 
 The extension has a browser suite of its own, which CI does not run, because
 it needs both the extension and the daemon built:

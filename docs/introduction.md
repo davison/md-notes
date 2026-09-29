@@ -2,7 +2,7 @@
 
 md-notes is a local service that turns folders of markdown files into a notes
 application in the browser. This page describes what exists and works today, at the
-end of [milestone ten](milestones/10-before-the-next-release.md): the
+end of [milestone eleven](milestones/11-images-in-the-editor-and-docs-only-ci.md): the
 daemon and the rendered viewer from
 [milestone one](milestones/1-daemon-and-rendered-viewer.md), the editor from
 [milestone two](milestones/2-editor-autosave-and-live-update.md), the browser half
@@ -13,8 +13,10 @@ five added to them, the tailnet clipping and clipper repairs of
 milestone seven did to roots, to the navigator and to installing the app on a phone,
 all of it carrying a version number and installable from a package since
 [milestone eight](milestones/8-the-first-release.md), the flowcharts
-[milestone nine](milestones/9-flowcharts-drawn-by-the-daemon.md) draws, and what
-milestone ten fixed and documented before the next release.
+[milestone nine](milestones/9-flowcharts-drawn-by-the-daemon.md) draws, what
+[milestone ten](milestones/10-before-the-next-release.md) fixed and documented before
+the next release, and the images milestone eleven lets you paste or drop into the
+editor.
 Notes are created, edited and deleted in the app; renaming one is still done with other
 tools.
 
@@ -111,6 +113,17 @@ same bytes ([Checking a release](releasing.md#checking-a-release)), and CI runs 
 pinned runners and current actions. The README now says what md-notes is and shows it,
 with installing and running on pages of their own ([Installing md-notes](install.md),
 [Running md-notes](running.md)), and the extension has a [privacy page](privacy.md).
+
+Milestone eleven lets an image into a note. One pasted from the clipboard or dragged in
+from a file manager is copied into the `_resources` directory at the top of the root,
+never replacing a file there, and linked from the note at the cursor or the drop point
+with a relative link that Markor resolves too; only five image types are taken, judged
+by their content, up to 16 MiB each, and an uploaded SVG's script cannot run from the
+app ([Pasting and dropping images](#pasting-and-dropping-images),
+[Uploading an image](#uploading-an-image)). The same milestone stopped CI running the
+test suites for a push or pull request made only of `docs` commits; every other change,
+and every release, still runs them all
+([CONTRIBUTING](../CONTRIBUTING.md#commit-messages)).
 
 The browser half is a Chromium extension that clips a readable page or a selection
 into the notes root as markdown, and opens a local markdown file in the app instead
@@ -1306,10 +1319,12 @@ that device end to end, including the two ways to reach your notes from one.
 ### What holds these numbers
 
 The figures in the two sections above are not only documented, they are measured on
-every push. `make e2e` runs a suite of 116 checks under `ui/e2e` in headless Chromium
-against the built daemon on a temporary root, and CI runs it as a job of its own: the
-pane rectangles at four phone profiles and a desktop control, the 960-pixel
-breakpoint walked at 959, 960 and 961, the 1290-pixel one walked at 1289 and 1290 —
+every push and pull request that is not all `docs` commits (see
+[CONTRIBUTING](../CONTRIBUTING.md#commit-messages)). `make e2e` runs a suite of 120
+checks under `ui/e2e` in headless Chromium against the built daemon on a temporary
+root, and CI runs it as a job of its own: the pane rectangles at four phone profiles
+and a desktop control, the 960-pixel breakpoint walked at 959, 960 and 961, the
+1290-pixel one walked at 1289 and 1290 —
 the side pane under the navigator below it, a column of its own at it, and the note
 exactly at its 720-pixel reading width either way, which is the figure for a browser
 drawing no bar in the gutter, as the suite's own headless one does not — the drawer's
@@ -1538,10 +1553,15 @@ as a markdown image ([#214](https://github.com/davison/md-notes/issues/214)):
   already have. It is made the first time it is needed.
 - **Where the link goes.** A paste goes at the cursor, replacing a selection; in
   vim's normal mode it lands where a pasted line of text would. A drop goes at the
-  point it was dropped. Several files dropped at once give one link each, one per
-  line. The link climbs from the note's folder to the root (`../` per level), with
-  no scheme and no leading slash, so the reading view, Markor and any other
-  markdown reader resolve it the same way.
+  point it was dropped. Several files dropped at once give one link each, with a
+  line break between one link and the next. Nothing is added before the first link
+  or after the last, so a link put beside text runs into it: a drop at the start of
+  a line gives `![shot](_resources/shot.png)gamma`, and a paste at the end of one
+  gives `first line![](_resources/….png)`. Both render as an image inline with that
+  text ([#227](https://github.com/davison/md-notes/issues/227) would give each image
+  a line of its own). The link climbs from the note's folder to the root (`../` per
+  level), with no scheme and no leading slash, so the reading view, Markor and any
+  other markdown reader resolve it the same way.
 - **What it is called.** A paste is named by its content — the first 32 hex digits
   of its SHA-256 — so pasting the same image twice gives one file. A dropped file
   keeps its own name, reduced to letters, digits, `.`, `_` and `-` (`Holiday
