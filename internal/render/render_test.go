@@ -176,6 +176,24 @@ func TestLinkRewriting(t *testing.T) {
 	}
 }
 
+// The link the editor inserts for a pasted or dropped image climbs from
+// the note's folder to the root's one _resources directory. It resolves to
+// the same raw URL from any depth.
+func TestResourcesLinkResolvesFromAnyDepth(t *testing.T) {
+	const want = `src="/api/r/notes/raw/_resources/abc.png"`
+	for note, md := range map[string]string{
+		"top.md":         "![](_resources/abc.png)",
+		"a/one.md":       "![](../_resources/abc.png)",
+		"a/b/two.md":     "![](../../_resources/abc.png)",
+		"a/b/encoded.md": "![](../../_resources/ab%63.png)",
+		"a/b/c/three.md": "![x](../../../_resources/abc.png)",
+	} {
+		if n := render(t, note, md); !strings.Contains(n.HTML, want) {
+			t.Errorf("%s: %q lacks %q:\n%s", note, md, want, n.HTML)
+		}
+	}
+}
+
 func TestSanitisation(t *testing.T) {
 	n := render(t, "x.md", `<script>alert(1)</script>
 

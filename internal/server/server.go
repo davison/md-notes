@@ -194,6 +194,7 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 	s.mux.HandleFunc("PUT /api/r/{slug}/source/{path...}", s.saveSourceHandler)
 	s.mux.HandleFunc("POST /api/r/{slug}/source/{path...}", s.createSourceHandler)
 	s.mux.HandleFunc("DELETE /api/r/{slug}/source/{path...}", s.deleteSourceHandler)
+	s.mux.HandleFunc("POST /api/r/{slug}/resources", s.uploadHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/events", s.eventsHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/search", s.searchHandler)
 	s.mux.HandleFunc("GET /api/r/{slug}/tags", s.tagsHandler)
