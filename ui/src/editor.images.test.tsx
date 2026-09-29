@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render } from "@testing-library/preact";
 import { undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { Vim, getCM } from "@replit/codemirror-vim";
-import { Editor } from "./editor";
+import { Editor, imageNotice } from "./editor";
 import { Session, resetSessions } from "./session";
 import { UNREACHABLE } from "./api";
 
@@ -165,6 +165,24 @@ describe("pasting an image", () => {
     expect(view.state.doc.toString()).toBe("a\n");
   });
 
+  it("keeps typing straight after the link out of the link's undo step", async () => {
+    daemon(() => created("x.png"));
+    const s = sessionAt("top.md", "a\n");
+    const { view } = editing(s);
+    view.dispatch({ selection: { anchor: 1 } });
+    paste(view.contentDOM, [png("image.png")]);
+    const link = "![](_resources/x.png)";
+    await vi.waitFor(() => expect(view.state.doc.toString()).toBe(`a${link}\n`));
+    // Typed at once, at the caret the link left: without the link being an
+    // undo step of its own, CodeMirror would join this to it.
+    const end = 1 + link.length;
+    view.dispatch({ changes: { from: end, insert: "z" }, selection: { anchor: end + 1 }, userEvent: "input.type" });
+    undo(view);
+    expect(view.state.doc.toString()).toBe(`a${link}\n`);
+    undo(view);
+    expect(view.state.doc.toString()).toBe("a\n");
+  });
+
   it("lands where the paste was, though the note was typed in during the upload", async () => {
     const { gate } = daemon(() => created("x.png"));
     let release!: () => void;
@@ -288,15 +306,112 @@ describe("dropping images", () => {
     expect(alert.textContent).toContain("report.pdf");
   });
 
-  it("leaves a drop with no image to CodeMirror", () => {
+  it("leaves a drop with no image to CodeMirror", async () => {
     const { uploads } = daemon(() => created("x.png"));
     const s = sessionAt("n.md", "\n");
     const { container, view } = editing(s);
-    const pdf = new File(["%PDF"], "report.pdf", { type: "application/pdf" });
-    const ev = drop(view.contentDOM, [pdf]);
+    vi.spyOn(view, "posAtCoords").mockReturnValue(0);
+    const pdf = new File(["%PDF-1.7"], "report.pdf", { type: "application/pdf" });
+    drop(view.contentDOM, [pdf]);
+    // CodeMirror's own drop handler reads a dropped file as text and inserts
+    // it: that is what a PDF drop did before images were taken, and still does.
+    await vi.waitFor(() => expect(view.state.doc.toString()).toBe("%PDF-1.7\n"));
     expect(uploads).toHaveLength(0);
-    // Not ours: nothing here said no to the browser on CodeMirror's behalf.
     expect(container.querySelector("[role=alert]")).toBeNull();
-    expect(ev).toBeTruthy();
+  });
+});
+
+describe("an upload that outlives its editor", () => {
+  /** The session's draft replaced from outside, as a reload from disk does it. */
+  function reloaded(s: Session, text: string) {
+    s.state = { ...s.state, status: "clean", base: { source: text, revision: "r9" }, draft: text, generation: s.state.generation + 1 };
+  }
+
+  function held() {
+    const d = daemon(() => created("x.png"));
+    let release!: () => void;
+    d.gate.hold = new Promise((r) => (release = r));
+    return { ...d, release };
+  }
+
+  it("says the file was saved but not linked when the note is reloaded with other text meanwhile", async () => {
+    const { release } = held();
+    const s = sessionAt("top.md", "a\n");
+    const { view, rerender, findByRole, container } = editing(s);
+    paste(view.contentDOM, [png("image.png")]);
+    await vi.waitFor(() => expect(container.textContent).toContain("Adding the image"));
+    reloaded(s, "a changed\n");
+    rerender(<Editor session={s} />);
+    release();
+    const alert = await findByRole("alert");
+    expect(alert.textContent).toContain("_resources/x.png");
+    expect(alert.textContent).toContain("reloaded");
+    expect(viewOf(container).state.doc.toString()).toBe("a changed\n");
+    expect(container.textContent).not.toContain("Adding the image");
+  });
+
+  it("links into the rebuilt editor when the reload kept the text", async () => {
+    const { release } = held();
+    const s = sessionAt("top.md", "a\n");
+    const { view, rerender, container } = editing(s);
+    view.dispatch({ selection: { anchor: 1 } });
+    paste(view.contentDOM, [png("image.png")]);
+    reloaded(s, "a\n");
+    rerender(<Editor session={s} />);
+    release();
+    await vi.waitFor(() => expect(viewOf(container).state.doc.toString()).toBe("a![](_resources/x.png)\n"));
+    expect(container.textContent).not.toContain("Adding the image");
+    expect(container.querySelector("[role=alert]")).toBeNull();
+  });
+
+  it("links into the draft when the reader has gone to the reading view, and one undo takes it out", async () => {
+    const { release } = held();
+    const s = sessionAt("top.md", "a\n");
+    const first = editing(s);
+    first.view.dispatch({ selection: { anchor: 1 } });
+    paste(first.view.contentDOM, [png("image.png")]);
+    first.unmount();
+    release();
+    await vi.waitFor(() => expect(s.state.draft).toBe("a![](_resources/x.png)\n"));
+    const second = render(<Editor session={s} />);
+    const view = viewOf(second.container);
+    expect(view.state.doc.toString()).toBe("a![](_resources/x.png)\n");
+    expect(second.container.textContent).not.toContain("Adding the image");
+    undo(view);
+    expect(view.state.doc.toString()).toBe("a\n");
+  });
+
+  it("says so on the editor's return when the note was reloaded while the reader was away", async () => {
+    const { release } = held();
+    const s = sessionAt("top.md", "a\n");
+    const first = editing(s);
+    paste(first.view.contentDOM, [png("image.png")]);
+    first.unmount();
+    reloaded(s, "b\n");
+    release();
+    await vi.waitFor(() => expect(imageNotice(s)?.kind).toBe("error"));
+    expect(s.state.draft).toBe("b\n");
+    const second = render(<Editor session={s} />);
+    const alert = await second.findByRole("alert");
+    expect(alert.textContent).toContain("_resources/x.png");
+  });
+
+  it("keeps saying it is adding while a second upload is still running", async () => {
+    const d = daemon(() => created("x.png"));
+    let first!: () => void;
+    let second!: () => void;
+    d.gate.hold = new Promise((r) => (first = r));
+    const s = sessionAt("top.md", "a\n");
+    const { view, container } = editing(s);
+    paste(view.contentDOM, [png("image.png")]);
+    await vi.waitFor(() => expect(d.uploads).toHaveLength(1));
+    d.gate.hold = new Promise((r) => (second = r));
+    paste(view.contentDOM, [png("image.png")]);
+    await vi.waitFor(() => expect(d.uploads).toHaveLength(2));
+    first();
+    await vi.waitFor(() => expect(view.state.doc.toString()).toContain("_resources/x.png"));
+    expect(container.textContent).toContain("Adding the image");
+    second();
+    await vi.waitFor(() => expect(container.textContent).not.toContain("Adding the image"));
   });
 });
