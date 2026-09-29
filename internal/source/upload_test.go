@@ -311,3 +311,34 @@ func TestUploadUnknownRoot(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// A link at a candidate name is never reused, even one that looks like the
+// file it would be: Lstat reports a link's size as the length of its
+// target path, so a link whose target path is exactly as long as the image
+// — and whose target holds the image — matches on size and on bytes. Only
+// the regular-file check stands between it and being linked to.
+func TestUploadNeverReusesALinkThatMatches(t *testing.T) {
+	s, dir := fixture(t)
+	data := pngBytes(t, 21)
+	res := filepath.Join(dir, "_resources")
+	if err := os.Mkdir(res, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := strings.Repeat("a", len(data))
+	if err := os.WriteFile(filepath.Join(res, target), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(res, "shot.png")); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(filepath.Join(res, "shot.png")); err != nil || info.Size() != int64(len(data)) {
+		t.Fatalf("the link's own size is %v (%v), want %d: the case is not set up", info.Size(), err, len(data))
+	}
+	up, err := s.Upload("notes", "shot.png", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up.Path != "_resources/shot-2.png" || !up.Created {
+		t.Fatalf("upload = %+v, want a new _resources/shot-2.png rather than the link reused", up)
+	}
+}
