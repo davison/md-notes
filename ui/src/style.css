@@ -454,6 +454,41 @@ code {
   margin: 0 0 0.5rem;
 }
 
+/*
+ * What an image paste or drop has to say: "Adding the image…" while it
+ * uploads, and why a file was left out when one was. It sits above the
+ * editor in the editor body's column, so the text does not move under the
+ * caret when it comes and goes more than one line's worth.
+ */
+.editor-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9em;
+  color: var(--muted);
+}
+
+.editor-notice.error {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--error) 10%, var(--pane));
+}
+
+.editor-notice span {
+  flex: 1;
+}
+
+.editor-notice button {
+  font: inherit;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
 .conflict-actions {
   display: flex;
   gap: 0.5rem;
