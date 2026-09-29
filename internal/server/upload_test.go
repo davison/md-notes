@@ -261,3 +261,23 @@ func TestResourcesStayOutOfTheTree(t *testing.T) {
 		}
 	}
 }
+
+// A _resources that is a link to nowhere inside the root is refused with a
+// sentence about _resources, not a 500 about a note.
+func TestUploadNamesADanglingResourcesLink(t *testing.T) {
+	ts, base := newTestServer(t)
+	if err := os.Symlink("nowhere", filepath.Join(base, "notes", "_resources")); err != nil {
+		t.Fatal(err)
+	}
+	resp := do(t, ts, "POST", "/api/r/notes/resources?name=x.png", testPNG(t, 11), nil)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d, want 422: %s", resp.StatusCode, readAll(t, resp.Body))
+	}
+	var body struct{ Code, Error string }
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Code != "unsupported_source" || !strings.Contains(body.Error, "_resources is a symbolic link with no target") {
+		t.Fatalf("body = %+v", body)
+	}
+}

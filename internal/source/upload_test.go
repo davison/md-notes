@@ -342,3 +342,19 @@ func TestUploadNeverReusesALinkThatMatches(t *testing.T) {
 		t.Fatalf("upload = %+v, want a new _resources/shot-2.png rather than the link reused", up)
 	}
 }
+
+// A _resources that is a link with no target inside the root is named as
+// what it is, rather than failing as an unexplained I/O error.
+func TestUploadNamesADanglingResourcesLinkInsideTheRoot(t *testing.T) {
+	s, dir := fixture(t)
+	if err := os.Symlink("nowhere", filepath.Join(dir, "_resources")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.Upload("notes", "x.png", pngBytes(t, 22))
+	if !errors.Is(err, ErrResourcesLink) {
+		t.Fatalf("err = %v, want ErrImageType", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "nowhere")); !os.IsNotExist(err) {
+		t.Fatal("created the link's target")
+	}
+}

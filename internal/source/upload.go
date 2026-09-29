@@ -14,6 +14,8 @@ import (
 	"path"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/davison/md-notes/internal/roots"
 )
 
 // ResourcesDir is where uploaded images go: one directory at the top of
@@ -38,6 +40,10 @@ const maxStem = 100
 var (
 	ErrUploadTooLarge = errors.New("image exceeds 16 MiB")
 	ErrImageType      = errors.New("not a PNG, JPEG, GIF, WebP or SVG image")
+	// ErrResourcesLink is a _resources that is a symbolic link with no
+	// target inside the root: nothing can be put in it, and nothing will
+	// replace it with a directory.
+	ErrResourcesLink = errors.New("_resources is a symbolic link with no target; remove it, or point it at a folder inside the root")
 )
 
 // Uploaded is an image Upload has put in, or found in, _resources. Path is
@@ -168,6 +174,13 @@ func (s *Store) Upload(slug, hint string, data []byte) (Uploaded, error) {
 		return Uploaded{}, os.ErrNotExist
 	}
 	if err := root.EnsureDir(ResourcesDir); err != nil {
+		// A link leaving the root is refused as the escape it is, and a
+		// file where the folder should be as not a directory. What is
+		// left to explain is a link inside the root that points nowhere,
+		// which the directory maker trips over as "file exists".
+		if !errors.Is(err, roots.ErrOutside) && isLink(root, ResourcesDir) {
+			return Uploaded{}, ErrResourcesLink
+		}
 		return Uploaded{}, err
 	}
 	dir, _, err := root.OpenDir(ResourcesDir)
@@ -206,6 +219,17 @@ func (s *Store) Upload(slug, hint string, data []byte) (Uploaded, error) {
 		return done(true)
 	}
 	return Uploaded{}, ErrExists
+}
+
+// isLink reports whether name, directly under the root, is a symbolic link.
+func isLink(root roots.Root, name string) bool {
+	h, err := root.Open()
+	if err != nil {
+		return false
+	}
+	defer h.Close()
+	info, err := h.Lstat(name)
+	return err == nil && info.Mode()&fs.ModeSymlink != 0
 }
 
 // holds reports whether the file name in dir holds exactly data. It reads
