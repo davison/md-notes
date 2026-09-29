@@ -30,7 +30,50 @@ on:
 #   rebuild with it gives the same bytes (docs/releasing.md, "Checking a
 #   release").
 jobs:
+  # Whether the test jobs below run (davison/md-notes#215). A push to main or a
+  # pull request made only of `docs` and `chore` commits skips them, and they
+  # show as skipped, not missing. Every commit in the push or PR decides, not
+  # the head alone. A release never skips: release.yml reaches this file through
+  # workflow_call, where github.event_name is the caller's (a push, of a tag)
+  # and github.workflow the caller's name, so scripts/cigate applies the gate
+  # only when the workflow is `ci` on a branch, and workflow_dispatch always
+  # runs everything. scripts/workflows/ci_gate_test.go holds that. Any failure
+  # to list the commits runs everything.
+  gate:
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Decide from the commit subjects
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          subjects=$(mktemp)
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            gh api --paginate "repos/$REPO/pulls/$PR/commits" \
+              --jq '.[].commit.message | split("\n")[0]' > "$subjects" || : > "$subjects"
+          elif [ "$GITHUB_EVENT_NAME" = push ] && [ -n "${BEFORE//0/}" ]; then
+            gh api --paginate "repos/$REPO/compare/$BEFORE...$AFTER" \
+              --jq '.commits[].commit.message | split("\n")[0]' > "$subjects" || : > "$subjects"
+          else
+            : > "$subjects"
+          fi
+          go run ./scripts/cigate \
+            -workflow "$GITHUB_WORKFLOW" -event "$GITHUB_EVENT_NAME" -ref-type "$GITHUB_REF_TYPE" \
+            < "$subjects" | tee -a "$GITHUB_OUTPUT"
+
   check:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -65,6 +108,8 @@ jobs:
   # so the Go and unit suites still report in their own time and a browser
   # download never sits in front of them.
   e2e:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-24.04
     # The whole job is a build and a seven-second suite; anything near this
     # is hung, and a hung job should not hold a runner for six hours.
