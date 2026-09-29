@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { EditorState, StateEffect, StateField, Transaction } from "@codemirror/state";
+import { EditorState, StateEffect, StateField, Transaction, type TransactionSpec } from "@codemirror/state";
 import { EditorView, drawSelection, highlightActiveLine, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -80,8 +80,12 @@ export function withLineEnding(text: string, ending: string): string {
 /**
  * Where an image paste or drop will put its links, held while the uploads
  * run. The range is mapped through every change made meanwhile — typing,
- * a save's reload, another paste — so the links land where the reader put
- * them rather than at a stale offset. A caret's position keeps to the left
+ * another paste — so the links land where the reader put them rather than
+ * at a stale offset. It lives in the editor state, so it goes wherever that
+ * state goes: parked on the session while the reading view is showing, and
+ * back into a view rebuilt over the same text. A state rebuilt from a
+ * different draft does not carry it, and the upload then says so (see
+ * insertImages). A caret's position keeps to the left
  * of text typed at that very point, so what the reader types after pasting
  * stays after the link.
  */
@@ -121,10 +125,43 @@ export interface Notice {
   kind: "busy" | "error";
   text: string;
 }
-const notifiers = new WeakMap<EditorView, (n: Notice | null) => void>();
-function notify(view: EditorView, n: Notice | null) {
-  notifiers.get(view)?.(n);
+
+/**
+ * The image uploads a note has in flight, and the last thing that went
+ * wrong with one. It belongs to the session rather than to a view or a
+ * component: an upload outlives both when the editor is rebuilt over a
+ * reloaded draft or closed for the reading view, and its outcome still has
+ * to reach whichever editor shows the note next.
+ */
+interface ImageActivity {
+  busy: number;
+  error: string | null;
+  listeners: Set<() => void>;
 }
+const activities = new WeakMap<Session, ImageActivity>();
+function activity(session: Session): ImageActivity {
+  let a = activities.get(session);
+  if (!a) {
+    a = { busy: 0, error: null, listeners: new Set() };
+    activities.set(session, a);
+  }
+  return a;
+}
+function changed(a: ImageActivity) {
+  for (const fn of a.listeners) fn();
+}
+
+/** The notice for a note's image uploads, if there is one to show. */
+export function imageNotice(session: Session): Notice | null {
+  const a = activities.get(session);
+  if (!a) return null;
+  if (a.error) return { kind: "error", text: a.error };
+  if (a.busy > 0) return { kind: "busy", text: a.busy === 1 ? "Adding the image…" : `Adding ${a.busy} images…` };
+  return null;
+}
+
+/** The view showing a session's note now, if the editor is open on it. */
+const liveViews = new WeakMap<Session, EditorView>();
 
 /**
  * The files an event carries that the editor takes as images. None means
@@ -156,18 +193,17 @@ async function insertImages(
 ) {
   const id = ++pendingId;
   view.dispatch({ effects: addPending.of({ id, from, to }) });
-  notify(view, { kind: "busy", text: images.length === 1 ? "Adding the image…" : `Adding ${images.length} images…` });
+  const a = activity(session);
+  a.busy += images.length;
+  changed(a);
   const results = await Promise.allSettled(images.map((f) => uploadImage(session.slug, f, dropped ? f.name : undefined)));
-  // A view destroyed meanwhile — the reader switched to the rendered view
-  // — has nowhere to put the links; the files are uploaded, and a paste
-  // or drop again links the same files without storing them twice.
-  if (!notifiers.has(view)) return;
-  const at = view.state.field(pendingInserts).find((p) => p.id === id);
   const links: string[] = [];
+  const saved: string[] = [];
   const problems: string[] = [];
   results.forEach((r, i) => {
     const label = dropped ? images[i].name : "the pasted image";
     if (r.status === "fulfilled") {
+      saved.push(r.value.path);
       links.push(imageMarkdown(dropped ? altFor(images[i].name) : "", resourceLink(session.path, r.value.path)));
     } else {
       const why = r.reason instanceof Error ? r.reason.message : String(r.reason);
@@ -175,23 +211,63 @@ async function insertImages(
     }
   });
   for (const f of others) problems.push(`Left out ${f.name}: not an image.`);
-  if (!at || links.length === 0) {
-    view.dispatch({ effects: dropPending.of(id) });
-  } else {
+  if (!link(session, id, links, dropped) && saved.length > 0) {
+    const files = saved.map((p) => "`" + p + "`").join(", ");
+    const one = saved.length === 1;
+    problems.unshift(
+      `${one ? "The image was" : "The images were"} saved as ${files}, but the note was reloaded before ` +
+        `${one ? "it" : "they"} could be linked. Paste or drop ${one ? "it" : "them"} again to link the same ` +
+        `${one ? "file" : "files"}.`,
+    );
+  }
+  a.busy -= images.length;
+  a.error = problems.length ? problems.join(" ") : links.length ? null : a.error;
+  changed(a);
+}
+
+/**
+ * Puts the links for pending insert `id` into whichever editor state still
+ * holds it, and reports whether one did. That is the live view when the
+ * editor is open — the one the paste was made in, or one rebuilt over the
+ * same text, which carries the same state. With the editor closed for the
+ * reading view it is the state parked on the session, provided that is the
+ * state the editor will reopen with; the draft is written through the
+ * session then, as typing would, so autosave takes it and the reopened
+ * editor shows it, undoable. Anything else — a view rebuilt over a draft
+ * reloaded from disk — no longer has the place the reader chose, and gets
+ * nothing.
+ */
+function link(session: Session, id: number, links: string[], dropped: boolean): boolean {
+  const spec = (state: EditorState, at: Pending): TransactionSpec => {
+    if (links.length === 0) return { effects: dropPending.of(id) };
     const insert = links.join("\n");
-    const main = view.state.selection.main;
+    const main = state.selection.main;
     // The caret follows the link when it is still where the paste was, as
     // it would after typed text; a reader who has moved on is left there.
     const follow = main.empty ? main.head === at.to || main.head === at.from : main.from === at.from && main.to === at.to;
-    view.dispatch({
+    return {
       changes: { from: at.from, to: at.to, insert },
       selection: follow ? { anchor: at.from + insert.length } : undefined,
       effects: dropPending.of(id),
       annotations: [isolateHistory.of("full"), Transaction.userEvent.of(dropped ? "input.drop" : "input.paste")],
       scrollIntoView: follow,
-    });
+    };
+  };
+  const pending = (state: EditorState) => state.field(pendingInserts, false)?.find((p) => p.id === id);
+  const live = liveViews.get(session);
+  if (live) {
+    const at = pending(live.state);
+    if (!at) return false;
+    live.dispatch(spec(live.state, at));
+    return true;
   }
-  notify(view, problems.length ? { kind: "error", text: problems.join(" ") } : null);
+  const parked = reopening(session);
+  const at = parked && pending(parked);
+  if (!parked || !at) return false;
+  const next = parked.update(spec(parked, at)).state;
+  session.editorState = next;
+  if (links.length) session.edit(withLineEnding(next.doc.toString(), lineEnding(session.state.draft)));
+  return true;
 }
 
 /**
@@ -297,6 +373,17 @@ function holdsDraft(state: EditorState, draft: string): boolean {
 }
 
 /**
+ * The parked state the editor will reopen with, or null when it will build
+ * a new one: the draft has been replaced since it was parked, by something
+ * other than the editor, with different text.
+ */
+function reopening(session: Session): EditorState | null {
+  const parked = session.editorState instanceof EditorState ? session.editorState : null;
+  if (parked === null) return null;
+  return session.editorGeneration === session.state.generation || holdsDraft(parked, session.state.draft) ? parked : null;
+}
+
+/**
  * A CodeMirror 6 markdown editor with vim keybindings over a session's
  * draft. The editor state is parked on the session between mounts so a
  * mode switch keeps the cursor and undo history, and it is rebuilt when
@@ -322,17 +409,26 @@ function holdsDraft(state: EditorState, draft: string): boolean {
 export function Editor({ session }: { session: Session }) {
   const host = useRef<HTMLDivElement>(null);
   const generation = session.state.generation;
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const [, rerender] = useState(0);
+  useEffect(() => {
+    const a = activity(session);
+    const fn = () => rerender((n) => n + 1);
+    a.listeners.add(fn);
+    return () => {
+      a.listeners.delete(fn);
+    };
+  }, [session]);
+  const notice = imageNotice(session);
 
   useEffect(() => {
     defineEx();
     const parent = host.current!;
-    const parked = session.editorState instanceof EditorState ? session.editorState : null;
-    const keep = parked !== null && (session.editorGeneration === generation || holdsDraft(parked, session.state.draft));
-    const state = keep ? parked : createState(session.state.draft, session);
+    const parked = reopening(session);
+    const keep = parked !== null;
+    const state = parked ?? createState(session.state.draft, session);
     const view = new EditorView({ state, parent });
     owners.set(view, session);
-    notifiers.set(view, setNotice);
+    liveViews.set(session, view);
     const cm = getCM(view);
     if (keep && session.editorInsert && cm) {
       Vim.handleKey(cm, "i", "api");
@@ -343,7 +439,7 @@ export function Editor({ session }: { session: Session }) {
       session.editorState = view.state;
       session.editorGeneration = generation;
       session.editorInsert = getCM(view)?.state.vim?.insertMode === true;
-      notifiers.delete(view);
+      if (liveViews.get(session) === view) liveViews.delete(session);
       view.destroy();
     };
   }, [session, generation]);
@@ -354,7 +450,14 @@ export function Editor({ session }: { session: Session }) {
         <div class={`editor-notice ${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>
           <span>{notice.text}</span>
           {notice.kind === "error" && (
-            <button type="button" onClick={() => setNotice(null)}>
+            <button
+              type="button"
+              onClick={() => {
+                const a = activity(session);
+                a.error = null;
+                changed(a);
+              }}
+            >
               Dismiss
             </button>
           )}
