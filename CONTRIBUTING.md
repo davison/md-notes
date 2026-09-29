@@ -138,7 +138,9 @@ make e2e     # the UI's browser suite, in headless Chromium
 ```
 
 `make check` is what CI's `check` job runs, and it is the one to run before
-every commit. It is well under a minute.
+every commit. It is well under a minute. CI skips that job, and `e2e`, when
+every commit in a push or pull request is `docs` or `chore` (see [Commit
+messages](#commit-messages)); run them yourself if you doubt the type.
 
 `make vuln` is a step of the same CI job but deliberately not part of `make
 check`: it asks the vulnerability database and the npm registry, so it can go
@@ -257,6 +259,19 @@ test(render): show a note forging the scroll-to-line target (#139)
 
 The release notes are generated from these subjects, so they are worth
 writing well.
+
+**The type also decides whether CI runs the tests.** A push or pull request
+whose every commit is `docs` or `chore` (scoped forms such as `docs(readme):`
+included) skips CI's `check` and `e2e` jobs, and they show as skipped. One
+commit of any other type, anywhere in the push or PR, runs both. Only the
+subject decides, no path is looked at, so choose it with that in mind: `docs`
+and `chore` are for changes CI need not test. A change that affects what the
+tests check (code, tests, workflows, the Makefile, packaging, the man pages,
+`go.mod`, `.gitignore`), or that you would want tested anyway, is a `fix(...)`,
+or a truer type such as `feat`, `test`, `build`, `ci` or `refactor`. A release
+never skips its checks, whatever the tagged commit says (see
+[docs/releasing.md](docs/releasing.md)). The gate is `scripts/cigate`, wired
+into `.github/workflows/ci.yml`.
 
 ## How work flows here
 

@@ -50,7 +50,13 @@ version literal that has to be bumped by hand.
 
 1. **Checks the commit** by calling `ci.yml` itself, so a release runs exactly
    the checks every other commit runs — `make check` and the browser suite —
-   and cannot drift from them.
+   and cannot drift from them. **A release never skips these checks.** On
+   ordinary pushes and pull requests `ci.yml` skips `check` and `e2e` when every
+   commit is `docs` or `chore`, but that gate applies only to `ci` itself on a
+   branch: under a release's `workflow_call` (the tag push, or the dry run's
+   `workflow_dispatch`) it always says run, whatever the tagged commit's subject
+   is. `scripts/workflows/ci_release_path_test.go` and `scripts/cigate` hold
+   this.
 2. **Builds** with `make release VERSION=<tag>`, using the Go and the Node the
    tag pins (see [Checking a release](#checking-a-release)): the static daemon
    for `linux/amd64` and `linux/arm64` with `CGO_ENABLED=0`, the extension
