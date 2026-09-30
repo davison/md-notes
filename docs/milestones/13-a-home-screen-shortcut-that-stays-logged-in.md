@@ -62,9 +62,12 @@ What a reader has now:
 The pull request landed by rebase, so the commits on `main` differ from the head the last review
 saw, but the approval covered the last head: no commit came after it.
 
-The commits are `fix`, `test` and `docs`, and none is `feat`, as the plan and the release Decision
-expected ([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5913477367)). The man
-page took `fix(man)`, so that CI runs for it.
+The commits are `fix`, `test` and `docs`, and none is `feat`: #240's plan lists `fix(server)`,
+`test(e2e)`, `docs`, and `fix(man)` if the man page changed, and says "No `feat`"
+([#240](https://github.com/davison/md-notes/issues/240)), and the release Decision calls the change
+a fix ([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5913477367)). Round one of
+the review checked each commit's type against its diff ([PR
+#241](https://github.com/davison/md-notes/pull/241#issuecomment-5913797034)).
 
 ## Requirement outcomes
 
@@ -276,10 +279,10 @@ contract, with the reviewer seat routed to the operator.
   cross-site matrix of its own in Chromium 153 and measured the explicit `Lax` against the
   two-minute window.
 - **The fix pass** added `b107985` (escaping, and every refusal logged), `565e3fd` (the route test
-  now parses every file of the package with `go/parser`), `83d0efc` and `45bb114` (the docs for nits
-  4 to 6 and finding 2), and the addendum Decision. `TestTailnetLogCannotBeForged` failed on the old
-  head with 4 lines, 2 of them forged; `TestEveryTailnetRefusalIsLogged` failed there for each of
-  the seven new cases
+  now parses every file of the package with `go/parser`), `83d0efc` (`test(session)`, a gofmt
+  reorder of one import line) and `45bb114` (the docs for nits 4 to 6 and finding 2), and the
+  addendum Decision. `TestTailnetLogCannotBeForged` failed on the old head with 4 lines, 2 of them
+  forged; `TestEveryTailnetRefusalIsLogged` failed there for each of the seven new cases
   ([#240](https://github.com/davison/md-notes/issues/240#issuecomment-5913882742)).
 - **Round two** ([changes
   requested](https://github.com/davison/md-notes/pull/241#issuecomment-5914022268)), at `45bb114`.
@@ -466,20 +469,22 @@ newest tag and `v0.3.2` did not exist.
 
 ## Where the record is silent
 
-**Three of the operator's words were recorded late.** Every seat posts under the one account, so the
+**Four of the operator's words were recorded late.** Every seat posts under the one account, so the
 account alone does not say who typed a comment. The scope Decision recorded its attribution when the
-words were relayed, as it says itself, where M12's came at record time. Three later relays were not
+words were relayed, as it says itself, where M12's came at record time. Four later relays were not
 posted when they were said:
 
 - "linked #241 to #240", behind the `connected` event at 14:54:36Z;
 - the 209148 workaround, "put Closes owner/repo#N in the squash commit message, or close the issue
-  by hand", behind `89c0b51`'s closing line, and the search ask that found the two discussions;
+  by hand", behind `89c0b51`'s closing line;
+- "Can you search to see if there's any open tickets about it with GH?", the ask that found the two
+  discussions;
 - "it's on", the repository's auto-close setting.
 
-This record's Deviation on #239 named the gap
-([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914650687)), and the
-coordinator's attribution Decision, posted at 15:50:12Z, records all of them and that `task finish
-240 --operator-confirm` wrote the operator confirmation on PR #241
+This record's Deviation on #239 named three of them, the link, the workaround and the auto-close
+check ([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914650687)). The
+coordinator's attribution Decision, posted at 15:50:12Z, records all four, the search ask included,
+and that `task finish 240 --operator-confirm` wrote the operator confirmation on PR #241
 ([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914771903)).
 
 **Relayed and recorded at the time:** the operator's device reports in #238, his "Lax works, the
