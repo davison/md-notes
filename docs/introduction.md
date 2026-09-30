@@ -2,7 +2,8 @@
 
 md-notes is a local service that turns folders of markdown files into a notes
 application in the browser. This page describes what exists and works today, at the
-end of [milestone twelve](milestones/12-a-tailnet-login-that-lasts.md): the
+end of [milestone
+thirteen](milestones/13-a-home-screen-shortcut-that-stays-logged-in.md): the
 daemon and the rendered viewer from
 [milestone one](milestones/1-daemon-and-rendered-viewer.md), the editor from
 [milestone two](milestones/2-editor-autosave-and-live-update.md), the browser half
@@ -17,8 +18,9 @@ all of it carrying a version number and installable from a package since
 [milestone ten](milestones/10-before-the-next-release.md) fixed and documented before
 the next release, the images
 [milestone eleven](milestones/11-images-in-the-editor-and-docs-only-ci.md) lets you paste
-or drop into the editor, and the tailnet login milestone twelve made last until the
-token is rotated.
+or drop into the editor, the tailnet login
+[milestone twelve](milestones/12-a-tailnet-login-that-lasts.md) made last until the
+token is rotated, and the home-screen shortcut milestone thirteen keeps logged in.
 Notes are created, edited and deleted in the app; renaming one is still done with other
 tools.
 
@@ -133,6 +135,17 @@ with a key derived from the token and the daemon keeps nothing about sessions, s
 device stays logged in across restarts, upgrades and reboots, until the token is
 rotated or the device goes 30 days without using it. Every device logs in once more
 at the upgrade to v0.3.1, and not again
+([A browser on the tailnet](#a-browser-on-the-tailnet)).
+
+Milestone thirteen let that login reach a home-screen shortcut. The session cookie
+is `SameSite=Lax` rather than `Strict`, so a navigation that starts outside the
+site, such as a shortcut's launch or a link from another app, carries it, while a
+form post, a `fetch` or a frame that another site starts still never does, and
+every request the daemon answers on `GET` is a read. A device that opens the notes
+from a shortcut is asked for the token once more after the upgrade to v0.3.2. The
+daemon also logs why each request under the tailnet name was sent to the login page
+or refused, and the browser family of each login, with nothing secret in the line,
+anything the caller chose escaped, and at most thirty lines a minute
 ([A browser on the tailnet](#a-browser-on-the-tailnet)).
 
 The browser half is a Chromium extension that clips a readable page or a selection
@@ -1401,7 +1414,7 @@ that device end to end, including the two ways to reach your notes from one.
 
 The figures in the two sections above are not only documented, they are measured on
 every push and pull request that is not all `docs` commits (see
-[CONTRIBUTING](../CONTRIBUTING.md#commit-messages)). `make e2e` runs a suite of 123
+[CONTRIBUTING](../CONTRIBUTING.md#commit-messages)). `make e2e` runs a suite of 124
 checks under `ui/e2e` in headless Chromium against the built daemon on a temporary
 root, and CI runs it as a job of its own: the pane rectangles at four phone profiles
 and a desktop control, the 960-pixel breakpoint walked at 959, 960 and 961, the
@@ -1461,11 +1474,13 @@ to measure, one refused by the layout at its image's request; and at all five wi
 it lands one below a wide diagram held at the floor. Behind a TLS proxy of its own,
 standing in for `tailscale serve`, it logs in once at a tailnet name and checks that
 the login survives a daemon restart and ends at a rotation, made while the daemon is
-running or stopped; that suite also needs `openssl`, for its certificate. Its own
-harness is tested too: a suite run without the browser download skips with a line
-naming the command that fetches it, and fails instead under CI. The viewports are
-the suite's own literals rather than Playwright's device registry, whose numbers move
-between releases
+running or stopped. From a second https site of its own it checks that a link carries
+the session while a form post, a credentialed `fetch` and an `iframe` arrive without
+it, and that a cookie with a foreign `Origin` is refused; that suite also needs
+`openssl`, for its certificate. Its own harness is tested too: a suite run without
+the browser download skips with a line naming the command that fetches it, and fails
+instead under CI. The viewports are the suite's own literals rather than
+Playwright's device registry, whose numbers move between releases
 ([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426)). It
 needs Chromium, which is a separate download; see
 [CONTRIBUTING.md](../CONTRIBUTING.md#what-you-need). It is not part of `make check`,
