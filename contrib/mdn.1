@@ -58,6 +58,12 @@ cookie.
 The session survives restarts, upgrades and reboots of the daemon.
 It ends when the token is rotated, on every device at once, or after 30 days
 idle: a session in use is renewed, and has no fixed lifetime.
+The cookie is
+.BR SameSite=Lax ,
+so a home\-screen shortcut or a link from another app opens the notes logged
+in, while a form post, fetch or frame from another site never carries it.
+Every request under that name that is sent to the login page or refused is
+logged with its reason, and every login with the browser family.
 .PP
 Notes stay plain markdown files in a folder hierarchy, editable with any tool
 and synced by anything that syncs files.
