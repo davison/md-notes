@@ -6,7 +6,9 @@
 package token
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
 	"fmt"
@@ -58,7 +60,7 @@ func Open(path string) (*Store, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	return &Store{path: path, value: value, info: info, gen: 1}, created, nil
+	return &Store{path: path, value: value, info: info}, created, nil
 }
 
 func load(path string) (string, os.FileInfo, bool, error) {
@@ -245,48 +247,60 @@ type Store struct {
 	// info identifies the file the held value was read from, so that a
 	// rotation is noticed without reading the file on every request.
 	info os.FileInfo
-	// gen counts the distinct token values this Store has held. It starts
-	// at 1 and moves only when a re-read finds a different secret, so
-	// anything derived from the token — a login session, in the daemon's
-	// case — can be tied to the generation that authorised it and fall
-	// with `mdn token --rotate`.
-	gen uint64
 }
 
 // Valid reports whether presented is the current token, comparing in
 // constant time.
 func (s *Store) Valid(presented string) bool {
-	_, ok := s.Authenticate(presented)
-	return ok
-}
-
-// Authenticate reports whether presented is the current token and, in the
-// same read, which generation it was compared against. The two answers
-// must come from one look at the file: a caller that asked separately
-// could validate against one secret and stamp a credential with the
-// generation of another, if a rotation landed between the two calls —
-// which is precisely the case a session tied to the generation exists to
-// withdraw.
-func (s *Store) Authenticate(presented string) (generation uint64, ok bool) {
 	if presented == "" {
-		return 0, false
+		return false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.refresh()
-	return s.gen, equal(presented, s.value)
+	return equal(presented, s.value)
 }
 
-// Generation identifies the token currently held: it changes when, and
-// only when, the secret does. A caller holding a credential minted from an
-// earlier generation can see that the token it rests on has been rotated
-// away without ever seeing the token itself. Like Valid, it notices a
-// rotation on the spot, at the cost of the same one stat.
-func (s *Store) Generation() uint64 {
+// Derive returns a key derived from the token in force now, for one named
+// purpose: HMAC-SHA256 keyed by the token, over the purpose. It changes
+// when, and only when, the token does — so anything signed with it, a
+// login session in the daemon's case, falls with `mdn token --rotate` or
+// a replaced token file, whether or not the daemon restarted in between,
+// and survives a restart over the same file. The key is not the token and
+// the token cannot be recovered from it, so a credential signed with it
+// can leave the machine without the token going with it. Like Valid, it
+// notices a rotation on the spot, at the cost of the same one stat.
+func (s *Store) Derive(purpose string) []byte {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.refresh()
-	return s.gen
+	return derive(s.value, purpose)
+}
+
+// AuthenticateDerive reports whether presented is the current token and,
+// from the same read, returns the key Derive would give for purpose. The
+// two answers must come from one look at the file: a caller that asked
+// separately could check one secret and sign a credential with the key of
+// another, if a rotation landed between the two calls — and that
+// credential would then be good under a token its holder never presented.
+// A refused token gets no key.
+func (s *Store) AuthenticateDerive(presented, purpose string) ([]byte, bool) {
+	if presented == "" {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refresh()
+	if !equal(presented, s.value) {
+		return nil, false
+	}
+	return derive(s.value, purpose), true
+}
+
+func derive(token, purpose string) []byte {
+	m := hmac.New(sha256.New, []byte(token))
+	m.Write([]byte(purpose))
+	return m.Sum(nil)
 }
 
 // refresh re-reads the token when the file is no longer the one the held
@@ -317,9 +331,6 @@ func (s *Store) refresh() {
 	value, from, err := read(s.path)
 	if err != nil || value == "" {
 		return
-	}
-	if value != s.value {
-		s.gen++
 	}
 	s.value, s.info = value, from
 }

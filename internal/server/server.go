@@ -28,7 +28,6 @@ import (
 	"github.com/davison/md-notes/internal/render"
 	"github.com/davison/md-notes/internal/roots"
 	"github.com/davison/md-notes/internal/search"
-	"github.com/davison/md-notes/internal/session"
 	"github.com/davison/md-notes/internal/source"
 	"github.com/davison/md-notes/internal/tags"
 	"github.com/davison/md-notes/internal/tree"
@@ -72,8 +71,6 @@ type Server struct {
 	// tailnetHost is one extra Host name the guard accepts, for requests
 	// a `tailscale serve` proxy forwards here. Empty is loopback only.
 	tailnetHost string
-	// sessions holds the browser logins issued under tailnetHost.
-	sessions *session.Store
 	// logins bounds how fast one caller can fail to log in.
 	logins *throttle
 
@@ -113,18 +110,21 @@ func WithWatchBudget(n int) Option {
 }
 
 // Validator answers whether a presented bearer token is the daemon's own,
-// and identifies which token that is. It is *token.Store in the daemon and
-// a stub in tests.
+// and derives the key a session cookie is signed with. It is *token.Store
+// in the daemon.
 type Validator interface {
-	// Authenticate reports whether presented is the current token and, in
-	// the same read, the generation it was compared against — so that a
-	// credential minted from a successful check cannot be stamped with a
-	// generation the check never saw.
-	Authenticate(presented string) (generation uint64, ok bool)
-	// Generation changes when, and only when, the token does, so a
-	// session cookie minted from one can be refused once the token it
-	// rested on has been rotated away.
-	Generation() uint64
+	// Valid reports whether presented is the current token.
+	Valid(presented string) bool
+	// Derive returns a key derived from the token in force now. It
+	// changes when, and only when, the token does, so a session cookie
+	// signed with one is refused once the token it rested on has been
+	// rotated away — and is still good after a restart over the same
+	// token.
+	Derive(purpose string) []byte
+	// AuthenticateDerive is Valid and Derive from one read of the token,
+	// so that a cookie signed after a successful check cannot be signed
+	// with the key of a token the check never saw.
+	AuthenticateDerive(presented, purpose string) ([]byte, bool)
 }
 
 // WithToken gives the daemon the bearer token clients present in an
@@ -165,7 +165,6 @@ func New(reg *roots.Registry, port int, ui fs.FS, logger *log.Logger, opts ...Op
 		now:           time.Now,
 		clipsDir:      config.DefaultClipsDir,
 		listDirs:      tree.Dirs,
-		sessions:      session.New(session.DefaultTTL),
 		logins:        newThrottle(),
 		keepalive:     30 * time.Second,
 		hubs:          map[string]*watch.Hub{},
@@ -662,8 +661,7 @@ func (s *Server) validToken(presented string) bool {
 	if s.token == nil {
 		return false
 	}
-	_, ok := s.token.Authenticate(presented)
-	return ok
+	return s.token.Valid(presented)
 }
 
 // authenticated reports whether the request proved it holds the token.

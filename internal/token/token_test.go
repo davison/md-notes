@@ -1,6 +1,7 @@
 package token
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -493,62 +494,87 @@ func TestWriteSweepsStaleStagingFiles(t *testing.T) {
 	}
 }
 
-// The generation is what a session cookie is tied to: it must move when
-// the secret does, and stay put otherwise, including across a re-read of
-// an identical file.
-func TestGenerationMovesOnlyWhenTheTokenDoes(t *testing.T) {
+// The derived key is what a session cookie is signed with: it must move
+// when the secret does, and stay put otherwise — across a re-read of an
+// identical file, and across a restart, which is a fresh Open of the same
+// file (davison/md-notes#231).
+func TestDerivedKeyMovesOnlyWhenTheTokenDoes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
 	s, _, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	first := s.Generation()
-	if first == 0 {
-		t.Fatal("generation starts at zero; a session minted before any rotation could not be told apart from none")
+	first := s.Derive(purpose)
+	if len(first) != 32 {
+		t.Fatalf("a %d-byte key, want 32", len(first))
 	}
-	if again := s.Generation(); again != first {
-		t.Errorf("generation moved without a rotation: %d then %d", first, again)
+	if again := s.Derive(purpose); !bytes.Equal(again, first) {
+		t.Error("the key moved without a rotation")
 	}
-	// A rewrite with the same bytes is not a rotation, even though it is
-	// a different inode and so forces a re-read.
+	if other := s.Derive("another purpose"); bytes.Equal(other, first) {
+		t.Error("two purposes derived the same key")
+	}
 	value, _, err := read(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if bytes.Equal(first, []byte(value)) || bytes.Contains(first, []byte(value)) {
+		t.Error("the derived key is the token")
+	}
+	// A restart: nothing carried over but the file.
+	restarted, _, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := restarted.Derive(purpose); !bytes.Equal(got, first) {
+		t.Error("the key differs after a restart over the same token")
+	}
+	// A rewrite with the same bytes is not a rotation, even though it is
+	// a different inode and so forces a re-read.
 	if _, err := write(path, value); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.Generation(); got != first {
-		t.Errorf("generation %d after rewriting the same token, want %d", got, first)
+	if got := s.Derive(purpose); !bytes.Equal(got, first) {
+		t.Error("the key moved after rewriting the same token")
 	}
 	if _, err := Rotate(path); err != nil {
 		t.Fatal(err)
 	}
-	second := s.Generation()
-	if second == first {
-		t.Fatalf("generation still %d after a rotation", second)
+	second := s.Derive(purpose)
+	if bytes.Equal(second, first) {
+		t.Fatal("the key is unchanged after a rotation")
 	}
+	// A rotation while stopped: the daemon that starts over the replaced
+	// file derives the new key, never the old one.
 	if _, err := Rotate(path); err != nil {
 		t.Fatal(err)
 	}
-	if third := s.Generation(); third == second {
-		t.Fatalf("generation still %d after a second rotation", third)
+	started, _, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// A state directory that went missing is not a revocation, so the
-	// generation stands with the held value.
+	third := started.Derive(purpose)
+	if bytes.Equal(third, second) || bytes.Equal(third, first) {
+		t.Fatal("a daemon started over a replaced file derived a superseded key")
+	}
+	if got := s.Derive(purpose); !bytes.Equal(got, third) {
+		t.Fatal("the running store did not follow the second rotation")
+	}
+	// A state directory that went missing is not a revocation, so the key
+	// stands with the held value.
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.Generation(); got != second+1 {
-		t.Errorf("generation %d after the file vanished, want it to stand at %d", got, second+1)
+	if got := s.Derive(purpose); !bytes.Equal(got, third) {
+		t.Error("the key moved when the file vanished")
 	}
 }
 
-// A caller that mints a credential from a successful check must stamp it
-// with the generation that check saw. Asking separately admits a rotation
-// between the two, and the credential would then outlive the secret that
-// authorised it — the one case the generation exists to cover.
-func TestAuthenticateReportsTheGenerationItComparedAgainst(t *testing.T) {
+// A caller that signs a credential after a successful check must sign it
+// with the key of the token that check compared against. Asking
+// separately admits a rotation between the two, and the credential would
+// then be valid under a token the caller never presented.
+func TestAuthenticateDerivesFromTheTokenItComparedAgainst(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
 	s, _, err := Open(path)
 	if err != nil {
@@ -558,32 +584,30 @@ func TestAuthenticateReportsTheGenerationItComparedAgainst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gen, ok := s.Authenticate(first)
-	if !ok || gen != s.Generation() {
-		t.Fatalf("Authenticate(current) = (%d, %v), want (%d, true)", gen, ok, s.Generation())
+	key, ok := s.AuthenticateDerive(first, purpose)
+	if !ok || !bytes.Equal(key, s.Derive(purpose)) {
+		t.Fatalf("AuthenticateDerive(current) = (%x, %v), want the current key and true", key, ok)
 	}
 	second, err := Rotate(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The superseded token is refused, and the generation it comes back
-	// with is the current one, never the one it was minted under.
-	stale, ok := s.Authenticate(first)
-	if ok {
-		t.Error("the replaced token authenticated")
+	// The superseded token is refused, and hands back no key at all.
+	stale, ok := s.AuthenticateDerive(first, purpose)
+	if ok || stale != nil {
+		t.Errorf("the replaced token: (%x, %v), want (nil, false)", stale, ok)
 	}
-	if stale == gen {
-		t.Errorf("generation %d unchanged across a rotation", stale)
+	fresh, ok := s.AuthenticateDerive(second, purpose)
+	if !ok || bytes.Equal(fresh, key) || !bytes.Equal(fresh, s.Derive(purpose)) {
+		t.Errorf("AuthenticateDerive(new) = (%x, %v), want the new key and true", fresh, ok)
 	}
-	fresh, ok := s.Authenticate(second)
-	if !ok || fresh != stale {
-		t.Errorf("Authenticate(new) = (%d, %v), want (%d, true)", fresh, ok, stale)
-	}
-	if _, ok := s.Authenticate(""); ok {
+	if _, ok := s.AuthenticateDerive("", purpose); ok {
 		t.Error("the empty token authenticated")
 	}
-	// Valid is the same answer without the generation.
+	// Valid is the same answer without the key.
 	if !s.Valid(second) || s.Valid(first) {
-		t.Error("Valid disagrees with Authenticate")
+		t.Error("Valid disagrees with AuthenticateDerive")
 	}
 }
+
+const purpose = "mdn test key v1"

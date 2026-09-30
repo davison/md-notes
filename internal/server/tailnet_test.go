@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davison/md-notes/internal/session"
 	"github.com/davison/md-notes/internal/source"
 	"github.com/davison/md-notes/internal/token"
 )
@@ -1021,23 +1020,6 @@ func TestSanitizeRedirect(t *testing.T) {
 	}
 }
 
-// A session does not last forever; the cookie's Max-Age and the store
-// agree about when it stops.
-func TestTailnetSessionExpires(t *testing.T) {
-	ts, base := newTailnetServer(t)
-	s := serverOf(t, ts)
-	s.sessions = session.New(40 * time.Millisecond)
-	resp := loginPost(t, ts, daemonToken(t, base), "/")
-	cookie := cookieHeader(t, resp)
-	if got := tdo(t, ts, "GET", "/api/roots", "", map[string]string{"Cookie": cookie}); got.StatusCode != 200 {
-		t.Fatalf("status %d", got.StatusCode)
-	}
-	time.Sleep(60 * time.Millisecond)
-	if got := tdo(t, ts, "GET", "/api/roots", "", map[string]string{"Cookie": cookie}); got.StatusCode != http.StatusUnauthorized {
-		t.Errorf("an expired session: status %d, want 401", got.StatusCode)
-	}
-}
-
 // raw sends a request exactly as written, so a request target in absolute
 // form — which no http.Client will send to an origin server — can be put
 // on the wire. It returns the status line.
@@ -1206,24 +1188,18 @@ func TestLoginAttemptsAreBounded(t *testing.T) {
 	}
 }
 
-// Logging in again finishes with the session the browser was holding.
-func TestLoggingInAgainEndsTheOldSession(t *testing.T) {
+// Logging in again gives the browser a fresh session, which replaces the
+// one it held. The old value has nothing behind it to delete — a session
+// is a signed value, not an entry (davison/md-notes#231) — so it stays as
+// good as any other cookie until its own idle limit, and the browser,
+// which keeps one cookie under the name, has already dropped it.
+func TestLoggingInAgainIssuesAFreshSession(t *testing.T) {
 	ts, base := newTailnetServer(t)
 	first := login(t, ts, base)
-	s := serverOf(t, ts)
-	if s.sessions.Len() != 1 {
-		t.Fatalf("%d sessions after one login", s.sessions.Len())
-	}
 	resp := loginPost(t, ts, daemonToken(t, base), "/", "Cookie", first)
 	second := cookieHeader(t, resp)
 	if second == first {
-		t.Fatal("the second login reissued the same id")
-	}
-	if s.sessions.Len() != 1 {
-		t.Errorf("%d sessions after logging in again, want the old one gone", s.sessions.Len())
-	}
-	if got := sessionStatus(t, ts, first); got != http.StatusUnauthorized {
-		t.Errorf("the superseded session: status %d, want 401", got)
+		t.Fatal("the second login reissued the same value")
 	}
 	if got := sessionStatus(t, ts, second); got != http.StatusOK {
 		t.Errorf("the new session: status %d, want 200", got)

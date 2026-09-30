@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/davison/md-notes/internal/session"
 )
 
 // loginPath is where the login form posts. It exists only under the
@@ -50,6 +52,10 @@ func (s *Server) guardTailnet(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	presented, carried := bearer(r)
+	// A session a day old or more is reissued on the response, but only
+	// once the request is known to be served: one the Origin check or the
+	// allow-list refuses gets its refusal and keeps the cookie it had.
+	var reissue string
 	switch {
 	case carried && s.validToken(presented):
 		// An API client. The Origin exemption the token buys on loopback
@@ -59,7 +65,7 @@ func (s *Server) guardTailnet(w http.ResponseWriter, r *http.Request) bool {
 	case carried:
 		writeUnauthorized(w)
 		return false
-	case s.validSession(r):
+	case s.sessionOf(r, &reissue):
 		// A browser. Here the Origin check does apply — SameSite=Strict
 		// should not be the only thing between a foreign page and a
 		// write to the notes.
@@ -77,6 +83,9 @@ func (s *Server) guardTailnet(w http.ResponseWriter, r *http.Request) bool {
 			"this endpoint is served on loopback only; it is not reachable under "+s.tailnetHost)
 		return false
 	}
+	if reissue != "" {
+		setSessionCookie(w, reissue)
+	}
 	return true
 }
 
@@ -88,18 +97,42 @@ func (s *Server) isTailnetOrigin(origin string) bool {
 	return s.tailnetHost != "" && o == "https://"+s.tailnetHost
 }
 
-// validSession reports whether the request carries a live session cookie.
-// The session is tied to the token generation in force now, so a rotation
-// ends it on this very request.
-func (s *Server) validSession(r *http.Request) bool {
-	if s.sessions == nil || s.token == nil {
+// sessionOf reports whether the request carries a live session cookie.
+// The cookie is checked against a key derived from the token in force now,
+// so a rotation ends it on this very request, and against nothing else, so
+// a restart does not (davison/md-notes#231). When the session is a day old
+// or more, *reissue is set to a fresh one for the response to carry, so a
+// session in use never reaches its idle limit.
+func (s *Server) sessionOf(r *http.Request, reissue *string) bool {
+	if s.token == nil || s.tailnetHost == "" {
 		return false
 	}
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
 		return false
 	}
-	return s.sessions.Valid(c.Value, s.token.Generation())
+	key := s.token.Derive(session.KeyPurpose)
+	now := s.now()
+	ok, due := session.Check(key, s.tailnetHost, c.Value, now)
+	if ok && due {
+		*reissue = session.Issue(key, s.tailnetHost, now)
+	}
+	return ok
+}
+
+// setSessionCookie is the one place the cookie's attributes are written,
+// for a login and for a reissue alike. Max-Age is the idle limit, so the
+// browser forgets the cookie when the daemon would refuse it.
+func setSessionCookie(w http.ResponseWriter, value string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   int(session.Idle.Seconds()),
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+	})
 }
 
 // challenge answers a request under the tailnet name that proved nothing.
@@ -172,14 +205,14 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	// One read for both answers: asking again for the generation would
-	// let a rotation landing in between stamp this session with a
-	// generation the token was never checked against, which is the one
-	// case "a rotation ends every session" has to cover.
-	var generation uint64
+	// One read for both answers: deriving the key separately would let
+	// a rotation landing in between sign this session with the key of a
+	// token the browser never presented, which is the one case "a
+	// rotation ends every session" has to cover.
+	var key []byte
 	var ok bool
 	if s.token != nil {
-		generation, ok = s.token.Authenticate(strings.TrimSpace(r.PostFormValue("token")))
+		key, ok = s.token.AuthenticateDerive(strings.TrimSpace(r.PostFormValue("token")), session.KeyPurpose)
 	}
 	addr := clientAddr(r)
 	if !ok {
@@ -205,22 +238,10 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logins.succeeded(addr)
-	// The browser is logging in again, so whatever it held before is
-	// finished with; leaving it live would keep a credential alive that
-	// nothing will present.
-	if c, err := r.Cookie(sessionCookie); err == nil {
-		s.sessions.Delete(c.Value)
-	}
-	id := s.sessions.Create(generation)
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookie,
-		Value:    id,
-		Path:     "/",
-		MaxAge:   int(s.sessions.TTL().Seconds()),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
-	})
+	// A cookie the browser held before is simply replaced: it is a signed
+	// value with nothing behind it to delete, and the browser keeps only
+	// the newest.
+	setSessionCookie(w, session.Issue(key, s.tailnetHost, s.now()))
 	s.log.Printf("tailnet login from %s", addr)
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
