@@ -538,6 +538,9 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		// Go copies into r.Host, so the target would choose the rule; no
 		// browser and no reverse proxy sends one to an origin server.
 		if r.URL.Host != "" {
+			if s.tailnetHost != "" {
+				s.logRefusal(r, "refused (403 bad_host)", "the request target is in absolute form")
+			}
 			writeGuardError(w, http.StatusForbidden, "bad_host",
 				"the request target must be in origin form")
 			return
@@ -551,6 +554,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			// the loopback rule would hand the whole API to whatever the
 			// proxy admits, unauthenticated. Fail closed and say so.
 			if s.tailnetHost != "" && forwarded(r) {
+				s.logRefusal(r, "refused (403 bad_host)", fmt.Sprintf("a forwarded request carries the loopback Host %s; the proxy must pass the original Host through", quoted(r.Host, 100)))
 				writeGuardError(w, http.StatusForbidden, "bad_host",
 					"a forwarded request carries a loopback Host; the proxy in front must pass the original Host through unchanged")
 				return
@@ -567,7 +571,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			// that name spelt another way — a port that tailnet_host does
 			// not carry — so it is worth a line saying which.
 			if s.tailnetHost != "" {
-				s.logRefusal(r, "refused (403 bad_host)", fmt.Sprintf("Host %q is not %s", truncate(r.Host, 100), s.tailnetHost))
+				s.logRefusal(r, "refused (403 bad_host)", fmt.Sprintf("Host %s is not %s", quoted(r.Host, 100), s.tailnetHost))
 			}
 			writeGuardError(w, http.StatusForbidden, "bad_host", "unexpected Host header")
 			return

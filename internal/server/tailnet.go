@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/davison/md-notes/internal/session"
 )
@@ -79,7 +80,7 @@ func (s *Server) guardTailnet(w http.ResponseWriter, r *http.Request) bool {
 		// client-side attribute should not be the only thing between a
 		// foreign page and a write to the notes.
 		if origin := r.Header.Get("Origin"); origin != "" && !s.isTailnetOrigin(origin) {
-			s.logRefusal(r, "refused (403 cross_origin)", fmt.Sprintf("Origin %q is not https://%s", truncate(origin, 100), s.tailnetHost))
+			s.logRefusal(r, "refused (403 cross_origin)", fmt.Sprintf("Origin %s is not https://%s", quoted(origin, 100), s.tailnetHost))
 			writeGuardError(w, http.StatusForbidden, "cross_origin",
 				"cross-origin request refused; present the bearer token to write from another origin")
 			return false
@@ -146,27 +147,41 @@ func (s *Server) sessionOf(r *http.Request, reissue *string) (bool, string) {
 // logRefusal writes one line about a tailnet request that was refused or
 // sent to the login page: who, what, the answer and why. The path is
 // logged without its query, and nothing the caller presented as a
-// credential is — the reason is always one of the daemon's own phrases.
+// credential is — the reason is always one of the daemon's own phrases,
+// and anything in it that came from the caller went through logSafe.
 // Bounded by refusalLog.
 func (s *Server) logRefusal(r *http.Request, answer, why string) {
 	addr := clientAddr(r)
-	ok, leftOut := s.refusals.allow(addr+"\x00"+answer+"\x00"+why, s.now())
+	ok, leftOut, from := s.refusals.allow(addr+"\x00"+answer+"\x00"+why, s.now())
 	if leftOut > 0 {
-		s.log.Printf("tailnet: %d tailnet refusals not logged in the last minute", leftOut)
+		s.log.Printf("tailnet: %d tailnet refusals not logged in the minute from %s", leftOut, from.Format("15:04:05"))
 	}
 	if !ok {
 		return
 	}
-	s.log.Printf("tailnet: %s %s %s %s: %s", truncate(addr, 64), r.Method, truncate(path.Clean("/"+r.URL.Path), 200), answer, why)
+	s.log.Printf("tailnet: %s %s %s %s: %s", logSafe(addr, 64), logSafe(r.Method, 16), logSafe(path.Clean("/"+r.URL.Path), 200), answer, why)
 }
 
-// truncate bounds a caller-supplied string before it reaches the log.
-func truncate(v string, n int) string {
-	if len(v) <= n {
-		return v
+// logSafe makes a string the caller chose fit for one line of the log:
+// cut to n runes, on a rune boundary, and then every character that is not
+// printable — a line break, a carriage return, an escape that would start
+// a terminal sequence, U+0085, U+2028 — written as its Go escape, and a
+// backslash or quote escaped too, so the escapes cannot be imitated. A
+// request path is percent-decoded before the daemon sees it, so without
+// this a caller could write lines of its own into the log (review finding
+// 1 on PR #241).
+func logSafe(v string, n int) string {
+	cut := ""
+	if utf8.RuneCountInString(v) > n {
+		runes := []rune(v)
+		v, cut = string(runes[:n]), "…"
 	}
-	return v[:n] + "…"
+	q := strconv.Quote(v)
+	return q[1:len(q)-1] + cut
 }
+
+// quoted is logSafe inside quotes, for a value that is not a path.
+func quoted(v string, n int) string { return `"` + logSafe(v, n) + `"` }
 
 // setSessionCookie is the one place the cookie's attributes are written,
 // for a login and for a reissue alike. Max-Age is the idle limit, so the
@@ -226,12 +241,14 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	case http.MethodPost:
 	default:
+		s.logRefusal(r, "refused (405 method_not_allowed)", "the login form is posted")
 		writeGuardError(w, http.StatusMethodNotAllowed, "method_not_allowed", "the login form is posted")
 		return
 	}
 	// A cross-site form post must not be able to log this browser in as
 	// somebody else's session; browsers always send Origin on a POST.
 	if origin := r.Header.Get("Origin"); origin != "" && !s.isTailnetOrigin(origin) {
+		s.logRefusal(r, "refused (403 cross_origin)", fmt.Sprintf("Origin %s is not https://%s", quoted(origin, 100), s.tailnetHost))
 		writeGuardError(w, http.StatusForbidden, "cross_origin", "cross-origin login refused")
 		return
 	}
@@ -240,6 +257,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 	// ParseForm's own default is 10 MiB.
 	r.Body = http.MaxBytesReader(w, r.Body, maxLoginForm)
 	if err := r.ParseForm(); err != nil {
+		s.logRefusal(r, "refused (400)", "the login form could not be read")
 		s.writeLoginPage(w, r, http.StatusBadRequest, loginForm{Error: "That form could not be read. Try again."})
 		return
 	}
@@ -249,6 +267,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 	// Saying so is better than the login loop that would otherwise be the
 	// only symptom.
 	if !forwardedHTTPS(r) {
+		s.logRefusal(r, "refused (400)", "not over https: no X-Forwarded-Proto: https from the proxy, so the Secure cookie would be discarded")
 		s.writeLoginPage(w, r, http.StatusBadRequest, loginForm{
 			Redirect: redirect,
 			Error:    "This request did not arrive over https, so the session cookie would be discarded. Reach the daemon through `tailscale serve`, which terminates TLS.",
@@ -268,6 +287,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		wait, refuse := s.logins.failed(addr)
 		if refuse {
+			s.logRefusal(r, "refused (429 too_many_attempts)", "too many failed logins")
 			w.Header().Set("Retry-After", strconv.Itoa(int(s.logins.window.Seconds())))
 			writeGuardError(w, http.StatusTooManyRequests, "too_many_attempts",
 				"too many failed logins; wait a minute and try again")
@@ -280,7 +300,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		s.log.Printf("tailnet login refused from %s", addr)
+		s.log.Printf("tailnet login refused from %s: not the current token", logSafe(addr, 64))
 		s.writeLoginPage(w, r, http.StatusUnauthorized, loginForm{
 			Redirect: redirect,
 			Error:    "That is not the current token. `mdn token` prints it on the machine running the daemon.",
@@ -292,7 +312,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 	// value with nothing behind it to delete, and the browser keeps only
 	// the newest.
 	setSessionCookie(w, session.Issue(key, s.tailnetHost, s.now()))
-	s.log.Printf("tailnet login from %s (%s)", addr, browserFamily(r.UserAgent()))
+	s.log.Printf("tailnet login from %s (%s)", logSafe(addr, 64), browserFamily(r.UserAgent()))
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
