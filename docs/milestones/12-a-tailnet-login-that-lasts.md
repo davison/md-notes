@@ -37,7 +37,7 @@ expired after a fixed 30 days however often the device was used.
 The scope was the operator's, given in the coordinator session and relayed by the coordinator: "open
 a milestone for #229 and run it through to a release of v0.3.1", as the scope Decision quotes it
 ([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5909079844)). He typed "ov
-v0.3.1", and the Decision corrected it to "of"
+v0.3.1"; the scope Decision quotes it with "of"
 ([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5910571213)).
 
 What a reader has now:
@@ -138,8 +138,8 @@ held sessions in memory. The #231 Decision answers each of #39's objections:
 - *A signed stateless cookie "makes the token the signing key for a bearer credential that leaves
   the machine".* The key is derived from the token, not the token, and the token cannot be recovered
   from the cookie.
-- *"Nothing to revoke short of rotating."* That was already true of the #39 design, which chose no
-  logout and named rotation as the revocation that matters.
+- *"Nothing to revoke either short of rotating."* That was already true of the #39 design, which
+  chose no logout and named rotation as the revocation that matters.
 - *"A per-request rolling renewal."* A reissue happens at most once a day, and M12-R3 requires
   refresh on use.
 - *"Persisting sessions beside `roots.json`."* Still rejected.
@@ -278,19 +278,21 @@ GitHub Support as the next step if that failed too
 Development sidebar, and confirmed it in the coordinator session: "linked #233 to #231. Is it a
 github bug?" ([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5910571213)). The
 upstream capture says the same
-([radiusred/gh-codecrew#386](https://github.com/radiusred/gh-codecrew/issues/386)). From about
-10:44Z to 11:23Z nothing else happened on #231: after the Deviation, the coordinator asked the
-operator in the session to link #233 by hand, and the task waited on that until the `connected`
-event ([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5910571213)). `task finish
-231 --operator-confirm` then passed its gate, posted the operator-confirmation comment at 11:24:46Z
-([PR #233](https://github.com/davison/md-notes/pull/233#issuecomment-5910187914)), merged #233 at
+([radiusred/gh-codecrew#386](https://github.com/radiusred/gh-codecrew/issues/386)). After the
+Deviation, the coordinator asked the operator in the session to link #233 by hand, and the task
+waited on that link until the `connected` event at 11:23:22Z; the only other event on #231 in the
+wait is `cf8d515`, the reflow pushed at 10:44:58Z after round two's approval
+([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5910571213)). `task finish 231
+--operator-confirm` then passed its gate, posted the operator-confirmation comment at 11:24:46Z ([PR
+#233](https://github.com/davison/md-notes/pull/233#issuecomment-5910187914)), merged #233 at
 11:24:50Z as `19823d0`, and closed the adopted capture #229
 ([#229](https://github.com/davison/md-notes/issues/229#issuecomment-5910189341)).
 
 **The hand-close.** GitHub did not close #231 at the merge, even with the manual link in place, and
 `task finish` reported that the task "closes via its closing keyword" without checking. The
-coordinator noticed by reading the issue's state, and closed #231 by hand at 11:25:09Z with a
-comment naming the pull request and the merge
+coordinator noticed only by reading the issue's state afterwards
+([radiusred/gh-codecrew#386](https://github.com/radiusred/gh-codecrew/issues/386)), and closed #231
+by hand at 11:25:09Z with a comment naming the pull request and the merge
 ([#231](https://github.com/davison/md-notes/issues/231#issuecomment-5910193024)).
 
 **The upstream capture.** On the operator's ask in the coordinator session, "yes, file the upstream
@@ -388,8 +390,9 @@ in the front door, brought into line with `19823d0`:
   120.
 
 The README makes no claim about how long a login lasts, and no other guide makes a claim M12
-changed. The e-ink and sync guides say a session is a cookie that survives closing the tab, which
-stays true.
+changed. `docs/e-ink.md` says the session is a cookie, "so it survives closing the tab", and
+`docs/sync.md` says "The session is a cookie and survives what follows", meaning its app-install
+steps. Both stay true.
 
 ## Captures adopted, and captures raised
 
