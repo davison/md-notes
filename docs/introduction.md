@@ -433,10 +433,28 @@ Set-Cookie: __Host-mdn_session=…; Path=/; Max-Age=2592000; HttpOnly; Secure; S
 
 The `__Host-` prefix makes the browser itself refuse the cookie unless it is
 `Secure`, `Path=/` and carries no `Domain`, so it is bound to the one name that set
-it. The value is a random session id, never the token; the daemon keeps only its
-SHA-256 and the token *generation* the session was minted from, so `mdn token
---rotate` logs every device out on the next request, and so does restarting the
-daemon. A session otherwise lasts 30 days.
+it. The value is a signed session, never the token: the time it was issued, a random
+id, and an HMAC-SHA256 over both and the tailnet name, keyed by a key derived from
+the token. The token cannot be read back from it, and the daemon keeps nothing
+about sessions, in memory or on disk. So a login lasts until one of two things
+happens:
+
+- **The token is rotated.** `mdn token --rotate`, or a token file replaced while
+  the daemon was stopped, changes the key, and every cookie signed with the old one
+  is refused on its next request, on every device at once. This is how you log a
+  device out; there is no per-device logout.
+- **The device leaves it unused for 30 days.** A request that uses a session a day
+  old or more is answered with a fresh cookie, so a device in use is not asked for
+  the token again. A browser that logged in once and was left behind is logged out
+  30 days later, and the cookie's `Max-Age` tells the browser the same. A lost
+  device that somebody else goes on using stays logged in until you rotate.
+
+Restarting the daemon does not end a session, and neither do an upgrade, a reboot
+or closing the browser: the daemon that starts over the same token file derives the
+same key, and the cookie the browser kept is still good. The one exception is the
+upgrade to v0.3.1 itself. Earlier versions held sessions in the daemon's memory,
+and the new daemon does not recognise them, so every device logs in once more after
+that upgrade and then stays logged in.
 
 `/login` exists only under `tailnet_host`. Over loopback it is an ordinary
 client-side route and serves the UI, as it always did.
