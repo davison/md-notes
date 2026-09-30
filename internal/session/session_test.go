@@ -96,6 +96,9 @@ func TestTamperingIsRefused(t *testing.T) {
 		"a v0.3.0 session id":  "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
 		"issued-at signed +":   resign(key, host, "v1", "+"+parts[1], parts[2]),
 		"issued-at not number": resign(key, host, "v1", "soon", parts[2]),
+		"id a byte short":      resign(key, host, "v1", parts[1], base64.RawURLEncoding.EncodeToString(make([]byte, idBytes-1))),
+		"id a byte long":       resign(key, host, "v1", parts[1], base64.RawURLEncoding.EncodeToString(make([]byte, idBytes+1))),
+		"id empty":             resign(key, host, "v1", parts[1], ""),
 	}
 	for name, c := range cases {
 		if ok, _ := Check(key, host, c, t0); ok {
