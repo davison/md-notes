@@ -1,147 +1,123 @@
-// Package session holds the browser sessions the daemon issues on the
-// tailnet host. A browser cannot put the bearer token in a header on every
-// request, so it presents it once to a login page and is given a session
-// id instead; this is where those ids live.
+// Package session makes and checks the browser sessions the daemon issues
+// on the tailnet host. A browser cannot put the bearer token in a header
+// on every request, so it presents it once to a login page and is given a
+// session instead; this is what that session is.
 //
-// Sessions are kept in memory and nowhere else. They are worth no more
-// than the token they were minted from and rather less — each is tied to
-// the token's generation, so `mdn token --rotate` ends every one of them,
-// and a daemon restart ends them too. Nothing about a session is written
-// to disk, which is deliberate: a second secret at rest would be a second
-// secret to protect, and logging in again costs one paste.
+// A session is a signed value and nothing else: nothing about it is held
+// in memory or written to disk (davison/md-notes#231). The value carries
+// the time it was issued, a random id and the host name it was issued
+// under, with an HMAC-SHA256 over all of them keyed by a key derived from
+// the daemon's token (token.Store.Derive with KeyPurpose). So:
+//
+//   - a restart, an upgrade or a reboot changes nothing: the daemon that
+//     starts over the same token file derives the same key, and the cookie
+//     the browser kept is still a session;
+//   - `mdn token --rotate`, or a token file replaced while the daemon was
+//     stopped, ends every session at once: the new token derives a new key,
+//     and no value signed with the old one checks;
+//   - nothing beyond the token file is a secret at rest, which is what the
+//     in-memory design on #39 was protecting, and the token itself is never
+//     in the cookie, nor recoverable from it.
+//
+// What bounds a session on a device nobody uses is the idle limit: a
+// session is reissued, at most once a day, on the requests that use it,
+// and refused once it has gone Idle without one.
 package session
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"sync"
+	"encoding/base64"
+	"strconv"
+	"strings"
 	"time"
 )
 
-// DefaultTTL is how long a session lasts before the token must be
-// presented again. Long, because the daemon serves one person's own notes
-// from their own devices and a login that expires over a weekend is a
-// login they will stop bothering with; bounded, because a session left
-// behind on a borrowed browser should not outlive the reason for it.
-const DefaultTTL = 30 * 24 * time.Hour
+// KeyPurpose names the key a session is signed with, among any others the
+// token might one day derive. The version is in it so that changing what a
+// session is changes the key too, and every older value simply fails.
+const KeyPurpose = "mdn session key v1"
 
-// maxSessions caps how many live sessions are remembered at once. One
-// person with a handful of devices needs a fraction of this; the cap is
-// here so that repeated logins cannot grow the map without limit, and it
-// evicts the session closest to expiry rather than refusing the new one.
-const maxSessions = 64
+// Idle is how long a session lasts without being used: the browser is
+// told the same thing, as the cookie's Max-Age. A device in use never
+// reaches it, since every use at least a day after the last reissue
+// reissues the session; a browser used once and left behind — the
+// borrowed one #39 worried about — is logged out when it runs out.
+// Chromium caps a cookie's lifetime at 400 days, so this cannot be longer.
+const Idle = 30 * 24 * time.Hour
 
-// Store issues and validates session ids.
-type Store struct {
-	ttl time.Duration
-	// now is the clock, replaced in tests.
-	now func() time.Time
+// RefreshAfter is how old a session must be before a request that uses it
+// is answered with a fresh one. Not every response: #39 rejected a
+// Set-Cookie on each one, and a day is short beside Idle.
+const RefreshAfter = 24 * time.Hour
 
-	mu   sync.Mutex
-	live map[[32]byte]entry
+// maxSkew is how far in the future a session's issue time may be. The
+// daemon's own clock issued it, so one from the future means the clock
+// moved back; a few minutes of that is a clock being corrected, not a
+// reason to log anyone out.
+const maxSkew = 5 * time.Minute
+
+// version is the first field of a value, and part of what is signed.
+const version = "v1"
+
+// idBytes is the size of the random id, which is there so that two
+// sessions issued in the same second are two different values.
+const idBytes = 16
+
+var b64 = base64.RawURLEncoding.Strict()
+
+// Issue returns a new session value for host, signed with key, issued at
+// now. The value is `v1.<unix seconds>.<id>.<mac>`, every field of it safe
+// in a cookie without quoting.
+func Issue(key []byte, host string, now time.Time) string {
+	id := make([]byte, idBytes)
+	rand.Read(id)
+	issued := strconv.FormatInt(now.Unix(), 10)
+	enc := b64.EncodeToString(id)
+	return version + "." + issued + "." + enc + "." + b64.EncodeToString(sign(key, host, version, issued, enc))
 }
 
-type entry struct {
-	// generation is the token generation the session was minted from. A
-	// session whose generation has moved on was authorised by a secret
-	// that no longer exists.
-	generation uint64
-	expires    time.Time
+// Check reports whether value is a session signed with key for host and
+// still live at now, and whether it is old enough to be reissued. Anything
+// that is not exactly the shape Issue makes — a field missing or extra, a
+// MAC one byte short, an issue time written any other way — is refused
+// before the MAC is compared, and the comparison is constant-time.
+func Check(key []byte, host, value string, now time.Time) (ok, due bool) {
+	if len(key) == 0 || host == "" {
+		return false, false
+	}
+	parts := strings.Split(value, ".")
+	if len(parts) != 4 || parts[0] != version {
+		return false, false
+	}
+	issued, id, mac := parts[1], parts[2], parts[3]
+	secs, err := strconv.ParseInt(issued, 10, 64)
+	if err != nil || strconv.FormatInt(secs, 10) != issued {
+		return false, false
+	}
+	if raw, err := b64.DecodeString(id); err != nil || len(raw) != idBytes {
+		return false, false
+	}
+	got, err := b64.DecodeString(mac)
+	if err != nil || len(got) != sha256.Size {
+		return false, false
+	}
+	if !hmac.Equal(got, sign(key, host, version, issued, id)) {
+		return false, false
+	}
+	at := time.Unix(secs, 0)
+	if at.After(now.Add(maxSkew)) || !now.Before(at.Add(Idle)) {
+		return false, false
+	}
+	return true, !now.Before(at.Add(RefreshAfter))
 }
 
-// New returns an empty store whose sessions last ttl. A ttl of zero or
-// less asks for DefaultTTL.
-func New(ttl time.Duration) *Store {
-	if ttl <= 0 {
-		ttl = DefaultTTL
-	}
-	return &Store{ttl: ttl, now: time.Now, live: map[[32]byte]entry{}}
+// sign is the MAC over every field, and the host. The fields are joined
+// with a byte none of them can contain, so no two different sets of
+// fields sign the same bytes.
+func sign(key []byte, host, version, issued, id string) []byte {
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte(version + "\x00" + host + "\x00" + issued + "\x00" + id))
+	return m.Sum(nil)
 }
-
-// TTL is how long a new session lasts, which is also the cookie's Max-Age.
-func (s *Store) TTL() time.Duration { return s.ttl }
-
-// Create mints a session for the given token generation and returns the
-// id the browser will present. The id is the only copy: the store keeps a
-// hash of it, so that neither a memory dump nor a timing difference in the
-// lookup hands back anything a client could present.
-func (s *Store) Create(generation uint64) string {
-	id := rand.Text()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.prune()
-	if len(s.live) >= maxSessions {
-		s.evictSoonest()
-	}
-	s.live[key(id)] = entry{generation: generation, expires: s.now().Add(s.ttl)}
-	return id
-}
-
-// Valid reports whether id names a live session minted from the token
-// generation currently in force. A session that fails for any reason is
-// forgotten on the spot, so a rotation does not leave dead entries behind.
-func (s *Store) Valid(id string, generation uint64) bool {
-	if id == "" {
-		return false
-	}
-	k := key(id)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	e, ok := s.live[k]
-	if !ok {
-		return false
-	}
-	if e.generation != generation || !s.now().Before(e.expires) {
-		delete(s.live, k)
-		return false
-	}
-	return true
-}
-
-// Delete forgets a session. A browser logging in again has finished with
-// the one it was holding, and a credential nothing will present should
-// not stay live until it lapses.
-func (s *Store) Delete(id string) {
-	if id == "" {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.live, key(id))
-}
-
-// Len is how many sessions the store is holding, expired ones included
-// until something prunes them. For tests and for nothing else.
-func (s *Store) Len() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return len(s.live)
-}
-
-// prune drops expired sessions. Called on Create, which is the only
-// moment the map can grow; there is no sweeper goroutine to stop.
-func (s *Store) prune() {
-	now := s.now()
-	for k, e := range s.live {
-		if !now.Before(e.expires) {
-			delete(s.live, k)
-		}
-	}
-}
-
-// evictSoonest removes the session closest to expiry, so that reaching
-// the cap logs out the oldest device rather than refusing the newest.
-func (s *Store) evictSoonest() {
-	var oldest [32]byte
-	var at time.Time
-	for k, e := range s.live {
-		if at.IsZero() || e.expires.Before(at) {
-			oldest, at = k, e.expires
-		}
-	}
-	if !at.IsZero() {
-		delete(s.live, oldest)
-	}
-}
-
-func key(id string) [32]byte { return sha256.Sum256([]byte(id)) }
