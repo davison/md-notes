@@ -300,7 +300,10 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		s.log.Printf("tailnet login refused from %s: not the current token", logSafe(addr, 64))
+		// Through the refusal log's bounds like every other refusal: the
+		// throttle's delay bounds how fast one connection fails, not how
+		// many lines callers varying X-Forwarded-For can write.
+		s.logRefusal(r, "refused (401)", "not the current token")
 		s.writeLoginPage(w, r, http.StatusUnauthorized, loginForm{
 			Redirect: redirect,
 			Error:    "That is not the current token. `mdn token` prints it on the machine running the daemon.",
