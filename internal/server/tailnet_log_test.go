@@ -211,6 +211,19 @@ func TestTailnetRefusalLogIsBounded(t *testing.T) {
 	if got := since(buf, mark); !strings.Contains(got, "20 tailnet refusals not logged in the minute from 09:02:00") {
 		t.Errorf("after a capped minute: log %q, want the count left out", got)
 	}
+
+	// Wrong tokens at the login form, from an address that changes every
+	// time, meet the same cap: the throttle's delay bounds their rate, not
+	// the lines they write (review round two on PR #241).
+	s.logins.delay = 0
+	*clock = t0.Add(10 * time.Minute)
+	before = count()
+	for i := 0; i < refusalBurst+20; i++ {
+		loginPost(t, ts, "not-the-token", "/", "X-Forwarded-For", fmt.Sprintf("100.64.5.%d", i))
+	}
+	if n := count() - before; n != refusalBurst {
+		t.Fatalf("%d wrong logins from varying addresses in a minute: %d lines, want the cap, %d", refusalBurst+20, n, refusalBurst)
+	}
 }
 
 // Review finding 1 on PR #241: a caller must not be able to write lines of
@@ -279,7 +292,7 @@ func TestEveryTailnetRefusalIsLogged(t *testing.T) {
 		}, 400, "tailnet: 100.64.3.4 POST /login refused (400): not over https: no X-Forwarded-Proto: https from the proxy, so the Secure cookie would be discarded"},
 		{"a wrong token", func() int {
 			return tdo(t, ts, "POST", loginPath, "token=wrong", with(form, "X-Forwarded-For", "100.64.3.5")).StatusCode
-		}, 401, "tailnet login refused from 100.64.3.5: not the current token"},
+		}, 401, "tailnet: 100.64.3.5 POST /login refused (401): not the current token"},
 		{"too many failed logins", func() int {
 			st := 0
 			for i := 0; i < 20 && st != 429; i++ {
