@@ -14,6 +14,14 @@
  * and started again over the same token file, and the same cookie is still a
  * session. A rotation — while running, and while stopped — ends it.
  *
+ * The cookie is SameSite=Lax (davison/md-notes#240, M13-R1): a page on another
+ * site, served by a second https server here, can send the browser to the app
+ * with a link and the session goes with it, as a home-screen shortcut's launch
+ * does; its form posts, credentialed fetch and iframe arrive without the
+ * cookie. The proxy records, for each request marked `?via=`, whether the
+ * browser sent the cookie, so those checks are about what the browser did and
+ * not only about the answer.
+ *
  * Needs `openssl` on PATH besides what every browser suite needs; without it
  * the suite skips with one line, and fails under CI, as `gate` does for the
  * rest. Touches nothing outside its own `mkdtemp`, and kills only its own
@@ -40,12 +48,16 @@ function missingOpenSSL() {
 const blocker = gate(missingPrerequisite(playwright) ?? missingOpenSSL());
 
 const NAME = "mdn-session-e2e.tailnet.test";
+/** Another site: its own registrable domain, so every request from it to NAME is cross-site. */
+const ELSEWHERE = "attacker.test";
 const COOKIE = "__Host-mdn_session";
 
 describe("a tailnet login across daemon restarts", { skip: blocker ?? false }, () => {
   let tmp, notesDir, tokenFile, configPath, daemonPort, proxy, origin, host;
   let daemon = null;
-  let browser, context, page;
+  let browser, context, page, elsewhere, elsewhereOrigin;
+  /** What the proxy saw of each request marked `?via=`: did the browser send the session? */
+  const seen = new Map();
   const log = [];
 
   async function startDaemon() {
@@ -122,7 +134,7 @@ describe("a tailnet login across daemon restarts", { skip: blocker ?? false }, (
 
     execFileSync("openssl", [
       "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-days", "1",
-      "-subj", `/CN=${NAME}`, "-addext", `subjectAltName=DNS:${NAME}`,
+      "-subj", `/CN=${NAME}`, "-addext", `subjectAltName=DNS:${NAME},DNS:${ELSEWHERE}`,
       "-keyout", path.join(tmp, "key.pem"), "-out", path.join(tmp, "cert.pem"),
     ], { stdio: "ignore" });
 
@@ -130,6 +142,8 @@ describe("a tailnet login across daemon restarts", { skip: blocker ?? false }, (
     proxy = https.createServer(
       { key: fs.readFileSync(path.join(tmp, "key.pem")), cert: fs.readFileSync(path.join(tmp, "cert.pem")) },
       (req, res) => {
+        const via = new URL(req.url, "https://x").searchParams.get("via");
+        const carried = /(?:^|;\s*)__Host-mdn_session=/.test(req.headers.cookie ?? "");
         const upstream = http.request(
           {
             host: "127.0.0.1",
@@ -139,6 +153,7 @@ describe("a tailnet login across daemon restarts", { skip: blocker ?? false }, (
             headers: { ...req.headers, "x-forwarded-proto": "https", "x-forwarded-for": "100.64.0.7" },
           },
           (r) => {
+            if (via) seen.set(via, { cookie: carried, status: r.statusCode, site: req.headers["sec-fetch-site"] });
             res.writeHead(r.statusCode, r.headers);
             r.pipe(res);
           },
@@ -154,17 +169,36 @@ describe("a tailnet login across daemon restarts", { skip: blocker ?? false }, (
     host = `${NAME}:${proxy.address().port}`;
     origin = `https://${host}`;
 
+    // A page on another site, reaching for the daemon every way a page can.
+    elsewhere = https.createServer(
+      { key: fs.readFileSync(path.join(tmp, "key.pem")), cert: fs.readFileSync(path.join(tmp, "cert.pem")) },
+      (req, res) => {
+        const pages = {
+          "/link": `<a id="go" href="${origin}/?via=link">notes</a>`,
+          "/form-clip": `<form id="f" method="post" action="${origin}/api/clip?via=form-clip"><input name="url" value="https://example.com"></form><script>f.submit()</script>`,
+          "/form-login": `<form id="f" method="post" action="${origin}/login?via=form-login"><input name="token" value="x"></form><script>f.submit()</script>`,
+          "/iframe": `<iframe src="${origin}/?via=iframe"></iframe>`,
+          "/fetch": `<p>fetch</p>`,
+        };
+        res.writeHead(pages[req.url] ? 200 : 404, { "content-type": "text/html" });
+        res.end(`<!doctype html><title>elsewhere</title>${pages[req.url] ?? ""}`);
+      },
+    );
+    await new Promise((resolve) => elsewhere.listen(0, "127.0.0.1", resolve));
+    elsewhereOrigin = `https://${ELSEWHERE}:${elsewhere.address().port}`;
+
     try {
       await startDaemon();
       browser = await playwright.chromium.launch({
         headless: true,
-        args: [`--host-resolver-rules=MAP ${NAME} 127.0.0.1`],
+        args: [`--host-resolver-rules=MAP ${NAME} 127.0.0.1, MAP ${ELSEWHERE} 127.0.0.1`],
       });
       context = await browser.newContext({ ignoreHTTPSErrors: true });
       page = await context.newPage();
     } catch (e) {
       daemon?.kill("SIGKILL");
       proxy.close();
+      elsewhere?.close();
       fs.rmSync(tmp, { recursive: true, force: true });
       throw e;
     }
@@ -176,6 +210,8 @@ describe("a tailnet login across daemon restarts", { skip: blocker ?? false }, (
     await stopDaemon();
     proxy?.closeAllConnections?.();
     proxy?.close();
+    elsewhere?.closeAllConnections?.();
+    elsewhere?.close();
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -186,7 +222,7 @@ describe("a tailnet login across daemon restarts", { skip: blocker ?? false }, (
     assert.ok(issued, "the login set the session cookie");
     assert.equal(issued.httpOnly, true);
     assert.equal(issued.secure, true);
-    assert.equal(issued.sameSite, "Strict");
+    assert.equal(issued.sameSite, "Lax");
     assert.equal(issued.path, "/");
 
     await stopDaemon();
@@ -195,6 +231,77 @@ describe("a tailnet login across daemon restarts", { skip: blocker ?? false }, (
     assert.deepEqual(await home(), { status: 200, login: false }, "the app, not the login page, after the restart");
     assert.equal(await apiStatus(), 200, "the API accepts the session after the restart");
     assert.equal((await sessionCookie()).value, issued.value, "the cookie the browser kept, not a new login");
+  });
+
+  it("carries the session on a navigation from another site, and on nothing else from it", async () => {
+    if ((await home()).login) await logIn();
+    const other = await context.newPage();
+    try {
+      // A link on another site: a top-level navigation, what a home-screen
+      // shortcut or another app's link is. Under Lax the session goes with it.
+      await other.goto(`${elsewhereOrigin}/link`);
+      await Promise.all([other.waitForURL(`${origin}/?via=link`), other.click("#go")]);
+      assert.equal(await other.locator('input[name="token"]').count(), 0, "the app, not the login page");
+      assert.deepEqual(seen.get("link"), { cookie: true, status: 200, site: "cross-site" });
+
+      // A cross-site form POST, to an endpoint the tailnet name admits and
+      // to the login form: sent without the cookie, and refused.
+      for (const via of ["form-clip", "form-login"]) {
+        await other.goto(`${elsewhereOrigin}/${via}`);
+        await waitFor(() => seen.has(via), `the ${via} post to reach the daemon`);
+        const got = seen.get(via);
+        assert.equal(got.cookie, false, `${via}: the cookie was sent on a cross-site POST`);
+        assert.ok(got.status === 401 || got.status === 403, `${via}: status ${got.status}, want a refusal`);
+      }
+
+      // A credentialed fetch and an iframe from another site: no cookie.
+      await other.goto(`${elsewhereOrigin}/fetch`);
+      await other.evaluate(async (u) => {
+        try {
+          await fetch(u, { credentials: "include", mode: "no-cors" });
+        } catch {
+          // The answer is not the page's to read; the request is what counts.
+        }
+      }, `${origin}/api/roots?via=fetch`);
+      await waitFor(() => seen.has("fetch"), "the fetch to reach the daemon");
+      assert.deepEqual(seen.get("fetch"), { cookie: false, status: 401, site: "cross-site" });
+
+      await other.goto(`${elsewhereOrigin}/iframe`);
+      await waitFor(() => seen.has("iframe"), "the iframe to load");
+      assert.equal(seen.get("iframe").cookie, false, "the cookie was sent to a cross-site iframe");
+      assert.equal(seen.get("iframe").status, 401);
+    } finally {
+      await other.close();
+    }
+
+    // And were a cookie to arrive with a foreign Origin anyway, the daemon
+    // refuses it: SameSite is not the only defence.
+    const value = (await sessionCookie()).value;
+    const status = await new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          host: "127.0.0.1",
+          port: daemonPort,
+          method: "PUT",
+          path: "/api/r/notes/source/index.md",
+          headers: {
+            host,
+            "x-forwarded-proto": "https",
+            origin: elsewhereOrigin,
+            cookie: `${COOKIE}=${value}`,
+            "content-type": "application/json",
+          },
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode);
+        },
+      );
+      req.on("error", reject);
+      req.end("{}");
+    });
+    assert.equal(status, 403, "a cookie with a foreign Origin");
+    assert.equal(fs.readFileSync(path.join(notesDir, "index.md"), "utf8"), "# Notes\n\nThe root note.\n", "the note is untouched");
   });
 
   it("ends the session when the token is rotated while the daemon runs", async () => {
