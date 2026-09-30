@@ -442,7 +442,9 @@ happens:
 - **The token is rotated.** `mdn token --rotate`, or a token file replaced while
   the daemon was stopped, changes the key, and every cookie signed with the old one
   is refused on its next request, on every device at once. This is how you log a
-  device out; there is no per-device logout.
+  device out; there is no per-device logout. Writing an earlier token back, for
+  example by restoring a backup, makes the sessions signed with it good again, up
+  to their idle limit.
 - **The device leaves it unused for 30 days.** A request that uses a session a day
   old or more is answered with a fresh cookie, so a device in use is not asked for
   the token again. A browser that logged in once and was left behind is logged out

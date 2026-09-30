@@ -62,11 +62,13 @@ mdn token --rotate   # replace it; a running daemon picks the new one up
 ```
 
 Rotating it also ends every session a browser logged in with, which is how you
-revoke a device. Restarting or upgrading the daemon does not. The token file must be a regular file, not a symlink, and
-`--token-file FILE` moves it, on `mdn serve` and `mdn token` alike. The first
-start logs where it wrote the token and the command that prints it, which names
-the same `--token-file` when the daemon was given one: a bare `mdn token` would
-read, or create, the token at the default path instead.
+revoke a device. Restarting or upgrading the daemon does not, except the upgrade
+to v0.3.1, after which every device logs in once more. The token file must be a
+regular file, not a symlink, and `--token-file FILE` moves it, on `mdn serve` and
+`mdn token` alike. The first start logs where it wrote the token and the command
+that prints it, which names the same `--token-file` when the daemon was given
+one: a bare `mdn token` would read, or create, the token at the default path
+instead.
 
 ## Other folders
 
