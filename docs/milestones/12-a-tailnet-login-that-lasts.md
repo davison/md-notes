@@ -35,8 +35,10 @@ and the `mdn` unit on the operator's host had started five times since 2026-09-1
 expired after a fixed 30 days however often the device was used.
 
 The scope was the operator's, given in the coordinator session and relayed by the coordinator: "open
-a milestone for #229 and run it through to a release of v0.3.1"
-([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5909079844)).
+a milestone for #229 and run it through to a release of v0.3.1", as the scope Decision quotes it
+([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5909079844)). He typed "ov
+v0.3.1", and the Decision corrected it to "of"
+([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5910571213)).
 
 What a reader has now:
 
@@ -203,8 +205,10 @@ value lives in code, so the answer needed no code change ([PR
 #232](https://github.com/davison/md-notes/pull/232#issuecomment-5909481856), finding 1).
 
 Every seat in this project posts under the one account, so the account alone does not say who typed
-a comment. The coordinator told this seat that the operator typed the resolution himself; no comment
-on the trail says so. See [Where the record is silent](#where-the-record-is-silent).
+a comment. The coordinator's attribution Decision records that the operator typed the resolution and
+removed the label himself, and confirmed both in the coordinator session: "#231 resolved: option A"
+([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5910571213)). That Decision was
+posted late; see [Where the record is silent](#where-the-record-is-silent).
 
 **What "30 days idle" means exactly.** A session is reissued only once it is a day old, so the 30
 days run from the last reissue, not the last request, and a device used and then left lapses between
@@ -270,11 +274,16 @@ GitHub Support as the next step if that failed too
 ([#231](https://github.com/davison/md-notes/issues/231#issuecomment-5909597289)).
 
 **The manual link.** #231's timeline shows a `connected` event at 11:23:22Z, and
-`closingIssuesReferences` on #233 now names #231. The coordinator told this seat that the operator
-made the link, and reported it as "linked #233 to #231"; the upstream capture says the same
-([radiusred/gh-codecrew#386](https://github.com/radiusred/gh-codecrew/issues/386)). `task finish 231
---operator-confirm` then passed its gate, posted the operator-confirmation comment at 11:24:46Z ([PR
-#233](https://github.com/davison/md-notes/pull/233#issuecomment-5910187914)), merged #233 at
+`closingIssuesReferences` on #233 now names #231. The operator made the link himself from the
+Development sidebar, and confirmed it in the coordinator session: "linked #233 to #231. Is it a
+github bug?" ([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5910571213)). The
+upstream capture says the same
+([radiusred/gh-codecrew#386](https://github.com/radiusred/gh-codecrew/issues/386)). From about
+10:44Z to 11:23Z nothing else happened on #231: after the Deviation, the coordinator asked the
+operator in the session to link #233 by hand, and the task waited on that until the `connected`
+event ([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5910571213)). `task finish
+231 --operator-confirm` then passed its gate, posted the operator-confirmation comment at 11:24:46Z
+([PR #233](https://github.com/davison/md-notes/pull/233#issuecomment-5910187914)), merged #233 at
 11:24:50Z as `19823d0`, and closed the adopted capture #229
 ([#229](https://github.com/davison/md-notes/issues/229#issuecomment-5910189341)).
 
@@ -284,11 +293,12 @@ coordinator noticed by reading the issue's state, and closed #231 by hand at 11:
 comment naming the pull request and the merge
 ([#231](https://github.com/davison/md-notes/issues/231#issuecomment-5910193024)).
 
-**The upstream capture.** On the operator's ask, which the coordinator relayed to this seat as "yes,
-file the upstream capture for checking that a close happened", the coordinator filed
-[radiusred/gh-codecrew#386](https://github.com/radiusred/gh-codecrew/issues/386) at 11:28:23Z. It
-asks that `task finish` read the task's state back after a merge, and close it itself if GitHub has
-not, as it already closes adopted captures. It notes that
+**The upstream capture.** On the operator's ask in the coordinator session, "yes, file the upstream
+capture for checking that a close happened"
+([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5910571213)), the coordinator
+filed [radiusred/gh-codecrew#386](https://github.com/radiusred/gh-codecrew/issues/386) at 11:28:23Z.
+It asks that `task finish` read the task's state back after a merge, and close it itself if GitHub
+has not, as it already closes adopted captures. It notes that
 [radiusred/gh-codecrew#318](https://github.com/radiusred/gh-codecrew/issues/318) covers the case
 before a merge and cannot catch this one. It is open.
 
@@ -296,9 +306,11 @@ before a merge and cannot catch this one. It is open.
 
 The task's pull request was reviewed by a clean-context session under the reviewer contract, with
 the reviewer seat routed to the operator. It merged under the operator's standing confirmation, and
-its operator-confirmation comment was posted by `gh codecrew task finish --operator-confirm`
+its operator-confirmation comment was written by `gh codecrew task finish 231 --operator-confirm`,
+resting on the standing merge confirmation in the scope Decision, not typed by the operator
 ([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5909079844), [PR
-#233](https://github.com/davison/md-notes/pull/233#issuecomment-5910187914)).
+#233](https://github.com/davison/md-notes/pull/233#issuecomment-5910187914),
+[#230](https://github.com/davison/md-notes/issues/230#issuecomment-5910571213)).
 
 - **Round one, on PR #232** ([changes
   requested](https://github.com/davison/md-notes/pull/232#issuecomment-5909481856)), at `5f8bf1c`.
@@ -417,27 +429,24 @@ operator checks his phone and e-ink tablet, per the scope Decision.
 
 ## Where the record is silent
 
-**Where the operator's words came from.** Unlike M11, where the coordinator posted an attribution
-comment on the milestone issue
-([#213](https://github.com/davison/md-notes/issues/213#issuecomment-5900867536)), M12 has none on
-the trail. Every seat posts under the one account. The coordinator gave this seat the attributions
-in its dispatch brief, and they are recorded here as given:
+**The operator's words were attributed late.** Every seat posts under the one account, so the
+account alone does not say who typed a comment. The coordinator's Decision saying where the
+operator's words came from was posted at 11:48:29Z, after QA and at record time, and says itself
+that it "should have been posted as the words were relayed"
+([#230](https://github.com/davison/md-notes/issues/230#issuecomment-5910571213)). On M11 the same
+comment also came after QA
+([#213](https://github.com/davison/md-notes/issues/213#issuecomment-5900867536)). The M12 Decision
+records:
 
-- **Relayed from the coordinator session:** the capture request behind #229, quoted in the capture;
-  the scope, "open a milestone for #229 and run it through to a release of v0.3.1", quoted in the
-  scope Decision. The coordinator reports that the operator typed "ov v0.3.1", and the Decision
-  quotes it corrected;
-- **Relayed from the coordinator session, and not quoted anywhere on the trail:** "yes, file the
-  upstream capture for checking that a close happened", behind radiusred/gh-codecrew#386;
-- **Relayed, and done on GitHub by the operator:** the manual link of #233 to #231 in the
-  Development sidebar ("linked #233 to #231"). #386 says the operator made it, and #231's timeline
-  shows the `connected` event, under the one account;
-- **Typed on GitHub by the operator himself:** the gate resolution on #231. Nothing on the trail
-  says who typed it, and nothing records who removed the label.
+- **Typed by the operator on GitHub:** the gate resolution on #231 and the label's removal, and the
+  manual link of #233 to #231. He confirmed each in the coordinator session;
+- **Relayed by the coordinator from the session:** the capture request behind #229; the scope, typed
+  "ov v0.3.1" and quoted by the scope Decision with "of"; and "yes, file the upstream capture for
+  checking that a close happened", behind radiusred/gh-codecrew#386;
+- **Posted by `gh codecrew`:** the operator-confirmation comment on PR #233.
 
-**The wait for the link.** Between round two's approval at 10:44:36Z and the manual link at
-11:23:22Z, nothing on the trail records what happened. The task was waiting on the operator's link,
-as the Deviation had asked.
+The session those words came from is not on GitHub, so the relayed words are quoted as the
+coordinator gave them.
 
 **One approval did not see its last commit.** See [What shipped](#what-shipped). It was the
 approving review's own nit, and QA's verdicts ran on `main` after it.
