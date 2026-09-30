@@ -2,10 +2,10 @@ package session
 
 import (
 	"bytes"
-	"errors"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
