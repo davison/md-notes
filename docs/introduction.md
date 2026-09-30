@@ -442,18 +442,24 @@ Set-Cookie: __Host-mdn_session=…; Path=/; Max-Age=2592000; HttpOnly; Secure; S
 ```
 
 `SameSite=Lax` lets the browser send the cookie on a top-level navigation that
-starts outside the site: a home-screen shortcut, a link from another app, a URL
-typed into a new tab. Until v0.3.2 it was `Strict`, and a browser holding the cookie
-withheld it on exactly those navigations, so an e-ink tablet's home-screen shortcut
-asked for the token every time it was opened. `Lax` still withholds the cookie from
+starts outside the site: a home-screen shortcut, a link from another app or another
+site. Until v0.3.2 it was `Strict`, and a browser holding the cookie withheld it on
+exactly those navigations, so an e-ink tablet's home-screen shortcut asked for the
+token every time it was opened. (A URL typed into the address bar or opened from a
+bookmark carried the cookie under `Strict` too, which is why the same tablet stayed
+logged in when the address was typed.) `Lax` still withholds the cookie from
 everything else another site can start: a form `POST`, a `fetch`, an `iframe`, an
 events stream. So a page elsewhere can at most send you to one of the daemon's
 pages, which it cannot read, and every request the daemon answers on `GET` is a
 read. Writes are protected twice over: the cookie does not travel on a cross-site
 write, and a cookie-authenticated request whose `Origin` is not the daemon's own is
-refused anyway. The upgrade to v0.3.2 needs nothing from you: a cookie issued as
-`Strict` is still a good session, and is reissued as `Lax` the next time the device
-uses it a day or more after it was issued, or at the next login.
+refused anyway. The upgrade to v0.3.2 needs nothing from you beyond, at most, one
+more paste of the token: a cookie issued as `Strict` is still a good session, and
+is reissued as `Lax` the next time the device uses it a day or more after it was
+issued, or at the next login. Until then a device that opens the notes from a
+home-screen shortcut still presents the `Strict` cookie, which the browser
+withholds, so the first shortcut launch after the upgrade asks for the token once;
+the login it makes issues a `Lax` cookie, and later launches stay logged in.
 
 The `__Host-` prefix makes the browser itself refuse the cookie unless it is
 `Secure`, `Path=/` and carries no `Domain`, so it is bound to the one name that set
@@ -502,12 +508,19 @@ signed with the token before the last rotation, which the daemon can tell only
 while it still holds the token it replaced; a bad signature, meaning another token,
 a token replaced while the daemon was stopped, another `tailnet_host`, or an altered
 value; a bearer token that is not the current one; `cross_origin`; `loopback_only`;
-and `bad_host`, with the `Host` the request came in under. The address is the one
-`tailscale serve` forwards, the path is logged without its query, and nothing a
-caller presented as a credential is logged, nor the `User-Agent` itself. The same
-reason from the same address is logged once a minute, and every caller together at
-most thirty lines a minute; the first line after a minute that hit that cap says how
-many were left out.
+`bad_host`, with the `Host` the request came in under, or because a forwarded
+request arrived with a loopback `Host`, or a request target was in absolute form;
+and, at `/login`, a method other than `POST`, a foreign `Origin`, a form that could
+not be read, a request that did not arrive over https (the proxy sent no
+`X-Forwarded-Proto: https`), a token that is not the current one, and too many
+failed logins. The address is the one `tailscale serve` forwards, the path is
+logged without its query, and nothing a caller presented as a credential is
+logged, nor the `User-Agent` itself. Anything the caller chose, such as the path or
+the `Host`, is written with control characters escaped (`\n`, `\x1b`), so a
+request cannot add lines of its own to the log. The same reason from the same
+address is logged once a minute, and every caller together at most thirty lines a
+minute. A minute that hit that cap is reported with the next refusal, whenever that
+comes, as `N tailnet refusals not logged in the minute from HH:MM:SS`.
 
 Authentication is checked when a request arrives, so an events stream already open
 is not cut off by a rotation: it ends when the page reloads, when the daemon
