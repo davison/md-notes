@@ -448,7 +448,8 @@ happens:
 - **The device leaves it unused for 30 days.** A request that uses a session a day
   old or more is answered with a fresh cookie, so a device in use is not asked for
   the token again. A browser that logged in once and was left behind is logged out
-  30 days later, and the cookie's `Max-Age` tells the browser the same. A lost
+  after 30 days idle, and the cookie's `Max-Age` tells the browser the same: it is
+  30 days from the last reissue, not from the first login. A lost
   device that somebody else goes on using stays logged in until you rotate.
 
 Restarting the daemon does not end a session, and neither do an upgrade, a reboot
