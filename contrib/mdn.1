@@ -53,6 +53,11 @@ may be configured so that the daemon also answers to one extra Host name
 forwarded by a
 .B tailscale serve
 proxy; every request under that name must authenticate.
+A browser presents the token once, to a login page, and is given a session
+cookie.
+The session survives restarts, upgrades and reboots of the daemon.
+It ends when the token is rotated, on every device at once, or when the device
+has not used it for 30 days.
 .PP
 Notes stay plain markdown files in a folder hierarchy, editable with any tool
 and synced by anything that syncs files.
@@ -152,6 +157,10 @@ File holding the daemon's bearer token.
 .TP
 .B \-rotate
 Replace the token with a new one.
+A running daemon accepts only the new token from its next request, and every
+browser session under
+.B tailnet_host
+ends.
 .SH FILES
 .TP
 .I ~/.config/mdn/config.yml
