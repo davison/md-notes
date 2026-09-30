@@ -155,8 +155,9 @@ phone layout, the drawer, the middle-width layout, the display settings and
 the scrollbars, the tap targets, the asset cache, creating and deleting a
 note, the navigator's two orders, removing a root, the installable app, the
 service worker's cache name, flowcharts drawn as images, images pasted and
-dropped into the editor, a tailnet login across daemon restarts behind TLS,
-and what a suite does when the browser is missing: twelve suites, 123 tests.
+dropped into the editor, a tailnet login across daemon restarts and from
+another site behind TLS, and what a suite does when the browser is missing:
+twelve suites, 124 tests.
 It is CI's second job.
 
 The extension has a browser suite of its own, which CI does not run, because
