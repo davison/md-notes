@@ -301,10 +301,10 @@ contract, with the reviewer seat routed to the operator.
 
 The pull request carries the operator-confirmation comment at 15:13:56Z, "reviewed and accepted by
 @davison as both author and operator" ([PR
-#241](https://github.com/davison/md-notes/pull/241#issuecomment-5914142314)), resting on the
-standing merge confirmation. Nothing on the trail says who posted it. Its wording is the one `task
-finish --operator-confirm` wrote on M12, and #238's close comment says `task finish 240` ran
-([#238](https://github.com/davison/md-notes/issues/238#issuecomment-5914145123)).
+#241](https://github.com/davison/md-notes/pull/241#issuecomment-5914142314)), written by `task
+finish 240 --operator-confirm` and resting on the standing merge confirmation in the scope Decision,
+"release v0.3.2". The coordinator's attribution Decision records it, at record time
+([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914771903)).
 
 No coordinator disposition comment covers any of the reviews. The addendum and the correction answer
 the findings, and the fix-pass commits the nits.
@@ -330,9 +330,10 @@ The same happened on M13:
 
 - **The keyword did not link.** PR #241 opened at 14:46:09Z with `Closes #240` as its first line.
   The `connected` event on #240 and #241 is at 14:54:36Z, and `closingIssuesReferences` on #241
-  names #240. According to the coordinator's brief for this record, the operator made the link by
-  hand and reported it in the coordinator session: "linked #241 to #240". No comment on the trail
-  records it, and #240 carries no Deviation for the missing link as #231 did on M12.
+  names #240. The operator made the link by hand from the Development sidebar and reported it in the
+  coordinator session: "linked #241 to #240"; the coordinator then read `closingIssuesReferences` as
+  `[240]` ([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914771903)). #240
+  carries no Deviation for the missing link, as #231 did on M12.
 - **The commit closed the task.** The fix pass's docs commit, `45bb114` on the branch and
   [`89c0b51`](https://github.com/davison/md-notes/commit/89c0b51) on `main`, ends its body with
   `Closes davison/md-notes#240`. The round-two review calls it "the stated workaround, not a
@@ -340,10 +341,14 @@ The same happened on M13:
   merged at 15:14:02Z, and #240's timeline shows it closed at 15:14:06Z by commit `89c0b51`. The
   pull request was rebase-merged, not squashed, and the keyword in one of the rebased commits was
   enough. Nothing had to be closed by hand.
-- **Where the workaround came from.** According to the coordinator's brief, the operator found it in
-  discussion 209148 and relayed it: "put Closes owner/repo#N in the squash commit message". He also
-  checked that the repository's setting to auto-close issues is on: "it's on". Both are the
-  coordinator's relay only.
+- **Where the discussions and the workaround came from.** The operator asked the coordinator to look
+  for reports: "Can you search to see if there's any open tickets about it with GH?", and the
+  coordinator found 209162 and 209148. The operator found the workaround in 209148 and relayed it,
+  quoting it: "Workaround: put Closes owner/repo#N in the squash commit message, or close the issue
+  by hand." The coordinator asked the implementer to put `Closes davison/md-notes#240` in a commit
+  body. Asked to check Settings → General → Issues → "Auto-close issues with merged linked pull
+  requests", he answered "it's on", which rules out a repository setting as the cause
+  ([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914771903)).
 
 `task finish 240` ran at the merge, with the manual link in place, and closed the adopted capture
 #238 at 15:14:06Z ([#238](https://github.com/davison/md-notes/issues/238#issuecomment-5914145123)).
@@ -351,9 +356,11 @@ radiusred/gh-codecrew#386, for `task finish` to check that the task closed, is s
 
 ## Deviations and corrections
 
-**The coordinator's relays behind the link and the workaround were not posted.** Recorded by this
-record's own Deviation on the milestone issue
-([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914650687)); see [the section
+**The coordinator's relays behind the link, the workaround and the auto-close setting were posted
+late.** This record's Deviation on the milestone issue named the gap
+([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914650687)), and the
+coordinator's attribution Decision then recorded them at record time
+([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914771903)); see [the section
 above](#a-pull-request-github-would-not-link-and-a-commit-that-closed-the-task).
 
 **The addendum's reason for leaving the wrong-token line unbounded was wrong.** Withdrawn by the
@@ -419,8 +426,9 @@ The README says the app works over the tailnet "behind a login" and makes no cla
 No other guide names `SameSite`. `docs/e-ink.md` says that a NeoBrowser session "survives closing
 the tab", which stays true. The same page says NeoBrowser "has not been checked for the install
 prompt" and that a tablet has "no home screen habit to fit into". #238's report, that NeoBrowser
-offers to install a shortcut and that the operator opens md-notes from one, bears on both. Neither
-is a claim M13 changed, so this record leaves them as they are.
+offers to install a shortcut and that the operator opens md-notes from one, contradicts both.
+Neither is a claim M13 changed, so this pull request leaves them as they are, and the coordinator
+captured the rewrite as [#244](https://github.com/davison/md-notes/issues/244).
 
 ## Captures adopted, and captures raised
 
@@ -428,13 +436,18 @@ M13 adopted one capture, [#238](https://github.com/davison/md-notes/issues/238),
 finish 240` when #241 merged
 ([#238](https://github.com/davison/md-notes/issues/238#issuecomment-5914145123)).
 
-It raised one, [#242](https://github.com/davison/md-notes/issues/242), at 15:40:49Z from QA's
-findings: a test that runs every audited GET route and fails on any write, the e2e cross-site matrix
-widened to QA's cases, and a repeat count for deduplicated refusals. It is open, and "not
-release-blocking". No review proposed a capture. M12's captures
-[#235](https://github.com/davison/md-notes/issues/235) and
-[#236](https://github.com/davison/md-notes/issues/236) stay open; M13 changed neither the session
-format nor the installed-app path.
+It raised two, both open:
+
+- [#242](https://github.com/davison/md-notes/issues/242), at 15:40:49Z from QA's findings: a test
+  that runs every audited GET route and fails on any write, the e2e cross-site matrix widened to
+  QA's cases, and a repeat count for deduplicated refusals; "not release-blocking";
+- [#244](https://github.com/davison/md-notes/issues/244), at 15:50:14Z from this record's front-door
+  check: `docs/e-ink.md`'s NeoBrowser claims rewritten from #238's report, covering the shortcut,
+  the install offer (untried) and the one token prompt after the upgrade.
+
+No review proposed a capture. M12's captures [#235](https://github.com/davison/md-notes/issues/235)
+and [#236](https://github.com/davison/md-notes/issues/236) stay open; M13 changed neither the
+session format nor the installed-app path.
 
 ## The release: v0.3.2, to be tagged
 
@@ -453,23 +466,23 @@ newest tag and `v0.3.2` did not exist.
 
 ## Where the record is silent
 
-**Three of the operator's words reached this record only through the coordinator.** Every seat posts
-under the one account, so the account alone does not say who typed a comment. The scope Decision
-recorded its attribution when the words were relayed, as it says itself, where M12's came at record
-time. Three later relays were not posted, and the record has them only from the coordinator's brief:
+**Three of the operator's words were recorded late.** Every seat posts under the one account, so the
+account alone does not say who typed a comment. The scope Decision recorded its attribution when the
+words were relayed, as it says itself, where M12's came at record time. Three later relays were not
+posted when they were said:
 
 - "linked #241 to #240", behind the `connected` event at 14:54:36Z;
-- "put Closes owner/repo#N in the squash commit message", the workaround from discussion 209148,
-  behind `89c0b51`'s closing line;
+- the 209148 workaround, "put Closes owner/repo#N in the squash commit message, or close the issue
+  by hand", behind `89c0b51`'s closing line, and the search ask that found the two discussions;
 - "it's on", the repository's auto-close setting.
 
-This record's Deviation on #239 names them
-([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914650687)).
+This record's Deviation on #239 named the gap
+([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914650687)), and the
+coordinator's attribution Decision, posted at 15:50:12Z, records all of them and that `task finish
+240 --operator-confirm` wrote the operator confirmation on PR #241
+([#239](https://github.com/davison/md-notes/issues/239#issuecomment-5914771903)).
 
 **Relayed and recorded at the time:** the operator's device reports in #238, his "Lax works, the
 shortcut stays logged in" on the probe, and "open a milestone for #238 and release v0.3.2, Lax is
 approved". The session those words came from is not on GitHub, so they are quoted as the coordinator
 gave them.
-
-**Who posted the operator confirmation on PR #241** is not recorded; see [What the reviews
-changed](#what-the-reviews-changed).
