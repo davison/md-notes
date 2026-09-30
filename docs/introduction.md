@@ -449,8 +449,8 @@ happens:
   old or more is answered with a fresh cookie, so a device in use is not asked for
   the token again. A browser that logged in once and was left behind is logged out
   after 30 days idle, and the cookie's `Max-Age` tells the browser the same: it is
-  30 days from the last reissue, not from the first login. A lost
-  device that somebody else goes on using stays logged in until you rotate.
+  30 days from the last reissue, not from the first login. A lost device that
+  somebody else goes on using stays logged in until you rotate.
 
 Restarting the daemon does not end a session, and neither do an upgrade, a reboot
 or closing the browser: the daemon that starts over the same token file derives the
