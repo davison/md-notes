@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"errors"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -166,6 +167,40 @@ func TestTheValueDoesNotCarryTheKey(t *testing.T) {
 	for _, enc := range []string{string(key), base64.RawURLEncoding.EncodeToString(key), base64.StdEncoding.EncodeToString(key)} {
 		if strings.Contains(v, enc) {
 			t.Errorf("the value %q carries the key", v)
+		}
+	}
+}
+
+// M13-R2: a refused session says why, so the daemon can log it. The
+// reasons are the categories the log names, and nothing in them is taken
+// from the value itself.
+func TestVerifySaysWhy(t *testing.T) {
+	v := Issue(key, host, t0)
+	parts := strings.Split(v, ".")
+	other := bytes.Repeat([]byte{8}, 32)
+	for name, c := range map[string]struct {
+		key   []byte
+		host  string
+		value string
+		now   time.Time
+		want  error
+	}{
+		"live":               {key, host, v, t0, nil},
+		"empty":              {key, host, "", t0, ErrMalformed},
+		"a v0.3.0 id":        {key, host, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", t0, ErrMalformed},
+		"MAC truncated":      {key, host, strings.Join([]string{parts[0], parts[1], parts[2], parts[3][:10]}, "."), t0, ErrMalformed},
+		"another key":        {other, host, v, t0, ErrSignature},
+		"another host":       {key, "desktop.example.ts.net", v, t0, ErrSignature},
+		"tampered issued-at": {key, host, strings.Join([]string{parts[0], "1790845201", parts[2], parts[3]}, "."), t0, ErrSignature},
+		"unused 30 days":     {key, host, v, t0.Add(Idle), ErrExpired},
+		"from the future":    {key, host, Issue(key, host, t0.Add(time.Hour)), t0, ErrFuture},
+	} {
+		_, err := Verify(c.key, c.host, c.value, c.now)
+		if !errors.Is(err, c.want) || (c.want == nil) != (err == nil) {
+			t.Errorf("%s: %v, want %v", name, err, c.want)
+		}
+		if err != nil && strings.Contains(err.Error(), c.value) && c.value != "" {
+			t.Errorf("%s: the reason %q quotes the value", name, err)
 		}
 	}
 }
