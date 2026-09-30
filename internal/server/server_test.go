@@ -63,7 +63,16 @@ func newTestServerWith(t *testing.T, opts ...Option) (*httptest.Server, string) 
 	os.WriteFile(filepath.Join(notes, "sub", "pic.png"), []byte("PNG"), 0o644)
 	os.WriteFile(filepath.Join(base, "secret"), []byte("s"), 0o644)
 	os.Symlink(filepath.Join(base, "secret"), filepath.Join(notes, "escape"))
+	return serveBase(t, base, opts...), base
+}
 
+// serveBase starts a daemon over a base directory newTestServerWith has
+// already laid out. Called a second time on the same base it is the daemon
+// restarted: a new process's worth of memory, over the same notes and the
+// same token file.
+func serveBase(t *testing.T, base string, opts ...Option) *httptest.Server {
+	t.Helper()
+	notes := filepath.Join(base, "notes")
 	reg, err := roots.New(notes, filepath.Join(t.TempDir(), "roots.json"), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +119,7 @@ func newTestServerWith(t *testing.T, opts ...Option) (*httptest.Server, string) 
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	servers[ts] = s
-	return ts, base
+	return ts
 }
 
 // do sends a request with the Host header a browser at localhost would send.
