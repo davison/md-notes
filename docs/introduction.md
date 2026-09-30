@@ -438,8 +438,22 @@ document, no script and no asset to fetch — which posts the token to `/login` 
 gets back a cookie:
 
 ```
-Set-Cookie: __Host-mdn_session=…; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Strict
+Set-Cookie: __Host-mdn_session=…; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax
 ```
+
+`SameSite=Lax` lets the browser send the cookie on a top-level navigation that
+starts outside the site: a home-screen shortcut, a link from another app, a URL
+typed into a new tab. Until v0.3.2 it was `Strict`, and a browser holding the cookie
+withheld it on exactly those navigations, so an e-ink tablet's home-screen shortcut
+asked for the token every time it was opened. `Lax` still withholds the cookie from
+everything else another site can start: a form `POST`, a `fetch`, an `iframe`, an
+events stream. So a page elsewhere can at most send you to one of the daemon's
+pages, which it cannot read, and every request the daemon answers on `GET` is a
+read. Writes are protected twice over: the cookie does not travel on a cross-site
+write, and a cookie-authenticated request whose `Origin` is not the daemon's own is
+refused anyway. The upgrade to v0.3.2 needs nothing from you: a cookie issued as
+`Strict` is still a good session, and is reissued as `Lax` the next time the device
+uses it a day or more after it was issued, or at the next login.
 
 The `__Host-` prefix makes the browser itself refuse the cookie unless it is
 `Secure`, `Path=/` and carries no `Domain`, so it is bound to the one name that set
@@ -471,6 +485,29 @@ that upgrade and then stays logged in.
 
 `/login` exists only under `tailnet_host`. Over loopback it is an ordinary
 client-side route and serves the UI, as it always did.
+
+Every request under `tailnet_host` that is sent to the login page or refused is
+logged with its reason, and so is every login, with the browser family:
+
+```
+tailnet: 100.64.0.5 GET / sent to the login page: no session cookie
+tailnet: 100.64.0.5 GET /api/roots refused (401 unauthorized): not a session value
+tailnet login from 100.64.0.6 (Android WebView on Android)
+tailnet: 100.64.0.6 GET /r/notes/index.md sent to the login page: signed with the token before the last rotation
+```
+
+The reasons are: no session cookie; not a session value (including a session id
+from before v0.3.1); expired, unused for the idle limit; issued in the future;
+signed with the token before the last rotation, which the daemon can tell only
+while it still holds the token it replaced; a bad signature, meaning another token,
+a token replaced while the daemon was stopped, another `tailnet_host`, or an altered
+value; a bearer token that is not the current one; `cross_origin`; `loopback_only`;
+and `bad_host`, with the `Host` the request came in under. The address is the one
+`tailscale serve` forwards, the path is logged without its query, and nothing a
+caller presented as a credential is logged, nor the `User-Agent` itself. The same
+reason from the same address is logged once a minute, and every caller together at
+most thirty lines a minute; the first line after a minute that hit that cap says how
+many were left out.
 
 Authentication is checked when a request arrives, so an events stream already open
 is not cut off by a rotation: it ends when the page reloads, when the daemon
@@ -2081,7 +2118,7 @@ fixed and did not go on to narrow.
   follows `host_permissions`: it is for the extension's own contexts, which CORS
   does not govern. Under `tailnet_host` the daemon's own origin is
   `https://<tailnet_host>` and only that, and a request authenticated by the session
-  cookie gets the check too — `SameSite=Strict` is not left as the only thing
+  cookie gets the check too — `SameSite=Lax` is not left as the only thing
   between a foreign page and a write.
 - Under `tailnet_host` nothing at all is served unauthenticated, and what an
   authenticated caller reaches is the UI's own API, plus `POST /api/clip` to a

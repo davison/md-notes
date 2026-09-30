@@ -154,10 +154,14 @@ tailnet_host: laptop.tailnet-name.ts.net
 ```
 
 and run `tailscale serve --bg 7337`. Everything under that name must
-authenticate: a browser pastes the token once and gets a session cookie. Use
-`tailscale serve`, never `tailscale funnel`, which would publish your notes to
-the internet at large. Whoever your tailnet ACL admits to this machine can, with
-the token, read and edit every root the daemon serves.
+authenticate: a browser pastes the token once and gets a session cookie. The
+cookie is `SameSite=Lax`, so opening the notes from a home-screen shortcut or
+another app's link keeps you logged in, while a request another site starts in
+any other way never carries it. The daemon logs why each request under that name
+was sent to the login page or refused. Use `tailscale serve`, never `tailscale
+funnel`, which would publish your notes to the internet at large. Whoever your
+tailnet ACL admits to this machine can, with the token, read and edit every root
+the daemon serves.
 
 [Reaching the daemon over the tailnet](introduction.md#reaching-the-daemon-over-the-tailnet)
 is the full account, and the one to read before you do it: what the proxy must
