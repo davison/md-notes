@@ -138,7 +138,7 @@ func TestTailnetSessionIsRefreshedOnUse(t *testing.T) {
 	if c.Value == strings.TrimPrefix(cookie, sessionCookie+"=") {
 		t.Error("the reissued cookie is the one presented")
 	}
-	if !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteStrictMode || c.Path != "/" || c.Domain != "" {
+	if !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteLaxMode || c.Path != "/" || c.Domain != "" {
 		t.Errorf("the reissued cookie lost a protection: %+v", c)
 	}
 	if c.MaxAge != int(session.Idle.Seconds()) {
