@@ -29,22 +29,25 @@ type refusalLog struct {
 }
 
 // allow reports whether a refusal from key may be written at now, and how
-// many were left out in the minute before, which the caller reports once.
-func (l *refusalLog) allow(key string, now time.Time) (ok bool, leftOut int) {
+// many were left out in the last capped minute and when that minute began,
+// which the caller reports once. The count is written with the next
+// refusal, whenever that comes — there is no timer — so the line names the
+// minute it is about rather than calling it the last one.
+func (l *refusalLog) allow(key string, now time.Time) (ok bool, leftOut int, from time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.seen == nil || !now.Before(l.window.Add(time.Minute)) {
-		leftOut = l.suppressed
+		leftOut, from = l.suppressed, l.window
 		l.window, l.written, l.suppressed, l.seen = now, 0, 0, map[string]bool{}
 	}
 	if l.seen[key] {
-		return false, leftOut
+		return false, leftOut, from
 	}
 	if l.written >= refusalBurst {
 		l.suppressed++
-		return false, leftOut
+		return false, leftOut, from
 	}
 	l.seen[key] = true
 	l.written++
-	return true, leftOut
+	return true, leftOut, from
 }
