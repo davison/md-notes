@@ -73,6 +73,8 @@ type Server struct {
 	tailnetHost string
 	// logins bounds how fast one caller can fail to log in.
 	logins *throttle
+	// refusals bounds the log lines about refused tailnet requests.
+	refusals refusalLog
 
 	// keepalive is how often an idle event stream sends a comment.
 	keepalive time.Duration
@@ -125,6 +127,9 @@ type Validator interface {
 	// so that a cookie signed after a successful check cannot be signed
 	// with the key of a token the check never saw.
 	AuthenticateDerive(presented, purpose string) ([]byte, bool)
+	// DerivePrevious is Derive for the token held before the last
+	// rotation, or nil. For the log's reason alone, never to accept.
+	DerivePrevious(purpose string) []byte
 }
 
 // WithToken gives the daemon the bearer token clients present in an
@@ -558,6 +563,12 @@ func (s *Server) guard(next http.Handler) http.Handler {
 				return
 			}
 		default:
+			// Under a tailnet name, a Host that is neither is most often
+			// that name spelt another way — a port that tailnet_host does
+			// not carry — so it is worth a line saying which.
+			if s.tailnetHost != "" {
+				s.logRefusal(r, "refused (403 bad_host)", fmt.Sprintf("Host %q is not %s", truncate(r.Host, 100), s.tailnetHost))
+			}
 			writeGuardError(w, http.StatusForbidden, "bad_host", "unexpected Host header")
 			return
 		}

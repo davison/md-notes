@@ -283,8 +283,8 @@ func TestTailnetLoginSetsAHostScopedCookie(t *testing.T) {
 	if c.Value == "" || c.Value == daemonToken(t, base) {
 		t.Errorf("cookie value %q must be a session id, never the token itself", c.Value)
 	}
-	if !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteStrictMode || c.Path != "/" || c.Domain != "" {
-		t.Errorf("cookie = %+v, want HttpOnly, Secure, SameSite=Strict, Path=/ and no Domain", c)
+	if !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteLaxMode || c.Path != "/" || c.Domain != "" {
+		t.Errorf("cookie = %+v, want HttpOnly, Secure, SameSite=Lax, Path=/ and no Domain", c)
 	}
 	if c.MaxAge <= 0 {
 		t.Errorf("cookie Max-Age = %d, want the session lifetime", c.MaxAge)
@@ -553,7 +553,7 @@ func TestTailnetAcceptsTheBearerToken(t *testing.T) {
 	}
 }
 
-// SameSite=Strict should not be the only thing between a foreign page and
+// SameSite=Lax should not be the only thing between a foreign page and
 // a write, so a cookie-authenticated request gets the Origin check too.
 func TestTailnetCookieIsCheckedAgainstTheOrigin(t *testing.T) {
 	ts, base := newTailnetServer(t)

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"errors"
+	"fmt"
 	"html/template"
 	"net"
 	"net/http"
@@ -63,22 +65,28 @@ func (s *Server) guardTailnet(w http.ResponseWriter, r *http.Request) bool {
 		// cross-origin without a preflight, and the daemon still answers
 		// none.
 	case carried:
+		s.logRefusal(r, "refused (401 unauthorized)", "bearer token is not the current token")
 		writeUnauthorized(w)
 		return false
-	case s.sessionOf(r, &reissue):
-		// A browser. Here the Origin check does apply — SameSite=Strict
-		// should not be the only thing between a foreign page and a
-		// write to the notes.
+	default:
+		ok, why := s.sessionOf(r, &reissue)
+		if !ok {
+			s.challenge(w, r, why)
+			return false
+		}
+		// A browser. Here the Origin check does apply: SameSite=Lax
+		// already withholds the cookie from a cross-site write, but one
+		// client-side attribute should not be the only thing between a
+		// foreign page and a write to the notes.
 		if origin := r.Header.Get("Origin"); origin != "" && !s.isTailnetOrigin(origin) {
+			s.logRefusal(r, "refused (403 cross_origin)", fmt.Sprintf("Origin %q is not https://%s", truncate(origin, 100), s.tailnetHost))
 			writeGuardError(w, http.StatusForbidden, "cross_origin",
 				"cross-origin request refused; present the bearer token to write from another origin")
 			return false
 		}
-	default:
-		s.challenge(w, r)
-		return false
 	}
 	if !remoteAllowed(r) {
+		s.logRefusal(r, "refused (403 loopback_only)", "served on loopback only")
 		writeGuardError(w, http.StatusForbidden, "loopback_only",
 			"this endpoint is served on loopback only; it is not reachable under "+s.tailnetHost)
 		return false
@@ -97,27 +105,67 @@ func (s *Server) isTailnetOrigin(origin string) bool {
 	return s.tailnetHost != "" && o == "https://"+s.tailnetHost
 }
 
-// sessionOf reports whether the request carries a live session cookie.
-// The cookie is checked against a key derived from the token in force now,
-// so a rotation ends it on this very request, and against nothing else, so
-// a restart does not (davison/md-notes#231). When the session is a day old
-// or more, *reissue is set to a fresh one for the response to carry, so a
-// session in use never reaches its idle limit.
-func (s *Server) sessionOf(r *http.Request, reissue *string) bool {
+// sessionOf reports whether the request carries a live session cookie
+// and, when it does not, why not, in words fit for the log. The cookie is
+// checked against a key derived from the token in force now, so a rotation
+// ends it on this very request, and against nothing else, so a restart
+// does not (davison/md-notes#231). When the session is a day old or more,
+// *reissue is set to a fresh one for the response to carry, so a session
+// in use never reaches its idle limit.
+func (s *Server) sessionOf(r *http.Request, reissue *string) (bool, string) {
 	if s.token == nil || s.tailnetHost == "" {
-		return false
+		return false, "no token configured"
 	}
 	c, err := r.Cookie(sessionCookie)
 	if err != nil {
-		return false
+		return false, "no session cookie"
 	}
 	key := s.token.Derive(session.KeyPurpose)
 	now := s.now()
-	ok, due := session.Check(key, s.tailnetHost, c.Value, now)
-	if ok && due {
-		*reissue = session.Issue(key, s.tailnetHost, now)
+	due, err := session.Verify(key, s.tailnetHost, c.Value, now)
+	switch {
+	case err == nil:
+		if due {
+			*reissue = session.Issue(key, s.tailnetHost, now)
+		}
+		return true, ""
+	case errors.Is(err, session.ErrSignature):
+		// Checked again under the token this daemon held before its last
+		// rotation, only to say so: the answer is a refusal either way.
+		if prev := s.token.DerivePrevious(session.KeyPurpose); prev != nil {
+			if _, perr := session.Verify(prev, s.tailnetHost, c.Value, now); perr == nil || !errors.Is(perr, session.ErrSignature) {
+				return false, "signed with the token before the last rotation"
+			}
+		}
+		return false, err.Error() + " (another token, a token replaced while the daemon was stopped, another tailnet_host, or altered)"
+	default:
+		return false, err.Error()
 	}
-	return ok
+}
+
+// logRefusal writes one line about a tailnet request that was refused or
+// sent to the login page: who, what, the answer and why. The path is
+// logged without its query, and nothing the caller presented as a
+// credential is — the reason is always one of the daemon's own phrases.
+// Bounded by refusalLog.
+func (s *Server) logRefusal(r *http.Request, answer, why string) {
+	addr := clientAddr(r)
+	ok, leftOut := s.refusals.allow(addr+"\x00"+answer+"\x00"+why, s.now())
+	if leftOut > 0 {
+		s.log.Printf("tailnet: %d tailnet refusals not logged in the last minute", leftOut)
+	}
+	if !ok {
+		return
+	}
+	s.log.Printf("tailnet: %s %s %s %s: %s", truncate(addr, 64), r.Method, truncate(path.Clean("/"+r.URL.Path), 200), answer, why)
+}
+
+// truncate bounds a caller-supplied string before it reaches the log.
+func truncate(v string, n int) string {
+	if len(v) <= n {
+		return v
+	}
+	return v[:n] + "…"
 }
 
 // setSessionCookie is the one place the cookie's attributes are written,
@@ -131,7 +179,7 @@ func setSessionCookie(w http.ResponseWriter, value string) {
 		MaxAge:   int(session.Idle.Seconds()),
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 }
 
@@ -140,11 +188,13 @@ func setSessionCookie(w http.ResponseWriter, value string) {
 // everything else — a fetch, the events stream, any call under /api/ —
 // gets the 401 an API client can act on, because a login page arriving
 // where JSON was expected is not an improvement on an error.
-func (s *Server) challenge(w http.ResponseWriter, r *http.Request) {
+func (s *Server) challenge(w http.ResponseWriter, r *http.Request, why string) {
 	if !isNavigation(r) {
+		s.logRefusal(r, "refused (401 unauthorized)", why)
 		writeUnauthorized(w)
 		return
 	}
+	s.logRefusal(r, "sent to the login page", why)
 	w.Header().Set("WWW-Authenticate", `Bearer realm="mdn"`)
 	s.writeLoginPage(w, r, http.StatusUnauthorized, loginForm{Redirect: redirectTarget(r)})
 }
@@ -242,7 +292,7 @@ func (s *Server) loginHandler(w http.ResponseWriter, r *http.Request) {
 	// value with nothing behind it to delete, and the browser keeps only
 	// the newest.
 	setSessionCookie(w, session.Issue(key, s.tailnetHost, s.now()))
-	s.log.Printf("tailnet login from %s", addr)
+	s.log.Printf("tailnet login from %s (%s)", addr, browserFamily(r.UserAgent()))
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
