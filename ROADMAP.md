@@ -13,3 +13,4 @@
 | M9 | Flowcharts, drawn by the daemon | [#169](https://github.com/davison/md-notes/issues/169) | [Done](docs/milestones/9-flowcharts-drawn-by-the-daemon.md) |
 | M10 | Before the next release: diagrams that read, the bugs that bite, a README for strangers | [#186](https://github.com/davison/md-notes/issues/186) | [Done](docs/milestones/10-before-the-next-release.md) |
 | M11 | Images in the editor, and CI that leaves text-only changes alone | [#213](https://github.com/davison/md-notes/issues/213) | [Done](docs/milestones/11-images-in-the-editor-and-docs-only-ci.md) |
+| M12 | A tailnet login that lasts until the token is rotated | [#230](https://github.com/davison/md-notes/issues/230) | [Done](docs/milestones/12-a-tailnet-login-that-lasts.md) |
