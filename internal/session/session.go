@@ -29,6 +29,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -78,39 +79,68 @@ func Issue(key []byte, host string, now time.Time) string {
 	return version + "." + issued + "." + enc + "." + b64.EncodeToString(sign(key, host, version, issued, enc))
 }
 
+// Why a session is refused, as Verify reports it. Each names a category
+// and nothing more: none quotes the value, so any of them can go in the
+// daemon's log (M13-R2).
+var (
+	// ErrMalformed is a value that is not the shape Issue makes: a field
+	// missing or extra, a MAC or id of the wrong length, an issue time
+	// written any other way — or a session id from v0.3.0, which was a
+	// bare random string.
+	ErrMalformed = errors.New("not a session value")
+	// ErrSignature is a well-formed value whose MAC does not check under
+	// this key and host: signed with another token (one rotated away, or
+	// another daemon's), for another tailnet name, or altered.
+	ErrSignature = errors.New("bad signature")
+	// ErrExpired is a session unused for Idle.
+	ErrExpired = errors.New("expired: unused for the idle limit")
+	// ErrFuture is a session issued further ahead than the clock allows.
+	ErrFuture = errors.New("issued in the future")
+)
+
 // Check reports whether value is a session signed with key for host and
-// still live at now, and whether it is old enough to be reissued. Anything
-// that is not exactly the shape Issue makes — a field missing or extra, a
-// MAC one byte short, an issue time written any other way — is refused
-// before the MAC is compared, and the comparison is constant-time.
+// still live at now, and whether it is old enough to be reissued. It is
+// Verify without the reason.
 func Check(key []byte, host, value string, now time.Time) (ok, due bool) {
+	due, err := Verify(key, host, value, now)
+	return err == nil, due
+}
+
+// Verify is Check that says why a value was refused: one of ErrMalformed,
+// ErrSignature, ErrExpired or ErrFuture. Anything that is not exactly the
+// shape Issue makes is refused before the MAC is compared, and the
+// comparison is constant-time.
+func Verify(key []byte, host, value string, now time.Time) (due bool, err error) {
 	if len(key) == 0 || host == "" {
-		return false, false
+		return false, ErrSignature
 	}
 	parts := strings.Split(value, ".")
 	if len(parts) != 4 || parts[0] != version {
-		return false, false
+		return false, ErrMalformed
 	}
 	issued, id, mac := parts[1], parts[2], parts[3]
 	secs, err := strconv.ParseInt(issued, 10, 64)
 	if err != nil || strconv.FormatInt(secs, 10) != issued {
-		return false, false
+		return false, ErrMalformed
 	}
 	if raw, err := b64.DecodeString(id); err != nil || len(raw) != idBytes {
-		return false, false
+		return false, ErrMalformed
 	}
 	got, err := b64.DecodeString(mac)
 	if err != nil || len(got) != sha256.Size {
-		return false, false
+		return false, ErrMalformed
 	}
 	if !hmac.Equal(got, sign(key, host, version, issued, id)) {
-		return false, false
+		return false, ErrSignature
 	}
 	at := time.Unix(secs, 0)
-	if at.After(now.Add(maxSkew)) || !now.Before(at.Add(Idle)) {
-		return false, false
+	if at.After(now.Add(maxSkew)) {
+		return false, ErrFuture
 	}
-	return true, !now.Before(at.Add(RefreshAfter))
+	if !now.Before(at.Add(Idle)) {
+		return false, ErrExpired
+	}
+	return !now.Before(at.Add(RefreshAfter)), nil
 }
 
 // sign is the MAC over every field, and the host. The fields are joined

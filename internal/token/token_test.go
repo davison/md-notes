@@ -611,3 +611,43 @@ func TestAuthenticateDerivesFromTheTokenItComparedAgainst(t *testing.T) {
 }
 
 const purpose = "mdn test key v1"
+
+// The key of the token held before the last rotation this store saw, for
+// the daemon's log alone: it tells "signed before the rotation" apart from
+// a bad signature (M13-R2). A fresh Open has none, since nothing about an
+// earlier token is on disk; a rewrite of the same token is not a rotation.
+func TestDerivePreviousIsTheTokenBeforeTheLastRotation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	s, _, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.DerivePrevious(purpose); got != nil {
+		t.Fatalf("a fresh store has a previous key: %x", got)
+	}
+	first := s.Derive(purpose)
+	value, _, _ := read(path)
+	if _, err := write(path, value); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.DerivePrevious(purpose); got != nil {
+		t.Error("rewriting the same token made a previous key")
+	}
+	if _, err := Rotate(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.DerivePrevious(purpose); !bytes.Equal(got, first) {
+		t.Error("after a rotation, the previous key is not the first token's")
+	}
+	second := s.Derive(purpose)
+	if _, err := Rotate(path); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.DerivePrevious(purpose); !bytes.Equal(got, second) {
+		t.Error("after a second rotation, the previous key is not the second token's")
+	}
+	restarted, _, _ := Open(path)
+	if got := restarted.DerivePrevious(purpose); got != nil {
+		t.Error("a restart remembered a previous token")
+	}
+}

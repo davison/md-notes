@@ -247,6 +247,9 @@ type Store struct {
 	// info identifies the file the held value was read from, so that a
 	// rotation is noticed without reading the file on every request.
 	info os.FileInfo
+	// previous is the token held before the last rotation this store saw,
+	// in memory only, for DerivePrevious. Empty after a fresh Open.
+	previous string
 }
 
 // Valid reports whether presented is the current token, comparing in
@@ -297,6 +300,23 @@ func (s *Store) AuthenticateDerive(presented, purpose string) ([]byte, bool) {
 	return derive(s.value, purpose), true
 }
 
+// DerivePrevious returns what Derive returned before the last rotation
+// this store saw, or nil when it has seen none — after a fresh Open, a
+// restart included. It exists for the daemon's log, to say that a session
+// was signed with a token since rotated away rather than calling it a bad
+// signature (davison/md-notes#240), and must never be used to accept one.
+// Nothing about the earlier token is on disk; it is the value this store
+// already held in memory until the rotation replaced it.
+func (s *Store) DerivePrevious(purpose string) []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refresh()
+	if s.previous == "" {
+		return nil
+	}
+	return derive(s.previous, purpose)
+}
+
 func derive(token, purpose string) []byte {
 	m := hmac.New(sha256.New, []byte(token))
 	m.Write([]byte(purpose))
@@ -331,6 +351,9 @@ func (s *Store) refresh() {
 	value, from, err := read(s.path)
 	if err != nil || value == "" {
 		return
+	}
+	if value != s.value {
+		s.previous = s.value
 	}
 	s.value, s.info = value, from
 }
