@@ -48,6 +48,9 @@ part of it a human would also read.
   and the run exits 0. That is a skip, not a pass — read the output, not the
   exit status. Under CI (`CI` set, and not `false` or `0`) the same missing
   download is a failure instead, so CI's e2e job cannot go green by skipping.
+- **openssl** on `PATH`, for one browser suite only: the tailnet session suite
+  makes a self-signed certificate with it for the TLS proxy it runs. Without
+  it that suite skips with one line, and fails instead under CI, as above.
 
 ## Building
 
@@ -152,8 +155,9 @@ phone layout, the drawer, the middle-width layout, the display settings and
 the scrollbars, the tap targets, the asset cache, creating and deleting a
 note, the navigator's two orders, removing a root, the installable app, the
 service worker's cache name, flowcharts drawn as images, images pasted and
-dropped into the editor, and what a suite does when the browser is missing:
-eleven suites, 120 tests. It is CI's second job.
+dropped into the editor, a tailnet login across daemon restarts behind TLS,
+and what a suite does when the browser is missing: twelve suites, 123 tests.
+It is CI's second job.
 
 The extension has a browser suite of its own, which CI does not run, because
 it needs both the extension and the daemon built:

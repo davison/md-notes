@@ -2,7 +2,7 @@
 
 md-notes is a local service that turns folders of markdown files into a notes
 application in the browser. This page describes what exists and works today, at the
-end of [milestone eleven](milestones/11-images-in-the-editor-and-docs-only-ci.md): the
+end of [milestone twelve](milestones/12-a-tailnet-login-that-lasts.md): the
 daemon and the rendered viewer from
 [milestone one](milestones/1-daemon-and-rendered-viewer.md), the editor from
 [milestone two](milestones/2-editor-autosave-and-live-update.md), the browser half
@@ -15,8 +15,10 @@ all of it carrying a version number and installable from a package since
 [milestone eight](milestones/8-the-first-release.md), the flowcharts
 [milestone nine](milestones/9-flowcharts-drawn-by-the-daemon.md) draws, what
 [milestone ten](milestones/10-before-the-next-release.md) fixed and documented before
-the next release, and the images milestone eleven lets you paste or drop into the
-editor.
+the next release, the images
+[milestone eleven](milestones/11-images-in-the-editor-and-docs-only-ci.md) lets you paste
+or drop into the editor, and the tailnet login milestone twelve made last until the
+token is rotated.
 Notes are created, edited and deleted in the app; renaming one is still done with other
 tools.
 
@@ -124,6 +126,14 @@ app ([Pasting and dropping images](#pasting-and-dropping-images),
 test suites for a push or pull request made only of `docs` commits; every other change,
 and every release, still runs them all
 ([CONTRIBUTING](../CONTRIBUTING.md#commit-messages)).
+
+Milestone twelve made a login at the tailnet name last. It used to end whenever the
+daemon restarted, which an upgrade or a reboot does; now the session cookie is signed
+with a key derived from the token and the daemon keeps nothing about sessions, so a
+device stays logged in across restarts, upgrades and reboots, until the token is
+rotated or the device goes 30 days without using it. Every device logs in once more
+at the upgrade to v0.3.1, and not again
+([A browser on the tailnet](#a-browser-on-the-tailnet)).
 
 The browser half is a Chromium extension that clips a readable page or a selection
 into the notes root as markdown, and opens a local markdown file in the app instead
@@ -1341,7 +1351,7 @@ that device end to end, including the two ways to reach your notes from one.
 
 The figures in the two sections above are not only documented, they are measured on
 every push and pull request that is not all `docs` commits (see
-[CONTRIBUTING](../CONTRIBUTING.md#commit-messages)). `make e2e` runs a suite of 120
+[CONTRIBUTING](../CONTRIBUTING.md#commit-messages)). `make e2e` runs a suite of 123
 checks under `ui/e2e` in headless Chromium against the built daemon on a temporary
 root, and CI runs it as a job of its own: the pane rectangles at four phone profiles
 and a desktop control, the 960-pixel breakpoint walked at 959, 960 and 961, the
@@ -1398,7 +1408,10 @@ diagrams — inside the ninth, on a block shown as code, on a paragraph, and on 
 paragraph when every drawing fails — below measured diagrams that fail and give way to
 taller code blocks, and inside and below sixty dense diagrams the daemon had no time
 to measure, one refused by the layout at its image's request; and at all five widths
-it lands one below a wide diagram held at the floor. Its own harness is tested too: a
+it lands one below a wide diagram held at the floor. Behind a TLS proxy of its own,
+standing in for `tailscale serve`, it logs in once at a tailnet name and checks that
+the login survives a daemon restart and ends at a rotation, made while the daemon is
+running or stopped; that suite also needs `openssl`, for its certificate. Its own harness is tested too: a
 suite run without the browser download skips with a line naming the command that
 fetches it, and fails instead under CI. The viewports are the suite's own literals
 rather than Playwright's device registry, whose numbers move between releases
