@@ -1411,10 +1411,11 @@ to measure, one refused by the layout at its image's request; and at all five wi
 it lands one below a wide diagram held at the floor. Behind a TLS proxy of its own,
 standing in for `tailscale serve`, it logs in once at a tailnet name and checks that
 the login survives a daemon restart and ends at a rotation, made while the daemon is
-running or stopped; that suite also needs `openssl`, for its certificate. Its own harness is tested too: a
-suite run without the browser download skips with a line naming the command that
-fetches it, and fails instead under CI. The viewports are the suite's own literals
-rather than Playwright's device registry, whose numbers move between releases
+running or stopped; that suite also needs `openssl`, for its certificate. Its own
+harness is tested too: a suite run without the browser download skips with a line
+naming the command that fetches it, and fails instead under CI. The viewports are
+the suite's own literals rather than Playwright's device registry, whose numbers move
+between releases
 ([#78](https://github.com/davison/md-notes/issues/78#issuecomment-5701667426)). It
 needs Chromium, which is a separate download; see
 [CONTRIBUTING.md](../CONTRIBUTING.md#what-you-need). It is not part of `make check`,
